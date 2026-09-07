@@ -1,0 +1,41 @@
+{
+  "name": "oh-my-maek",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "로컬 Markdown 노트와 표·보드 데이터베이스",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false --ignore \"client/**\" server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build --outDir ../dist",
+    "test:e2e": "playwright test",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fastify/middie": "^9.3.3",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "fastify": "^5.11.3",
+    "katex": "^0.18.7",
+    "lucide-react": "^1.31.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  }
+}
