@@ -1,3 +1,5 @@
+import { Button } from '../design/Button'
+import { Input, Select } from '../design/Field'
 import { useState } from 'react'
 import {
   Columns3,
@@ -95,41 +97,41 @@ export function DatabaseView({
       </header>
       <div className="database-toolbar">
         <div className="segmented">
-          <button
+          <Button
             className={view === 'table' ? 'selected' : ''}
             onClick={() => setView('table')}
           >
             <Table2 size={15} />표
-          </button>
-          <button
+          </Button>
+          <Button
             className={view === 'board' ? 'selected' : ''}
             onClick={() => setView('board')}
           >
             <Columns3 size={15} />
             보드
-          </button>
+          </Button>
         </div>
         <span className="muted">{rows.length}개 노트</span>
         <div className="spacer" />
-        <button className="secondary" onClick={exportCsv}>
+        <Button className="secondary" onClick={exportCsv}>
           <Download size={15} />
           CSV
-        </button>
-        <button
+        </Button>
+        <Button
           className="primary"
           onClick={() => void create({ databaseId: database.id })}
         >
           <Plus size={16} />새 행
-        </button>
+        </Button>
       </div>
       <div className="database-filters">
-        <input
+        <Input
           aria-label="데이터베이스 검색"
           placeholder="노트 검색…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
-        <select
+        <Select
           aria-label="상태 필터"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
@@ -138,11 +140,11 @@ export function DatabaseView({
           {statusSchema.options.map((s) => (
             <option key={s}>{s}</option>
           ))}
-        </select>
-        <button className="text-button" onClick={() => setSort(!sort)}>
+        </Select>
+        <Button className="text-button" onClick={() => setSort(!sort)}>
           <ArrowUpDown size={14} />
           {sort ? '이름순' : '최근 수정순'}
-        </button>
+        </Button>
       </div>
       {view === 'table' ? (
         <div className="table-scroll">
@@ -156,13 +158,13 @@ export function DatabaseView({
                   <th key={f.id}>{f.name}</th>
                 ))}
                 <th>
-                  <button
+                  <Button
                     className="text-button"
                     onClick={() => setFieldModal(true)}
                   >
                     <Plus size={14} />
                     속성 추가
-                  </button>
+                  </Button>
                 </th>
               </tr>
             </thead>
@@ -170,13 +172,13 @@ export function DatabaseView({
               {rows.map((n) => (
                 <tr key={n.id}>
                   <td>
-                    <button className="row-title" onClick={() => open(n.id)}>
+                    <Button className="row-title" onClick={() => open(n.id)}>
                       <FileText size={15} />
                       {noteTitle(n)}
-                    </button>
+                    </Button>
                   </td>
                   <td>
-                    <select
+                    <Select
                       aria-label={`${noteTitle(n)} 상태`}
                       className={`status-select status-${statusSchema.options.indexOf(n.status)}`}
                       value={n.status}
@@ -189,7 +191,7 @@ export function DatabaseView({
                       {statusSchema.options.map((s) => (
                         <option key={s}>{s}</option>
                       ))}
-                    </select>
+                    </Select>
                   </td>
                   <td>
                     <span className="muted">
@@ -219,12 +221,12 @@ export function DatabaseView({
               아직 표시할 노트가 없습니다. 새 행으로 시작해보세요.
             </div>
           )}
-          <button
+          <Button
             className="add-row"
             onClick={() => void create({ databaseId: database.id })}
           >
             <Plus size={15} />새 노트 추가
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="board">
@@ -257,10 +259,10 @@ export function DatabaseView({
                     className="board-card"
                     key={n.id}
                   >
-                    <button onClick={() => open(n.id)}>
+                    <Button onClick={() => open(n.id)}>
                       <FileText size={16} />
                       <strong>{noteTitle(n)}</strong>
-                    </button>
+                    </Button>
                     <p>
                       {n.body.replace(/[#*`>]/g, '').slice(0, 100) ||
                         '아직 내용이 없습니다.'}
@@ -269,7 +271,7 @@ export function DatabaseView({
                       <span className="muted">
                         {n.tags[0] ? `#${n.tags[0]}` : '노트'}
                       </span>
-                      <select
+                      <Select
                         aria-label={`${noteTitle(n)} 상태`}
                         value={n.status}
                         onChange={(e) =>
@@ -281,18 +283,18 @@ export function DatabaseView({
                         {statusSchema.options.map((v) => (
                           <option key={v}>{v}</option>
                         ))}
-                      </select>
+                      </Select>
                     </div>
                   </article>
                 ))}
-              <button
+              <Button
                 className="add-row"
                 onClick={() =>
                   void create({ databaseId: database.id, status: s })
                 }
               >
                 <Plus size={15} />새 노트
-              </button>
+              </Button>
             </section>
           ))}
         </div>
@@ -340,7 +342,7 @@ export function DatabaseView({
           >
             <label>
               속성 이름
-              <input
+              <Input
                 required
                 maxLength={60}
                 value={name}
@@ -350,7 +352,7 @@ export function DatabaseView({
             </label>
             <label>
               유형
-              <select
+              <Select
                 aria-label="속성 유형"
                 value={type}
                 onChange={(e) => setType(e.target.value as Field['type'])}
@@ -360,12 +362,12 @@ export function DatabaseView({
                 <option value="date">날짜</option>
                 <option value="checkbox">체크박스</option>
                 <option value="select">선택</option>
-              </select>
+              </Select>
             </label>
             {type === 'select' && (
               <label>
                 선택 항목
-                <input
+                <Input
                   required
                   placeholder="낮음, 보통, 높음"
                   value={options}
@@ -374,9 +376,13 @@ export function DatabaseView({
               </label>
             )}
             {fieldError && <p role="alert">{fieldError}</p>}
-            <button className="primary" disabled={busy || !name.trim()}>
+            <Button
+              type="submit"
+              className="primary"
+              disabled={busy || !name.trim()}
+            >
               추가
-            </button>
+            </Button>
           </form>
         </Modal>
       )}

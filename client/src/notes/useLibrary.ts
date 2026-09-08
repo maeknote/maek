@@ -7,10 +7,17 @@ import {
   type Database,
   type Field
 } from '@shared/notes'
-import { request } from './api'
+import { request as apiRequest } from './api'
+import { useWorkspace } from '../Workspace'
 
 const DRAFT_KEY = 'oh-my-maek:v1:drafts'
 export function useLibrary() {
+  const workspace = useWorkspace()
+  const request = useCallback(
+    <T>(url: string, method = 'GET', body?: unknown) =>
+      apiRequest<T>(url, method, body, workspace.wsId),
+    [workspace.wsId]
+  )
   const [draftKey] = useState(() => {
     // Each browser tab owns its recovery draft; a successful save in another
     // tab must never erase an unsaved/conflicting draft here.
@@ -20,9 +27,9 @@ export function useLibrary() {
         tab = crypto.randomUUID()
         sessionStorage.setItem('oh-my-maek:v1:tab', tab)
       }
-      return `${DRAFT_KEY}:${tab}`
+      return `${DRAFT_KEY}:${workspace.root}:${tab}`
     } catch {
-      return DRAFT_KEY
+      return `${DRAFT_KEY}:${workspace.root}`
     }
   })
   const [data, setData] = useState<Library>({ notes: [], databases: [] })
@@ -56,13 +63,35 @@ export function useLibrary() {
     if (current.current !== before) return
     publish({
       ...remote,
-      notes: remote.notes.map((n) =>
-        dirty.current.has(n.id)
-          ? (current.current.notes.find((d) => d.id === n.id) ?? n)
-          : n
-      )
+      notes: [
+        ...remote.notes.map((n) =>
+          dirty.current.has(n.id)
+            ? (current.current.notes.find((d) => d.id === n.id) ?? n)
+            : n
+        ),
+        ...current.current.notes.filter(
+          (n) =>
+            dirty.current.has(n.id) && !remote.notes.some((r) => r.id === n.id)
+        )
+      ]
     })
-  }, [publish])
+  }, [publish, request])
+  useEffect(() => {
+    const events = new EventSource(
+      `/api/workspaces/events?workspace=${encodeURIComponent(workspace.wsId)}`
+    )
+    const sync = () => {
+      void refresh().catch((err) => setError(err.message))
+    }
+    events.addEventListener('ready', sync)
+    events.addEventListener('change', sync)
+    events.addEventListener('watch-error', () =>
+      setError('폴더 변경 감지가 중단되었습니다. 폴더 접근 권한을 확인하세요.')
+    )
+    events.onerror = () =>
+      setError('폴더 변경 감지 연결을 다시 시도하고 있습니다.')
+    return () => events.close()
+  }, [workspace.wsId, refresh])
   useEffect(() => {
     let active = true
     void request<Library>('/api/library')
@@ -93,7 +122,7 @@ export function useLibrary() {
     return () => {
       active = false
     }
-  }, [publish, draftKey])
+  }, [publish, draftKey, request])
   const edit = useCallback(
     (id: string, patch: Partial<NoteInput>) => {
       dirty.current.add(id)
@@ -155,7 +184,7 @@ export function useLibrary() {
     }
     saving.current = work()
     return saving.current
-  }, [publish, backup])
+  }, [publish, backup, request])
   useEffect(() => {
     if (!dirty.current.size || saveState === '저장 실패') return
     const timer = setTimeout(() => void save(), 700)

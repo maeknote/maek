@@ -1,3 +1,7 @@
+import { Button } from '../design/Button'
+import { Input, Select } from '../design/Field'
+import { Header } from '../design/Header'
+import { FolderSelector } from '../design/FolderSelector'
 import { useEffect, useRef, useState } from 'react'
 import {
   BookOpen,
@@ -23,6 +27,8 @@ import { Editor, exportNote } from './Editor'
 import { DatabaseView } from './DatabaseView'
 import { Modal } from './Modal'
 import { download } from './api'
+import { useTheme } from '../design/DesignProvider'
+import { useWorkspace, useSelectWorkspace, WorkspacePicker } from '../Workspace'
 
 type Section = 'notes' | 'favorites' | 'templates' | 'trash' | 'databases'
 const labels = {
@@ -57,6 +63,10 @@ const welcome = {
 
 export default function NotesApp() {
   const library = useLibrary()
+  const workspace = useWorkspace()
+  const selectWorkspace = useSelectWorkspace()
+  const [workspaceSettings, setWorkspaceSettings] = useState(false)
+  const { dark, toggle: toggleTheme } = useTheme()
   const [section, setSection] = useState<Section>('notes')
   const [activeId, setActiveId] = useState<string | null>(null)
   const [databaseId, setDatabaseId] = useState<string | null>(null)
@@ -68,9 +78,6 @@ export default function NotesApp() {
   const [dbModal, setDbModal] = useState(false)
   const [dbName, setDbName] = useState('')
   const [busy, setBusy] = useState(false)
-  const [dark, setDark] = useState(
-    () => localStorage.getItem('oh-my-maek:v1:theme') === 'dark'
-  )
   const search = useRef<HTMLInputElement>(null)
   const importer = useRef<HTMLInputElement>(null)
   const active = library.notes.find((n) => n.id === activeId)
@@ -97,10 +104,6 @@ export default function NotesApp() {
   const tags = [
     ...new Set(library.notes.filter((n) => !n.trashed).flatMap((n) => n.tags))
   ].sort()
-  useEffect(() => {
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-    localStorage.setItem('oh-my-maek:v1:theme', dark ? 'dark' : 'light')
-  }, [dark])
   const report = (err: unknown) =>
     library.setError(err instanceof Error ? err.message : String(err))
   const open = (id: string) => {
@@ -201,7 +204,24 @@ export default function NotesApp() {
   }
   return (
     <div className={`notes-app ${focus ? 'focus-mode' : ''}`}>
-      <nav className="app-nav">
+      <Header className="app-nav">
+        {workspaceSettings && (
+          <Modal
+            title="워크스페이스 설정"
+            description="현재 폴더를 확인하거나 다른 로컬 폴더를 여세요."
+            close={() => setWorkspaceSettings(false)}
+          >
+            <WorkspacePicker
+              current={workspace}
+              onSelect={async (ws) => {
+                if (!(await library.save()))
+                  throw new Error('현재 편집본을 저장한 후 폴더를 변경하세요.')
+                await selectWorkspace(ws)
+                setWorkspaceSettings(false)
+              }}
+            />
+          </Modal>
+        )}
         <a
           className="brand"
           href="#"
@@ -222,7 +242,7 @@ export default function NotesApp() {
               ['databases', Table2]
             ] as const
           ).map(([value, Icon]) => (
-            <button
+            <Button
               key={value}
               className={
                 section === value ||
@@ -234,7 +254,7 @@ export default function NotesApp() {
             >
               <Icon size={16} />
               {value === 'notes' ? '노트' : '데이터베이스'}
-            </button>
+            </Button>
           ))}
         </div>
         <div className="nav-right">
@@ -242,44 +262,49 @@ export default function NotesApp() {
             <i />
             로컬 워크스페이스
           </span>
-          <button
+          <Button
             className="icon-button"
             aria-label={dark ? '라이트 모드' : '다크 모드'}
-            onClick={() => setDark(!dark)}
+            onClick={toggleTheme}
           >
             {dark ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
+          </Button>
         </div>
-      </nav>
+      </Header>
       {library.error && (
         <div className="error-banner" role="alert">
           <span>{library.error}</span>
-          <button onClick={() => void library.save()}>저장 재시도</button>
+          <Button onClick={() => void library.save()}>저장 재시도</Button>
           {active && (
             <>
-              <button onClick={() => exportNote(active)}>
+              <Button onClick={() => exportNote(active)}>
                 편집본 다운로드
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => {
                   exportNote(active)
                   void library.reloadNote(active.id).catch(report)
                 }}
               >
                 편집본 보관 후 새로고침
-              </button>
+              </Button>
             </>
           )}
-          <button aria-label="오류 닫기" onClick={() => library.setError('')}>
+          <Button aria-label="오류 닫기" onClick={() => library.setError('')}>
             <X size={16} />
-          </button>
+          </Button>
         </div>
       )}
       <div className="app-body">
         <aside className="note-sidebar">
+          <FolderSelector
+            name={workspace.name}
+            path={workspace.root}
+            onClick={() => setWorkspaceSettings(true)}
+          />
           <div className="sidebar-heading">
             <h2>{section === 'databases' ? '데이터베이스' : '내 노트'}</h2>
-            <button
+            <Button
               className="icon-button"
               aria-label={
                 section === 'databases' ? '새 데이터베이스' : '노트 만들기'
@@ -289,13 +314,13 @@ export default function NotesApp() {
               }
             >
               <Plus size={19} />
-            </button>
+            </Button>
           </div>
           {section !== 'databases' ? (
             <>
               <label className="search-box">
                 <Search size={16} />
-                <input
+                <Input
                   ref={search}
                   aria-label="노트 검색"
                   placeholder="노트 검색"
@@ -313,7 +338,7 @@ export default function NotesApp() {
                     ['trash', Trash2]
                   ] as const
                 ).map(([value, Icon]) => (
-                  <button
+                  <Button
                     className={section === value ? 'selected' : ''}
                     key={value}
                     onClick={() => navigate(value)}
@@ -334,7 +359,7 @@ export default function NotesApp() {
                         ).length
                       }
                     </span>
-                  </button>
+                  </Button>
                 ))}
               </div>
               <div className="list-heading">
@@ -342,18 +367,18 @@ export default function NotesApp() {
                   {query ? '검색 결과' : labels[section]}{' '}
                   <b>{visible.length}</b>
                 </span>
-                <select
+                <Select
                   aria-label="노트 정렬"
                   value={sort}
                   onChange={(e) => setSort(e.target.value)}
                 >
                   <option value="updated">최근 수정순</option>
                   <option value="title">이름순</option>
-                </select>
+                </Select>
                 <ArrowUpDown size={12} />
               </div>
               {tags.length > 0 && (
-                <select
+                <Select
                   className="tag-filter"
                   aria-label="태그 필터"
                   value={tag}
@@ -363,11 +388,11 @@ export default function NotesApp() {
                   {tags.map((t) => (
                     <option key={t}>{t}</option>
                   ))}
-                </select>
+                </Select>
               )}
               <div className="note-list">
                 {visible.map((n) => (
-                  <button
+                  <Button
                     key={n.id}
                     className={`note-card ${activeId === n.id ? 'active' : ''}`}
                     onClick={() => open(n.id)}
@@ -399,7 +424,7 @@ export default function NotesApp() {
                         <span className="mini-tag">#{n.tags[0]}</span>
                       )}
                     </div>
-                  </button>
+                  </Button>
                 ))}
                 {!visible.length && (
                   <p className="empty-small">
@@ -413,7 +438,7 @@ export default function NotesApp() {
           ) : (
             <div className="database-list">
               {library.databases.map((d) => (
-                <button
+                <Button
                   key={d.id}
                   className={d.id === databaseId ? 'active' : ''}
                   onClick={() => {
@@ -431,24 +456,24 @@ export default function NotesApp() {
                       ).length
                     }
                   </span>
-                </button>
+                </Button>
               ))}
-              <button className="text-button" onClick={() => setDbModal(true)}>
+              <Button className="text-button" onClick={() => setDbModal(true)}>
                 <Plus size={16} />
                 데이터베이스 만들기
-              </button>
+              </Button>
             </div>
           )}
           <div className="sidebar-bottom">
-            <button
+            <Button
               className="text-button"
               disabled={busy}
               onClick={() => importer.current?.click()}
             >
               <Upload size={15} />
               {busy ? '가져오는 중…' : 'Markdown 가져오기'}
-            </button>
-            <button
+            </Button>
+            <Button
               className="icon-button"
               aria-label="전체 백업 다운로드"
               onClick={() =>
@@ -469,8 +494,8 @@ export default function NotesApp() {
               }
             >
               <Download size={15} />
-            </button>
-            <input
+            </Button>
+            <Input
               hidden
               type="file"
               multiple
@@ -544,7 +569,7 @@ export default function NotesApp() {
                     ? '왼쪽에서 노트를 열어 복원할 수 있습니다.'
                     : '떠오른 생각, 오늘의 기록, 다음에 할 일.\n한 장의 노트에서 시작해보세요.'}
               </p>
-              <button
+              <Button
                 className="primary large"
                 onClick={() =>
                   section === 'databases' ? setDbModal(true) : setNewMenu(true)
@@ -554,14 +579,14 @@ export default function NotesApp() {
                 {section === 'databases'
                   ? '데이터베이스 만들기'
                   : '새 노트 쓰기'}
-              </button>
+              </Button>
               {section !== 'databases' && (
-                <button
+                <Button
                   className="text-button guide-link"
                   onClick={() => void create(welcome)}
                 >
                   시작 가이드 열기 <span>↗</span>
-                </button>
+                </Button>
               )}
               <div className="empty-footnote">
                 내 컴퓨터에 저장 · 계정 없이 시작 · Markdown으로 보관
@@ -576,12 +601,12 @@ export default function NotesApp() {
           description="빈 페이지에서 시작하거나, 자주 쓰는 틀을 골라보세요."
           close={() => setNewMenu(false)}
         >
-          <button className="picker-item" onClick={() => void create()}>
+          <Button className="picker-item" onClick={() => void create()}>
             <Plus size={18} />
             <strong>빈 노트</strong>
-          </button>
+          </Button>
           {builtins.map((t) => (
-            <button
+            <Button
               className="picker-item"
               key={t.title}
               onClick={() =>
@@ -596,12 +621,12 @@ export default function NotesApp() {
             >
               <LayoutTemplate size={18} />
               {t.title}
-            </button>
+            </Button>
           ))}
           {library.notes
             .filter((n) => n.template && !n.trashed)
             .map((n) => (
-              <button
+              <Button
                 className="picker-item"
                 key={n.id}
                 onClick={() =>
@@ -615,7 +640,7 @@ export default function NotesApp() {
               >
                 <FileText size={18} />
                 {noteTitle(n)}
-              </button>
+              </Button>
             ))}
         </Modal>
       )}
@@ -643,7 +668,7 @@ export default function NotesApp() {
           >
             <label>
               이름
-              <input
+              <Input
                 required
                 maxLength={120}
                 placeholder="예: 프로젝트, 읽을거리, 아이디어"
@@ -651,9 +676,13 @@ export default function NotesApp() {
                 onChange={(e) => setDbName(e.target.value)}
               />
             </label>
-            <button disabled={busy || !dbName.trim()} className="primary">
+            <Button
+              type="submit"
+              disabled={busy || !dbName.trim()}
+              className="primary"
+            >
               만들기
-            </button>
+            </Button>
           </form>
         </Modal>
       )}

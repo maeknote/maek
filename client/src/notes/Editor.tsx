@@ -1,3 +1,5 @@
+import { Button } from '../design/Button'
+import { Input, Select, Textarea } from '../design/Field'
 import { useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -35,6 +37,7 @@ import { PropertyInput } from './PropertyInput'
 import { Modal } from './Modal'
 import { download, request } from './api'
 import { serializeYamlData } from '@shared/frontmatter'
+import { useWorkspace } from '../Workspace'
 
 export function exportNote(note: Note) {
   const { body, revision: _revision, ...metadata } = note
@@ -70,6 +73,7 @@ export function Editor({
   report: (error: string) => void
 }) {
   const [mode, setMode] = useState<'edit' | 'read'>('edit')
+  const workspace = useWorkspace()
   const [tag, setTag] = useState('')
   const [versions, setVersions] = useState<Note[] | null>(null)
   const [linkMenu, setLinkMenu] = useState(false)
@@ -104,9 +108,9 @@ export function Editor({
     <section className="editor-pane">
       <header className="editor-topbar">
         <div className="row">
-          <button className="icon-button" aria-label="목록으로" onClick={back}>
+          <Button className="icon-button" aria-label="목록으로" onClick={back}>
             <ArrowLeft size={18} />
-          </button>
+          </Button>
           <span className="breadcrumb">
             {database?.name ?? (note.template ? '템플릿' : '내 노트')}
           </span>
@@ -120,32 +124,32 @@ export function Editor({
           >
             {saveState}
           </span>
-          <button
+          <Button
             className="icon-button"
             aria-label={focus ? '집중 모드 종료' : '집중 모드'}
             onClick={toggleFocus}
           >
             {focus ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-          </button>
+          </Button>
         </div>
       </header>
       <div className="editor-actions">
         <div className="segmented">
-          <button
+          <Button
             className={mode === 'edit' ? 'selected' : ''}
             onClick={() => setMode('edit')}
           >
             편집
-          </button>
-          <button
+          </Button>
+          <Button
             className={mode === 'read' ? 'selected' : ''}
             onClick={() => setMode('read')}
           >
             읽기
-          </button>
+          </Button>
         </div>
         <div className="row">
-          <button
+          <Button
             className={`icon-button ${note.favorite ? 'starred' : ''}`}
             aria-label="즐겨찾기"
             aria-pressed={note.favorite}
@@ -153,8 +157,8 @@ export function Editor({
             onClick={() => patch({ favorite: !note.favorite })}
           >
             <Star size={17} fill={note.favorite ? 'currentColor' : 'none'} />
-          </button>
-          <button
+          </Button>
+          <Button
             className="icon-button"
             aria-label="노트 복제"
             onClick={() =>
@@ -167,26 +171,31 @@ export function Editor({
             }
           >
             <Copy size={17} />
-          </button>
-          <button
+          </Button>
+          <Button
             className="icon-button"
             aria-label="Markdown 내보내기"
             onClick={() => exportNote(note)}
           >
             <Download size={17} />
-          </button>
-          <button
+          </Button>
+          <Button
             className="icon-button"
             aria-label="버전 기록"
             onClick={() =>
-              void request<Note[]>(`/api/notes/${note.id}/history`)
+              void request<Note[]>(
+                `/api/notes/${note.id}/history`,
+                'GET',
+                undefined,
+                workspace.wsId
+              )
                 .then(setVersions)
                 .catch((err) => report(err.message))
             }
           >
             <History size={17} />
-          </button>
-          <button
+          </Button>
+          <Button
             className={`icon-button ${note.template ? 'active' : ''}`}
             aria-label="템플릿으로 지정"
             aria-pressed={note.template}
@@ -194,20 +203,20 @@ export function Editor({
             onClick={() => patch({ template: !note.template })}
           >
             <FileText size={17} />
-          </button>
-          <button
+          </Button>
+          <Button
             className="icon-button"
             aria-label={note.trashed ? '노트 복원' : '휴지통으로 이동'}
             onClick={() => patch({ trashed: !note.trashed })}
           >
             {note.trashed ? <RotateCcw size={17} /> : <Trash2 size={17} />}
-          </button>
+          </Button>
         </div>
       </div>
       {note.trashed && (
         <div className="notice">
           휴지통에 있는 노트입니다. 복원하면 다시 편집할 수 있습니다.
-          <button onClick={() => patch({ trashed: false })}>복원</button>
+          <Button onClick={() => patch({ trashed: false })}>복원</Button>
         </div>
       )}
       <div className="document-scroll">
@@ -215,7 +224,7 @@ export function Editor({
           <div className="eyebrow">
             {note.template ? 'TEMPLATE' : 'YOUR SPACE TO THINK'}
           </div>
-          <input
+          <Input
             className="note-title"
             aria-label="노트 제목"
             placeholder="제목 없는 노트"
@@ -239,7 +248,7 @@ export function Editor({
           </div>
           <div className="tag-row">
             {note.tags.map((t) => (
-              <button
+              <Button
                 disabled={note.trashed}
                 className="tag"
                 key={t}
@@ -249,9 +258,9 @@ export function Editor({
                 }
               >
                 #{t} <span>×</span>
-              </button>
+              </Button>
             ))}
-            <input
+            <Input
               aria-label="태그 추가"
               placeholder="+ 태그 추가"
               value={tag}
@@ -279,7 +288,7 @@ export function Editor({
             <div className="property-grid">
               <label>
                 데이터베이스
-                <select
+                <Select
                   aria-label="노트 데이터베이스"
                   disabled={note.trashed}
                   value={note.databaseId ?? ''}
@@ -296,13 +305,13 @@ export function Editor({
                       {d.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               {database && (
                 <>
                   <label>
                     상태
-                    <select
+                    <Select
                       aria-label="노트 상태"
                       disabled={note.trashed}
                       value={note.status}
@@ -313,7 +322,7 @@ export function Editor({
                       {statusSchema.options.map((s) => (
                         <option key={s}>{s}</option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                   {database.fields.map((f) => (
                     <label key={f.id}>
@@ -356,7 +365,7 @@ export function Editor({
                 ].map(([Icon, label, before, after, fallback]) => {
                   const Component = Icon as typeof Bold
                   return (
-                    <button
+                    <Button
                       key={String(label)}
                       className="icon-button"
                       title={String(label)}
@@ -368,19 +377,19 @@ export function Editor({
                       }
                     >
                       <Component size={17} />
-                    </button>
+                    </Button>
                   )
                 })}
-                <button
+                <Button
                   disabled={note.trashed}
                   className="text-button"
                   onClick={() => setLinkMenu(true)}
                 >
                   노트 연결
-                </button>
+                </Button>
                 <span className="format-hint">Markdown</span>
               </div>
-              <textarea
+              <Textarea
                 ref={textarea}
                 className="markdown-editor"
                 aria-label="노트 본문"
@@ -439,10 +448,10 @@ export function Editor({
                 이 노트를 언급한 노트 · {backlinks.length}
               </span>
               {backlinks.map((n) => (
-                <button key={n.id} onClick={() => open(n.id)}>
+                <Button key={n.id} onClick={() => open(n.id)}>
                   <Link2 size={14} />
                   {noteTitle(n)}
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -473,7 +482,7 @@ export function Editor({
                   </p>
                   <pre>{v.body.slice(0, 180)}</pre>
                 </div>
-                <button
+                <Button
                   className="secondary"
                   onClick={() => {
                     patch({ title: v.title, body: v.body, tags: v.tags })
@@ -481,7 +490,7 @@ export function Editor({
                   }}
                 >
                   내용 복원
-                </button>
+                </Button>
               </div>
             ))
           ) : (
@@ -498,7 +507,7 @@ export function Editor({
           {notes
             .filter((n) => n.id !== note.id && !n.trashed)
             .map((n) => (
-              <button
+              <Button
                 className="picker-item"
                 key={n.id}
                 onClick={() => {
@@ -510,7 +519,7 @@ export function Editor({
               >
                 <FileText size={16} />
                 {noteTitle(n)}
-              </button>
+              </Button>
             ))}
         </Modal>
       )}

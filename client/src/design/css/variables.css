@@ -1,0 +1,302 @@
+/**
+ * Design System - CSS Variables
+ *
+ * Central CSS custom property definitions.
+ * These replace the scattered definitions in base.css.
+ */
+
+:root {
+  /* ========== Colors - Paper (Backgrounds) ========== */
+  --color-paper-white: #FFFFFF;
+  --color-fog-grey: #F9F9F8;
+  --color-warm-concrete: #F2F2F0;
+  --color-warm-vellum: #F8F7F2;
+  --color-warm-stone: #F2F1EE;
+
+  /* ========== Colors - Text ========== */
+  --color-neutral-ink: #171717;
+  --color-muted-text: #6B7280;
+  --color-text-tertiary: #9ca3af;
+
+  /* ========== Colors - Accent ========== */
+  --color-maek-red: #C04E3E;
+  --color-maek-red-hover: #b91c1c;
+  --color-destructive: #dc2626;
+
+  /* ========== Colors - Border ========== */
+  --color-structure-line: #E5E5E5;
+  --color-border-light: #E5E7EB;
+  --color-border-subtle: rgba(0, 0, 0, 0.06);
+
+  /* ========== Colors - State ========== */
+  --color-hover: rgba(0, 0, 0, 0.06);
+  --color-active: rgba(0, 0, 0, 0.1);
+  --color-selected: rgba(59, 130, 246, 0.1);
+
+  /* ========== Semantic Colors ========== */
+  --color-inline-code-bg: #f3f4f6;
+  --color-inline-code-text: #dc2626;
+  --color-blockquote-border: #e5e7eb;
+  --color-blockquote-text: #6b7280;
+  --color-table-header-bg: #f9fafb;
+  --color-table-border: #e5e7eb;
+  --color-table-selected-bg: #dbeafe;
+  --color-text-body: #374151;
+  --color-text-dim: #9ca3af;
+  --color-overlay-bg: rgba(0, 0, 0, 0.06);
+  --color-overlay-bg-strong: rgba(0, 0, 0, 0.1);
+  --color-input-bg: rgba(255, 255, 255, 0.6);
+  --color-input-border: rgba(0, 0, 0, 0.1);
+  --color-input-border-focus: rgba(0, 0, 0, 0.2);
+  --color-tooltip-bg: rgba(0, 0, 0, 0.75);
+  --color-tooltip-text: #ffffff;
+  --color-slider-track: rgba(0, 0, 0, 0.1);
+  --color-toggle-bg: rgba(0, 0, 0, 0.1);
+  --color-toggle-knob: white;
+  --color-checkbox-border: rgba(0, 0, 0, 0.2);
+  --color-chat-table-header-bg: rgba(0, 0, 0, 0.03);
+  --color-chat-code-bg: rgba(0, 0, 0, 0.06);
+  --color-destructive-hover-bg: rgba(220, 38, 38, 0.08);
+
+  /* Code Block (editor) */
+  --color-code-block-bg: #ECEAE7;
+  --color-code-block-header-bg: #E3E1DE;
+  --color-code-block-text: #374151;
+  --color-code-block-text-dim: #6B7280;
+
+  /* Syntax Highlighting (editor code blocks) */
+  --color-syntax-keyword: #0451A5;
+  --color-syntax-string: #A31515;
+  --color-syntax-number: #098658;
+  --color-syntax-function: #795E26;
+  --color-syntax-comment: #008000;
+  --color-syntax-type: #267F99;
+  --color-syntax-variable: #001080;
+  --color-syntax-regexp: #811F3F;
+
+  /* ========== Semantic Aliases ========== */
+  --color-background: var(--color-paper-white);
+  --color-background-soft: var(--color-fog-grey);
+  --color-background-mute: var(--color-warm-concrete);
+  --color-text: var(--color-neutral-ink);
+
+  /* ========== Typography ========== */
+  --font-sans: Inter, Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Fira Code', ui-monospace, monospace;
+
+  /* ========== Effects - Glass ========== */
+  --glass-bg: rgba(245, 244, 241, 0.28);
+  --glass-border: rgba(242, 241, 238, 0.4);
+  --glass-blur: blur(28px) saturate(2);
+  --glass-shadow: 0 12px 40px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --glass-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 -1px 0 rgba(255, 255, 255, 0.15);
+
+  /* ========== Effects - Modal Glass ========== */
+  --modal-bg: rgba(255, 255, 255, 0.70);
+  --modal-border: rgba(255, 255, 255, 0.50);
+  --modal-blur: blur(24px) saturate(1.8);
+  --modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+
+  /* ========== Effects - Shadows ========== */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-floating: 0 4px 24px -4px rgba(0, 0, 0, 0.08);
+  --shadow-panel: 0 10px 36px -8px rgba(0, 0, 0, 0.12), 0 5px 18px -4px rgba(0, 0, 0, 0.06);
+  --shadow-glass-inner: inset 0 1.5px 0 rgba(255, 255, 255, 0.75),
+                         inset 0 -1.5px 2px rgba(0, 0, 0, 0.045),
+                         inset 1.5px 0 2px rgba(255, 255, 255, 0.45),
+                         inset -1.5px 0 2px rgba(0, 0, 0, 0.03);
+
+  /* ========== Effects - Border Radius ========== */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 14px;
+  --radius-3xl: 20px;
+  --radius-full: 9999px;
+
+  /* ========== Effects - Transitions ========== */
+  --transition-fast: 120ms ease;
+  --transition-normal: 150ms ease;
+  --transition-slow: 300ms ease;
+
+  /* ========== Legacy Variables (Backward Compatibility) ========== */
+  --ev-c-white: #ffffff;
+  --ev-c-white-soft: #f8f8f8;
+  --ev-c-white-mute: #f2f2f2;
+  --ev-c-black: #1b1b1f;
+  --ev-c-black-soft: #222222;
+  --ev-c-black-mute: #282828;
+  --ev-c-gray-1: #515c67;
+  --ev-c-gray-2: #414853;
+  --ev-c-gray-3: #32363f;
+  --ev-c-text-1: var(--color-neutral-ink);
+  --ev-c-text-2: var(--color-muted-text);
+  --ev-c-text-3: #2C2C2C;
+  --ev-button-alt-border: transparent;
+  --ev-button-alt-text: var(--ev-c-text-1);
+  --ev-button-alt-bg: var(--ev-c-gray-3);
+  --ev-button-alt-hover-border: transparent;
+  --ev-button-alt-hover-text: var(--ev-c-text-1);
+  --ev-button-alt-hover-bg: var(--ev-c-gray-2);
+}
+
+/* ========== Dark Theme ========== */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Paper (Backgrounds) */
+  --color-paper-white: #1C1B1A;
+  --color-fog-grey: #1F1E1C;
+  --color-warm-concrete: #242220;
+  --color-warm-vellum: #211F1B;
+  --color-warm-stone: #252321;
+
+  /* Text */
+  --color-neutral-ink: #E8E6E3;
+  --color-muted-text: #9B9A97;
+  --color-text-tertiary: #6B6966;
+
+  /* Accent */
+  --color-maek-red: #D4604F;
+  --color-maek-red-hover: #E06B5A;
+  --color-destructive: #EF4444;
+
+  /* Border */
+  --color-structure-line: #252321;
+  --color-border-light: #333130;
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+
+  /* State */
+  --color-hover: rgba(255, 255, 255, 0.06);
+  --color-active: rgba(255, 255, 255, 0.10);
+  --color-selected: rgba(96, 165, 250, 0.15);
+
+  /* Semantic Colors */
+  --color-inline-code-bg: #2A2826;
+  --color-inline-code-text: #EF6B5A;
+  --color-blockquote-border: #333130;
+  --color-blockquote-text: #9B9A97;
+  --color-table-header-bg: #242220;
+  --color-table-border: #333130;
+  --color-table-selected-bg: rgba(96, 165, 250, 0.15);
+  --color-text-body: #E8E6E3;
+  --color-text-dim: #6B6966;
+  --color-overlay-bg: rgba(255, 255, 255, 0.06);
+  --color-overlay-bg-strong: rgba(255, 255, 255, 0.10);
+  --color-input-bg: rgba(255, 255, 255, 0.06);
+  --color-input-border: rgba(255, 255, 255, 0.10);
+  --color-input-border-focus: rgba(255, 255, 255, 0.2);
+  --color-tooltip-bg: rgba(255, 255, 255, 0.85);
+  --color-tooltip-text: #1C1B1A;
+  --color-slider-track: rgba(255, 255, 255, 0.10);
+  --color-toggle-bg: rgba(255, 255, 255, 0.10);
+  --color-toggle-knob: #E8E6E3;
+  --color-checkbox-border: rgba(255, 255, 255, 0.2);
+  --color-chat-table-header-bg: rgba(255, 255, 255, 0.04);
+  --color-chat-code-bg: rgba(255, 255, 255, 0.06);
+  --color-destructive-hover-bg: rgba(239, 68, 68, 0.12);
+
+  /* Code Block (editor) */
+  --color-code-block-bg: #1e1e1e;
+  --color-code-block-header-bg: #2d2d2d;
+  --color-code-block-text: #d4d4d4;
+  --color-code-block-text-dim: #9ca3af;
+
+  /* Syntax Highlighting (editor code blocks) */
+  --color-syntax-keyword: #569cd6;
+  --color-syntax-string: #ce9178;
+  --color-syntax-number: #b5cea8;
+  --color-syntax-function: #dcdcaa;
+  --color-syntax-comment: #6a9955;
+  --color-syntax-type: #4ec9b0;
+  --color-syntax-variable: #9cdcfe;
+  --color-syntax-regexp: #d16969;
+
+  /* Semantic Aliases */
+  --color-background: var(--color-paper-white);
+  --color-background-soft: var(--color-fog-grey);
+  --color-background-mute: var(--color-warm-concrete);
+  --color-text: var(--color-neutral-ink);
+
+  /* Glass */
+  --glass-bg: rgba(30, 28, 26, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-blur: blur(32px) saturate(1.5);
+  --glass-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  --glass-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* Modal Glass */
+  --modal-bg: rgba(28, 27, 26, 0.85);
+  --modal-border: rgba(255, 255, 255, 0.10);
+  --modal-blur: blur(32px) saturate(1.5);
+  --modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  --shadow-floating: 0 4px 24px -4px rgba(0, 0, 0, 0.3);
+  --shadow-panel: 0 10px 36px -8px rgba(0, 0, 0, 0.4), 0 5px 18px -4px rgba(0, 0, 0, 0.2);
+  --shadow-glass-inner: inset 0 -1.5px 2px rgba(0, 0, 0, 0.15),
+                         inset -1.5px 0 2px rgba(0, 0, 0, 0.1);
+}
+
+/* ========== Base Resets ========== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  font-weight: normal;
+}
+
+ul {
+  list-style: none;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--color-text);
+  background: var(--color-background);
+  line-height: 1.6;
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ========== React Arborist / Tree Overrides ========== */
+/* Remove default focus outlines from tree items - use maek-red for feedback */
+[role="treeitem"] {
+  outline: none !important;
+  border: none !important;
+}
+
+[role="treeitem"]:focus,
+[role="treeitem"]:focus-visible,
+[role="treeitem"]:focus-within {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+[role="tree"] *:focus,
+[role="tree"] *:focus-visible {
+  outline: none !important;
+}
+
+/* Custom focus indicator for keyboard navigation (maek-red) */
+[role="treeitem"][data-focused="true"],
+[role="treeitem"].focused {
+  outline: 2px solid var(--color-maek-red) !important;
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+/* Ensure all borders use maek-red if needed */
+[data-drop-target="true"],
+[aria-selected="true"] {
+  outline-color: var(--color-maek-red) !important;
+  border-color: var(--color-maek-red) !important;
+}

@@ -9,11 +9,15 @@ export class ApiError extends Error {
 export async function request<T>(
   url: string,
   method = 'GET',
-  body?: unknown
+  body?: unknown,
+  workspaceId?: string
 ): Promise<T> {
   const response = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {})
+    },
     body: body === undefined ? undefined : JSON.stringify(body)
   })
   const data = await response.json()

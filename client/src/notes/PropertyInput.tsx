@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Input, Select } from '../design/Field'
 import type { Field, Note } from '@shared/notes'
 
 export function PropertyInput({
@@ -16,7 +17,7 @@ export function PropertyInput({
   useEffect(() => setDraft(String(value ?? '')), [value])
   if (field.type === 'checkbox')
     return (
-      <input
+      <Input
         aria-label={field.name}
         disabled={disabled}
         type="checkbox"
@@ -26,7 +27,7 @@ export function PropertyInput({
     )
   if (field.type === 'select')
     return (
-      <select
+      <Select
         aria-label={field.name}
         disabled={disabled}
         value={String(value ?? '')}
@@ -36,10 +37,10 @@ export function PropertyInput({
         {field.options.map((option) => (
           <option key={option}>{option}</option>
         ))}
-      </select>
+      </Select>
     )
   return (
-    <input
+    <Input
       aria-label={field.name}
       disabled={disabled}
       type={field.type === 'text' ? 'text' : field.type}

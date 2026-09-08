@@ -1,0 +1,191 @@
+/* maeknote-app typography + Tailwind spacing scale exposed to plain CSS. */
+:root {
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 2rem;
+  --weight-normal: 400;
+  --weight-medium: 450;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.6;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --color-on-accent: #ffffff;
+  --color-status-progress: var(--color-syntax-keyword);
+  --color-status-complete: var(--color-syntax-number);
+  --color-status-warning: var(--color-syntax-function);
+  --color-accent-soft: color-mix(
+    in srgb,
+    var(--color-maek-red) 10%,
+    transparent
+  );
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-background);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+.maek-button {
+  font-weight: var(--weight-medium);
+  border-radius: var(--radius-md);
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast);
+}
+.maek-button-default,
+.maek-button.primary {
+  background: var(--color-maek-red);
+  color: var(--color-on-accent);
+}
+.maek-button-default:hover:not(:disabled),
+.maek-button.primary:hover:not(:disabled) {
+  background: var(--color-maek-red-hover);
+}
+.maek-button-destructive {
+  background: var(--color-destructive);
+  color: var(--color-on-accent);
+}
+.maek-button-outline {
+  border: 1px solid var(--color-input-border);
+  background: var(--color-background);
+}
+.maek-button-secondary {
+  background: var(--color-background-mute);
+}
+.maek-button-link {
+  color: var(--color-maek-red);
+  text-underline-offset: var(--space-1);
+}
+.maek-button-link:hover {
+  text-decoration: underline;
+}
+.maek-button-default,
+.maek-button-outline,
+.maek-button-secondary {
+  min-height: var(--space-10);
+  padding: var(--space-2) var(--space-4);
+}
+.maek-button-sm {
+  min-height: 36px;
+  padding-inline: var(--space-3);
+}
+.maek-button-lg {
+  min-height: 44px;
+  padding-inline: var(--space-8);
+}
+.maek-button-icon {
+  width: var(--space-10);
+  height: var(--space-10);
+}
+.maek-button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--color-maek-red) !important;
+  outline-offset: 2px;
+}
+.maek-input:focus-visible {
+  border-color: var(--color-input-border-focus);
+}
+.markdown-editor:focus-visible {
+  outline: none !important;
+}
+.workspace-gate {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: var(--color-fog-grey);
+}
+.workspace-welcome {
+  width: min(100%, 480px);
+  padding: var(--space-8);
+}
+.workspace-welcome h1 {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+  margin: var(--space-4) 0;
+}
+.workspace-welcome p {
+  color: var(--color-muted-text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  margin-bottom: var(--space-4);
+}
+.workspace-logo {
+  color: var(--color-maek-red);
+  width: var(--space-8);
+  height: var(--space-8);
+}
+.workspace-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.workspace-picker form,
+.workspace-picker label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+.workspace-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+  color: var(--color-muted-text);
+}
+.folder-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  text-align: left;
+  font-size: var(--text-base);
+}
+.folder-selector > span:first-of-type {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-selector svg {
+  width: var(--space-4);
+  height: var(--space-4);
+  flex-shrink: 0;
+  color: var(--color-maek-red);
+}
+.workspace-picker [role='alert'] {
+  color: var(--color-destructive);
+}
+.maek-header {
+  height: var(--space-12);
+  padding-inline: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-structure-line);
+}
+.maek-input {
+  background: var(--color-input-bg);
+  border-color: var(--color-input-border);
+}
+.maek-input:focus {
+  border-color: var(--color-input-border-focus);
+}

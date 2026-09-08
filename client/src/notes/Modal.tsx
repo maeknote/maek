@@ -17,7 +17,7 @@ export function Modal({
     <Dialog.Root open onOpenChange={(open) => !open && close()}>
       <Dialog.Portal>
         <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal-content">
+        <Dialog.Content className="modal-content glass-modal">
           <div className="row spread">
             <Dialog.Title>{title}</Dialog.Title>
             <Dialog.Close aria-label="닫기" className="icon-button">

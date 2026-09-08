@@ -1,4 +1,18 @@
 import { test, expect, type Page } from '@playwright/test'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+
+test.beforeEach(async ({ page }) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'maek-e2e-workspace-'))
+  await page.goto('/')
+  await page.getByRole('button', { name: '경로 직접 입력' }).click()
+  await page.getByRole('textbox', { name: '워크스페이스 경로' }).fill(root)
+  await page.getByRole('button', { name: '폴더 열기', exact: true }).click()
+  await expect(
+    page.getByRole('button', { name: '노트 만들기', exact: true })
+  ).toBeVisible()
+})
 
 async function newNote(page: Page, title: string, body: string) {
   await page.getByRole('button', { name: '노트 만들기', exact: true }).click()
@@ -233,15 +247,13 @@ test('note links, backlinks, templates, Markdown import and native formatting', 
   await expect(page.getByRole('textbox', { name: '노트 제목' })).toHaveValue(
     '연결 대상 사본'
   )
-  await page
-    .locator('input[type=file]')
-    .setInputFiles({
-      name: '가져온 노트.md',
-      mimeType: 'text/markdown',
-      buffer: Buffer.from(
-        '---\ntitle: 파일에서 가져오기\ntags: [자료]\n---\n\n본문 보존 확인\n'
-      )
-    })
+  await page.locator('input[type=file]').setInputFiles({
+    name: '가져온 노트.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(
+      '---\ntitle: 파일에서 가져오기\ntags: [자료]\n---\n\n본문 보존 확인\n'
+    )
+  })
   await expect(page.getByRole('textbox', { name: '노트 제목' })).toHaveValue(
     '파일에서 가져오기'
   )
