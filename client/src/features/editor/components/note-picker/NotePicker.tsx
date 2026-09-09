@@ -26,7 +26,7 @@ import {
   useRecentFilesStore,
   type RankedResult,
 } from "../../../search";
-import type { FileNode } from "@shared/types";
+import type { FileNode } from "@shared/workspace";
 
 export function NotePicker(): React.ReactNode {
   const { isOpen, position, onSelect, close } = useNotePickerStore();

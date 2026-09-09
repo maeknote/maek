@@ -1,5 +1,5 @@
 import Fuse, { type FuseResultMatch, type IFuseOptions } from "fuse.js";
-import type { FileNode } from "@shared/types";
+import type { FileNode } from "@shared/workspace";
 
 export const SEARCH_TUNING = {
   threshold: 0.3,

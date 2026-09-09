@@ -32,7 +32,7 @@ import {
   getWorkspaceTargetIsDatabase,
   openWorkspaceTargetHref,
 } from "../../utils/openWorkspaceTarget";
-import type { FileNode } from "@shared/types";
+import type { FileNode } from "@shared/workspace";
 
 interface LinkHoverMenuProps {
   editor: Editor;

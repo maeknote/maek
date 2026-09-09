@@ -13,7 +13,7 @@ import {
   MenuItem,
   MenuSeparator,
 } from "@renderer/shared/components";
-import type { MaekWorkspace } from "@shared/types";
+import type { MaekWorkspace } from "@shared/workspace";
 
 interface FolderSelectorProps {
   /** Currently open folder name, or null if none */

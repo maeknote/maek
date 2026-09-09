@@ -3,7 +3,7 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { useNotePickerStore } from "../stores/notePickerStore";
 import { workspaceHref } from "@renderer/lib/pathUtils";
 import { getDisplayName } from "../utils/displayName";
-import type { FileNode } from "@shared/types";
+import type { FileNode } from "@shared/workspace";
 import type { EditorView } from "@tiptap/pm/view";
 
 const noteLinkTriggerKey = new PluginKey("noteLinkTrigger");

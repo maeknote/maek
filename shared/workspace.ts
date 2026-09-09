@@ -3,7 +3,14 @@ export interface FileNode {
   name: string;
   parent: string | null;
   isDir: boolean;
+  /** Reserved for the planned database view. Current workspace scans omit it. */
+  isDatabase?: boolean;
   children?: FileNode[];
+}
+export interface MaekWorkspace {
+  id: string;
+  name: string;
+  path: string;
 }
 export type PreviewKind =
   | "editor"

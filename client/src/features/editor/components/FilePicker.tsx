@@ -25,7 +25,7 @@ import {
   useRecentFilesStore,
   type RankedResult,
 } from "../../search";
-import type { FileNode } from "@shared/types";
+import type { FileNode } from "@shared/workspace";
 
 interface FilePickerProps {
   onClose: () => void;

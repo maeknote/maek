@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { FileNode } from "@shared/types";
+import type { FileNode } from "@shared/workspace";
 
 interface NotePickerState {
   isOpen: boolean;

@@ -1,22 +1,14 @@
 import { parseDocument } from "yaml";
+import {
+  composeMarkdownFile as composeSharedMarkdownFile,
+  splitFrontmatterFile,
+} from "@shared/frontmatter";
 import type {
   FrontmatterState,
   LineEnding,
   TabItem,
   TabOpenPayload,
 } from "../types";
-
-const FRONTMATTER_FENCE = "---";
-
-function detectLineEnding(raw: string): LineEnding {
-  return raw.includes("\r\n") ? "\r\n" : "\n";
-}
-
-function trimSingleLeadingBlankLine(raw: string): string {
-  if (raw.startsWith("\r\n")) return raw.slice(2);
-  if (raw.startsWith("\n")) return raw.slice(1);
-  return raw;
-}
 
 export function validateFrontmatterYaml(
   frontmatterRaw: string | null,
@@ -44,46 +36,26 @@ export function createEmptyFrontmatterState(
 }
 
 export function splitFrontmatter(rawFile: string): TabOpenPayload {
-  const lineEnding = detectLineEnding(rawFile);
-
-  if (
-    !rawFile.startsWith(`${FRONTMATTER_FENCE}\n`) &&
-    !rawFile.startsWith(`${FRONTMATTER_FENCE}\r\n`)
-  ) {
+  const split = splitFrontmatterFile(rawFile);
+  if (split.frontmatterRaw === null) {
     return {
       bodyContent: rawFile,
-      frontmatter: createEmptyFrontmatterState(lineEnding),
+      frontmatter: createEmptyFrontmatterState(split.lineEnding),
       viewKind: "editor",
       previewFormat: null,
       diskFileContent: rawFile,
     };
   }
-
-  const match = rawFile.match(
-    /^---(?:\r\n|\n)([\s\S]*?)(?:\r\n|\n)---(?:(?:\r\n|\n)([\s\S]*))?$/,
-  );
-  if (!match) {
-    return {
-      bodyContent: rawFile,
-      frontmatter: createEmptyFrontmatterState(lineEnding),
-      viewKind: "editor",
-      previewFormat: null,
-      diskFileContent: rawFile,
-    };
-  }
-
-  const frontmatterRaw = match[1] ?? "";
-  const bodyContent = trimSingleLeadingBlankLine(match[2] ?? "");
 
   return {
-    bodyContent,
+    bodyContent: split.body,
     frontmatter: {
       hasFrontmatter: true,
-      raw: frontmatterRaw,
-      savedRaw: frontmatterRaw,
+      raw: split.frontmatterRaw,
+      savedRaw: split.frontmatterRaw,
       expanded: false,
-      validationError: validateFrontmatterYaml(frontmatterRaw),
-      lineEnding,
+      validationError: validateFrontmatterYaml(split.frontmatterRaw),
+      lineEnding: split.lineEnding,
       viewMode: "properties",
     },
     viewKind: "editor",
@@ -97,14 +69,7 @@ export function composeMarkdownFile(
   body: string,
   lineEnding: LineEnding = "\n",
 ): string {
-  if (frontmatterRaw === null) return body;
-
-  const normalizedBody = body.replace(/^\r?\n+/, "");
-  const frontmatterBlock = `${FRONTMATTER_FENCE}${lineEnding}${frontmatterRaw}${lineEnding}${FRONTMATTER_FENCE}`;
-
-  if (!normalizedBody) return frontmatterBlock;
-
-  return `${frontmatterBlock}${lineEnding}${lineEnding}${normalizedBody}`;
+  return composeSharedMarkdownFile(frontmatterRaw, body, lineEnding);
 }
 
 export function createEmptyTabOpenPayload(): TabOpenPayload {
@@ -136,10 +101,12 @@ export function getTabSavePath(tab: TabItem): string {
 }
 
 export function getTabFileContent(tab: TabItem): string {
-  return composeMarkdownFile(
+  const disk = splitFrontmatterFile(tab.diskFileContent);
+  return composeSharedMarkdownFile(
     tab.frontmatter.raw,
     tab.bodyContent,
     tab.frontmatter.lineEnding,
+    disk.frontmatterRaw === null ? undefined : disk.bodySeparator,
   );
 }
 

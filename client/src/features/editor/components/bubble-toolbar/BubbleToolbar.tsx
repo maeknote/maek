@@ -13,7 +13,7 @@ import { LinkInput } from "./LinkInput";
 import { useNotePickerStore } from "../../stores/notePickerStore";
 import { getDisplayName } from "../../utils/displayName";
 import { workspaceHref } from "@renderer/lib/pathUtils";
-import type { FileNode } from "@shared/types";
+import type { FileNode } from "@shared/workspace";
 
 interface BubbleToolbarProps {
   editor: Editor;

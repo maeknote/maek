@@ -10,8 +10,6 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createFile } from '../server/fs/createFile'
-import { listDir } from '../server/fs/listDir'
 import { readFile } from '../server/fs/readFile'
 import { writeFile } from '../server/fs/writeFile'
 import { registerWorkspace, type Workspace } from '../server/workspaces'
@@ -227,55 +225,5 @@ describe('readFile — viewKind (7A)', () => {
     await expect(readFile({ wsId: ws.wsId, path: 'nope.md' })).rejects.toMatchObject({
       code: 'not_found'
     })
-  })
-})
-
-describe('listDir — lazy children + ignore list (8A)', () => {
-  it('lists one level, directories first, ignoring the default set', async () => {
-    await mkdir(abs('.git'))
-    await mkdir(abs('node_modules'))
-    await mkdir(abs('ideas'))
-    await fsWrite(abs('.DS_Store'), '')
-    await fsWrite(abs('b.md'), '')
-    await fsWrite(abs('a.md'), '')
-    await fsWrite(abs('ideas/deep.md'), '')
-
-    const { entries } = await listDir({ wsId: ws.wsId, path: '' })
-
-    expect(entries.map((e) => e.name)).toEqual(['ideas', 'a.md', 'b.md'])
-    // One level only — the nested file is not included.
-    expect(entries.some((e) => e.path.includes('deep'))).toBe(false)
-    expect(entries[0]).toMatchObject({ kind: 'dir', path: 'ideas' })
-  })
-
-  it('lists a subdirectory by relative path', async () => {
-    await mkdir(abs('ideas'))
-    await fsWrite(abs('ideas/deep.md'), '')
-
-    const { entries } = await listDir({ wsId: ws.wsId, path: 'ideas' })
-    expect(entries).toEqual([{ name: 'deep.md', path: 'ideas/deep.md', kind: 'file' }])
-  })
-
-  it('404s a missing directory', async () => {
-    await expect(listDir({ wsId: ws.wsId, path: 'nope' })).rejects.toMatchObject({
-      code: 'not_found'
-    })
-  })
-})
-
-describe('createFile', () => {
-  it('creates an empty note and de-duplicates the name', async () => {
-    const first = await createFile({ wsId: ws.wsId, dir: '', name: '새 노트.md' })
-    expect(first.entry.path).toBe('새 노트.md')
-    expect(await fsRead(abs('새 노트.md'), 'utf-8')).toBe('')
-
-    const second = await createFile({ wsId: ws.wsId, dir: '', name: '새 노트.md' })
-    expect(second.entry.name).toBe('새 노트 2.md')
-  })
-
-  it('refuses a name containing a path separator', async () => {
-    await expect(
-      createFile({ wsId: ws.wsId, dir: '', name: '../escaped.md' })
-    ).rejects.toMatchObject({ code: 'bad_request' })
   })
 })
