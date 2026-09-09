@@ -5,9 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   FileText,
   FolderOpen,
-  PanelLeftOpen,
   Plus,
-  Search,
   X,
   Moon,
   Sun,
@@ -29,7 +27,9 @@ import {
   Button,
   FloatingMenu,
   MenuItem,
+  PanelIcon,
 } from "./shared/components";
+import { useHoverMenu } from "./shared/hooks";
 import { cn } from "./lib/utils";
 import type { FileNode } from "@shared/workspace";
 
@@ -123,6 +123,8 @@ function AppContent() {
     y: number;
     id: string;
   } | null>(null);
+  const tabHoverMenu = useHoverMenu();
+  const tabPlusRef = useRef<HTMLButtonElement>(null);
   const started = useRef(false),
     dragged = useRef<string | null>(null);
   const tab = state.tabs.find((t) => t.id === state.activeTabId);
@@ -274,15 +276,15 @@ function AppContent() {
           )}
           <main className="flex-1 min-w-0 h-full flex flex-col bg-surface overflow-hidden">
             <div className="h-[38px] flex items-end border-b border-border-gray shrink-0 px-2 gap-0.5">
-              <button
-                aria-label={collapsed ? "Open sidebar" : "Search files"}
-                className="icon-button self-center"
-                onClick={() =>
-                  collapsed ? setCollapsed(false) : setSearch(true)
-                }
-              >
-                {collapsed ? <PanelLeftOpen size={16} /> : <Search size={16} />}
-              </button>
+              {collapsed && (
+                <button
+                  aria-label="Open sidebar"
+                  className="icon-button self-center"
+                  onClick={() => setCollapsed(false)}
+                >
+                  <PanelIcon side="left" isExpanded={false} size={16} />
+                </button>
+              )}
               <div
                 className="flex-1 min-w-0 flex overflow-x-auto items-end"
                 role="tablist"
@@ -323,7 +325,7 @@ function AppContent() {
                       setTabMenu({ x: e.clientX, y: e.clientY, id: t.id });
                     }}
                     className={cn(
-                      "group relative flex items-center gap-1.5 px-3 h-[34px] cursor-default select-none shrink-0 transition-colors duration-150",
+                      "group relative flex items-center gap-1.5 px-3 h-[34px] cursor-default select-none shrink-0 transition-colors duration-150 focus:outline-none",
                       t.id === tab?.id
                         ? "bg-surface rounded-t-md border-t border-x border-border-gray text-text-main z-10"
                         : "text-muted-text hover:text-text-main hover:bg-surface-overlay rounded-t-sm",
@@ -356,14 +358,25 @@ function AppContent() {
                     </button>
                   </div>
                 ))}
+                <button
+                  ref={tabPlusRef}
+                  aria-label="New note"
+                  className="icon-button self-center shrink-0 ml-0.5"
+                  onClick={() => {
+                    tabHoverMenu.close();
+                    void newNote();
+                  }}
+                  onMouseEnter={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    tabHoverMenu.open({ x: r.left, y: r.bottom });
+                  }}
+                  onMouseLeave={() => {
+                    tabHoverMenu.startCloseTimer();
+                  }}
+                >
+                  <Plus size={16} />
+                </button>
               </div>
-              <button
-                aria-label="New note"
-                className="icon-button self-center"
-                onClick={() => void newNote()}
-              >
-                <Plus size={16} />
-              </button>
             </div>
             {state.error && (
               <div role="alert" className="notice">
@@ -541,6 +554,35 @@ function AppContent() {
             onClick={() => {
               for (const t of state.tabs) void state.closeTab(t.id);
               setTabMenu(null);
+            }}
+          />
+        </FloatingMenu>
+      )}
+      {tabHoverMenu.isOpen && (
+        <FloatingMenu
+          isOpen
+          position={tabHoverMenu.position}
+          anchorRef={tabPlusRef}
+          onClose={() => tabHoverMenu.close()}
+          onMouseEnter={tabHoverMenu.cancelCloseTimer}
+          onMouseLeave={tabHoverMenu.startCloseTimer}
+        >
+          <MenuItem
+            icon={<FileText size={16} />}
+            label="New note"
+            shortcut="⌘N"
+            onClick={() => {
+              tabHoverMenu.close();
+              void newNote();
+            }}
+          />
+          <MenuItem
+            icon={<FolderOpen size={16} />}
+            label="Open existing note"
+            shortcut="⌘P"
+            onClick={() => {
+              tabHoverMenu.close();
+              setSearch(true);
             }}
           />
         </FloatingMenu>

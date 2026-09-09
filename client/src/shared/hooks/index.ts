@@ -6,3 +6,4 @@
  */
 
 export { useDismissible } from "./useDismissible";
+export { useHoverMenu, type UseHoverMenuOptions } from "./useHoverMenu";

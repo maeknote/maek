@@ -306,7 +306,7 @@ body {
 
 /* Ensure all borders use maek-red if needed */
 [data-drop-target="true"],
-[aria-selected="true"] {
+[role="treeitem"][aria-selected="true"] {
   outline-color: var(--color-maek-red) !important;
   border-color: var(--color-maek-red) !important;
 }

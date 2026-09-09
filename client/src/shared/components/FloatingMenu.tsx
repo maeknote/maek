@@ -52,6 +52,10 @@ export interface FloatingMenuProps {
   offset?: number;
   /** Preferred placement direction */
   placement?: "bottom-start" | "bottom-end" | "top-start" | "top-end";
+  /** Mouse enter callback (for hover menus) */
+  onMouseEnter?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  /** Mouse leave callback (for hover menus) */
+  onMouseLeave?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }
 
 /**
@@ -80,6 +84,8 @@ export function FloatingMenu({
   minWidth = 180,
   offset = 4,
   // placement is reserved for future enhancement
+  onMouseEnter,
+  onMouseLeave,
 }: FloatingMenuProps): ReactElement | null {
   const menuRef = useRef<HTMLDivElement>(null);
   const [adjustedPosition, setAdjustedPosition] =
@@ -175,6 +181,8 @@ export function FloatingMenu({
         visibility: isPositioned ? "visible" : "hidden",
       }}
       role="menu"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       {children}
     </div>

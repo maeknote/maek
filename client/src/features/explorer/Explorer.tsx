@@ -3,14 +3,21 @@ import { Tree, type TreeApi, type NodeRendererProps } from "react-arborist";
 import {
   ChevronRight,
   File,
+  FileText,
+  FolderPlus,
   Plus,
   RefreshCw,
   Search,
   Settings,
-  PanelLeftClose,
 } from "lucide-react";
 import { FolderSelector } from "./components/FolderSelector";
-import { FloatingMenu, MenuItem, MenuSeparator } from "../../shared/components";
+import {
+  FloatingMenu,
+  MenuItem,
+  MenuSeparator,
+  PanelIcon,
+} from "../../shared/components";
+import { useHoverMenu } from "../../shared/hooks";
 import { useStore, schedulePersistence } from "../../store";
 import { api, toBase64 } from "../../host";
 import type { FileNode } from "@shared/workspace";
@@ -32,6 +39,8 @@ export function Explorer({ onSearch, onSettings, onCollapse }: Props) {
     y: number;
     node: FileNode | null;
   } | null>(null);
+  const createHoverMenu = useHoverMenu();
+  const createButtonRef = useRef<HTMLButtonElement>(null);
   const [clipboard, setClipboard] = useState<string[]>([]);
   const [selection, setSelection] = useState<FileNode[]>([]);
   const [pendingEdit, setPendingEdit] = useState<string | null>(null);
@@ -227,7 +236,7 @@ export function Explorer({ onSearch, onSettings, onCollapse }: Props) {
           aria-label="Close sidebar"
           onClick={onCollapse}
         >
-          <PanelLeftClose size={16} />
+          <PanelIcon side="left" isExpanded={true} size={16} />
         </button>
       </div>
       <div className="px-3 py-2 shrink-0 flex items-center gap-1">
@@ -244,11 +253,19 @@ export function Explorer({ onSearch, onSettings, onCollapse }: Props) {
           />
         </div>
         <button
+          ref={createButtonRef}
           className="icon-button"
           aria-label="Create"
-          onClick={(e) => {
+          onClick={() => {
+            createHoverMenu.close();
+            void run(() => create("file"));
+          }}
+          onMouseEnter={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
-            setMenu({ x: r.left, y: r.bottom, node: null });
+            createHoverMenu.open({ x: r.left, y: r.bottom });
+          }}
+          onMouseLeave={() => {
+            createHoverMenu.startCloseTimer();
           }}
         >
           <Plus size={16} />
@@ -435,6 +452,33 @@ export function Explorer({ onSearch, onSettings, onCollapse }: Props) {
               />
             </>
           )}
+        </FloatingMenu>
+      )}
+      {createHoverMenu.isOpen && (
+        <FloatingMenu
+          isOpen
+          position={createHoverMenu.position}
+          anchorRef={createButtonRef}
+          onClose={() => createHoverMenu.close()}
+          onMouseEnter={createHoverMenu.cancelCloseTimer}
+          onMouseLeave={createHoverMenu.startCloseTimer}
+        >
+          <MenuItem
+            icon={<FileText size={16} />}
+            label="New note"
+            onClick={() => {
+              createHoverMenu.close();
+              void run(() => create("file"));
+            }}
+          />
+          <MenuItem
+            icon={<FolderPlus size={16} />}
+            label="New folder"
+            onClick={() => {
+              createHoverMenu.close();
+              void run(() => create("dir"));
+            }}
+          />
         </FloatingMenu>
       )}
     </div>

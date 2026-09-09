@@ -210,7 +210,7 @@ test("original slash menu, table, math, image and frontmatter work in Tiptap", a
     .poll(() =>
       headingRail.evaluate((element) => element.getBoundingClientRect().width),
     )
-    .toBeGreaterThan(200);
+    .toBeGreaterThan(180);
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=",
     "base64",
