@@ -1,14 +1,5 @@
 @import "katex/dist/katex.min.css";
 
-/* Tab bar scrollbar hide */
-.tab-scroll-hide {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
-}
-.tab-scroll-hide::-webkit-scrollbar {
-  display: none; /* Chrome/Safari/Webkit */
-}
-
 /* Editor base styles */
 .maek-editor-pane {
   position: relative;
@@ -1181,52 +1172,6 @@
   color: var(--color-syntax-regexp);
 }
 
-.text-preview-surface.preview-surface {
-  background: var(--color-code-block-bg);
-  border: 1px solid var(--color-code-block-header-bg);
-}
-
-.text-preview-surface.preview-surface::before {
-  display: none;
-}
-
-.text-preview-shell {
-  min-height: 100%;
-}
-
-.text-preview-pre {
-  margin: 0;
-  min-height: 100%;
-  padding: 28px 32px;
-  overflow: auto;
-}
-
-.text-preview-code {
-  display: block;
-  color: var(--color-code-block-text);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.65;
-  white-space: pre;
-  tab-size: 2;
-}
-
-.text-preview-shell.is-wrapped .text-preview-code {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.text-preview-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 240px;
-  padding: 24px;
-  color: var(--color-muted-text);
-  font-size: 13px;
-}
-
 /* ===========================================
    Link Styles
    =========================================== */
@@ -1577,12 +1522,6 @@
 .maek-bubble-btn.active {
   background: var(--color-overlay-bg-strong);
   color: var(--color-maek-red);
-}
-
-.maek-bubble-btn--wide {
-  width: auto;
-  padding: 0 8px;
-  gap: 2px;
 }
 
 .maek-bubble-divider {

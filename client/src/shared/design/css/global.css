@@ -1,7 +1,7 @@
 /**
  * Design System - Global Styles
  *
- * Application-wide styles for body, root, and Electron-specific elements.
+ * Application-wide styles for the browser UI.
  */
 
 /* ========== Body & Root ========== */
@@ -26,14 +26,4 @@ code {
   background-color: var(--color-background-mute);
   font-family: var(--font-mono);
   font-size: 85%;
-}
-
-/* ========== Electron Window Controls ========== */
-/* Window drag regions for custom title bar */
-.titlebar-drag-region {
-  -webkit-app-region: drag;
-}
-
-.no-drag {
-  -webkit-app-region: no-drag;
 }

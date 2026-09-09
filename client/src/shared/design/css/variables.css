@@ -54,8 +54,6 @@
   --color-toggle-bg: rgba(0, 0, 0, 0.1);
   --color-toggle-knob: white;
   --color-checkbox-border: rgba(0, 0, 0, 0.2);
-  --color-chat-table-header-bg: rgba(0, 0, 0, 0.03);
-  --color-chat-code-bg: rgba(0, 0, 0, 0.06);
   --color-destructive-hover-bg: rgba(220, 38, 38, 0.08);
 
   /* Code Block (editor) */
@@ -129,25 +127,6 @@
   --transition-normal: 150ms ease;
   --transition-slow: 300ms ease;
 
-  /* ========== Legacy Variables (Backward Compatibility) ========== */
-  --ev-c-white: #ffffff;
-  --ev-c-white-soft: #f8f8f8;
-  --ev-c-white-mute: #f2f2f2;
-  --ev-c-black: #1b1b1f;
-  --ev-c-black-soft: #222222;
-  --ev-c-black-mute: #282828;
-  --ev-c-gray-1: #515c67;
-  --ev-c-gray-2: #414853;
-  --ev-c-gray-3: #32363f;
-  --ev-c-text-1: var(--color-neutral-ink);
-  --ev-c-text-2: var(--color-muted-text);
-  --ev-c-text-3: #2c2c2c;
-  --ev-button-alt-border: transparent;
-  --ev-button-alt-text: var(--ev-c-text-1);
-  --ev-button-alt-bg: var(--ev-c-gray-3);
-  --ev-button-alt-hover-border: transparent;
-  --ev-button-alt-hover-text: var(--ev-c-text-1);
-  --ev-button-alt-hover-bg: var(--ev-c-gray-2);
 }
 
 /* ========== Dark Theme ========== */
@@ -202,8 +181,6 @@
   --color-toggle-bg: rgba(255, 255, 255, 0.1);
   --color-toggle-knob: #e8e6e3;
   --color-checkbox-border: rgba(255, 255, 255, 0.2);
-  --color-chat-table-header-bg: rgba(255, 255, 255, 0.04);
-  --color-chat-code-bg: rgba(255, 255, 255, 0.06);
   --color-destructive-hover-bg: rgba(239, 68, 68, 0.12);
 
   /* Code Block (editor) */
