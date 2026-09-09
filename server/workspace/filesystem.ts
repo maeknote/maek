@@ -43,6 +43,12 @@ export const isIgnored = (relativePath: string) =>
     .split(/[\\/]/)
     .some((segment) => ignoredNames.has(segment) || segment.endsWith(".tmp"));
 
+/** Files that can safely participate in the workspace tree and live watcher. */
+export const isWorkspaceEntry = (entry: {
+  isDirectory(): boolean;
+  isFile(): boolean;
+}) => entry.isDirectory() || entry.isFile();
+
 export const nodeFor = (
   relativePath: string,
   isDir: boolean,
@@ -89,7 +95,7 @@ export async function scanWorkspace(workspace: Workspace) {
       const relativePath = path.posix.join(directory, entry.name);
       if (
         isIgnored(relativePath) ||
-        (!entry.isDirectory() && !entry.isFile())
+        !isWorkspaceEntry(entry)
       ) {
         continue;
       }

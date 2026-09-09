@@ -2,7 +2,7 @@ import path from "node:path";
 import { watch, type FSWatcher } from "chokidar";
 import type { Change, WorkspaceEvent } from "../../shared/workspace";
 import type { Workspace } from "../workspaces";
-import { nodeFor } from "./filesystem";
+import { isWorkspaceEntry, nodeFor } from "./filesystem";
 
 type Subscriber = (event: WorkspaceEvent) => void;
 
@@ -81,8 +81,9 @@ export class WorkspaceWatchHub {
       ignoreInitial: false,
       alwaysStat: true,
       followSymlinks: false,
-      ignored: (absolutePath) =>
-        this.ignored(path.relative(this.workspace.root, absolutePath)),
+      ignored: (absolutePath, stats) =>
+        this.ignored(path.relative(this.workspace.root, absolutePath)) ||
+        (stats !== undefined && !isWorkspaceEntry(stats)),
     });
     this.watcher = watcher;
     watcher.on("ready", () => {

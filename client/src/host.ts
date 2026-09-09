@@ -21,9 +21,11 @@ export async function api<T>(
   method = "GET",
   body?: unknown,
   ws = workspace,
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(url, {
     method,
+    signal,
     headers: {
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(ws ? { "X-Workspace-Id": ws.wsId } : {}),

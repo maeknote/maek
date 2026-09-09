@@ -28,6 +28,8 @@ interface State {
   connectionError: string;
   ready: boolean;
   restoring: boolean;
+  openingPhase: "idle" | "selecting" | "opening" | "indexing" | "restoring-tabs";
+  openingWorkspace: WorkspaceRef | null;
   connectionStatus: "closed" | "opening" | "ready" | "reconnecting" | "failed";
   scrollPositions: Record<string, number>;
   expanded: string[];
@@ -35,6 +37,7 @@ interface State {
   sidebarWidth: number;
   recentFiles: { path: string; lastOpened: number }[];
   openWorkspace: (path?: string) => Promise<void>;
+  cancelWorkspaceOpen: () => void;
   reconnectWorkspace: () => Promise<void>;
   refresh: () => Promise<void>;
   openFile: (id: string) => Promise<void>;
@@ -60,6 +63,8 @@ let events: EventSource | null = null;
 let sessionEpoch = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let reconnectAttempt = 0;
+let workspaceOpenEpoch = 0;
+let workspaceOpenController: AbortController | undefined;
 function later() {
   clearTimeout(persistenceTimer);
   persistenceTimer = setTimeout(() => void useStore.getState().persist(), 300);
@@ -152,19 +157,28 @@ function makeTab(id: string, file: FileContent): Tab {
     generation: 0,
   };
 }
-const treeQuery = (workspace: WorkspaceRef) =>
+const treeQuery = (workspace: WorkspaceRef, signal?: AbortSignal) =>
   queryClient.fetchQuery({
     queryKey: ["workspace-tree", workspace.wsId],
     queryFn: () =>
-      api<{ nodes: FileNode[]; warnings: string[] }>("/api/tree", "GET"),
+      api<{ nodes: FileNode[]; warnings: string[] }>(
+        "/api/tree",
+        "GET",
+        undefined,
+        workspace,
+        signal,
+      ),
   });
-const fileQuery = (workspace: WorkspaceRef, id: string) =>
+const fileQuery = (workspace: WorkspaceRef, id: string, signal?: AbortSignal) =>
   queryClient.fetchQuery({
     queryKey: ["workspace-file", workspace.wsId, id],
     queryFn: () =>
       api<FileContent>(
         "/api/files/content?path=" + encodeURIComponent(id),
         "GET",
+        undefined,
+        workspace,
+        signal,
       ),
   });
 export const useStore = create<State>((set, get) => ({
@@ -177,6 +191,8 @@ export const useStore = create<State>((set, get) => ({
   connectionError: "",
   ready: false,
   restoring: false,
+  openingPhase: "idle",
+  openingWorkspace: null,
   connectionStatus: "closed",
   scrollPositions: {},
   expanded: [],
@@ -184,23 +200,54 @@ export const useStore = create<State>((set, get) => ({
   sidebarWidth: 260,
   recentFiles: [],
   setError: (message) => set({ error: message }),
+  cancelWorkspaceOpen() {
+    workspaceOpenEpoch++;
+    workspaceOpenController?.abort();
+    workspaceOpenController = undefined;
+    const current = get();
+    set({
+      restoring: false,
+      openingPhase: "idle",
+      openingWorkspace: null,
+      connectionStatus: current.workspace && current.ready ? "ready" : "closed",
+    });
+  },
   async openWorkspace(path) {
-    if (get().restoring) return;
+    const operation = ++workspaceOpenEpoch;
+    workspaceOpenController?.abort();
+    const controller = new AbortController();
+    workspaceOpenController = controller;
+    const isCurrent = () => operation === workspaceOpenEpoch;
     set({
       restoring: true,
+      openingPhase: path ? "opening" : "selecting",
+      openingWorkspace: null,
       connectionStatus: "opening",
       connectionError: "",
       error: "",
     });
     try {
       if (!(await get().saveAll())) return;
+      if (!isCurrent()) return;
       const ws = path
-        ? await api<WorkspaceRef>("/api/workspaces/open", "POST", { path })
+        ? await api<WorkspaceRef>(
+            "/api/workspaces/open",
+            "POST",
+            { path },
+            null,
+            controller.signal,
+          )
         : await api<{
             status: string;
             workspace?: WorkspaceRef;
             reason?: string;
-          }>("/api/workspaces/pick", "POST").then((r) => {
+          }>(
+            "/api/workspaces/pick",
+            "POST",
+            undefined,
+            null,
+            controller.signal,
+          ).then((r) => {
             if (r.status === "canceled") return null;
             if (!r.workspace)
               throw new Error(
@@ -209,40 +256,54 @@ export const useStore = create<State>((set, get) => ({
               );
             return r.workspace;
           });
-      if (!ws) return;
+      if (!isCurrent()) return;
+      if (!ws) {
+        const current = get();
+        set({
+          connectionStatus:
+            current.workspace && current.ready ? "ready" : "closed",
+        });
+        return;
+      }
+      set({ openingWorkspace: ws, openingPhase: "indexing" });
       await get().persist();
+      if (!isCurrent()) return;
+      const [tree, session, recents] = await Promise.all([
+        treeQuery(ws, controller.signal),
+        api<Session>(
+          "/api/workspace/tabs",
+          "GET",
+          undefined,
+          ws,
+          controller.signal,
+        ),
+        api<{ path: string; lastOpened: number }[]>(
+          "/api/workspace/recent-files",
+          "GET",
+          undefined,
+          ws,
+          controller.signal,
+        ),
+      ]);
+      if (!isCurrent()) return;
+      set({ openingPhase: "restoring-tabs" });
+      const tabs: Tab[] = [];
+      for (const id of session.tabs) {
+        try {
+          const file = await fileQuery(ws, id, controller.signal);
+          if (!isCurrent()) return;
+          tabs.push(makeTab(id, file));
+        } catch {
+          if (!isCurrent() || controller.signal.aborted) return;
+          /* Missing files do not resurrect. */
+        }
+      }
+      if (!isCurrent()) return;
       events?.close();
       sessionEpoch++;
       setHostWorkspace(ws);
       set({
         workspace: ws,
-        tabs: [],
-        nodes: [],
-        activeTabId: null,
-        ready: false,
-        connectionStatus: "opening",
-      });
-      const [tree, session, recents] = await Promise.all([
-        treeQuery(ws),
-        api<Session>("/api/workspace/tabs"),
-        api<{ path: string; lastOpened: number }[]>(
-          "/api/workspace/recent-files",
-        ),
-      ]);
-      const tabs: Tab[] = [];
-      for (const id of session.tabs) {
-        try {
-          tabs.push(
-            makeTab(
-              id,
-              await fileQuery(ws, id),
-            ),
-          );
-        } catch {
-          /* Missing files do not resurrect. */
-        }
-      }
-      set({
         nodes: tree.nodes,
         workspaces: [
           ...new Map(
@@ -262,6 +323,7 @@ export const useStore = create<State>((set, get) => ({
         sidebarWidth: session.sidebarWidth,
         recentFiles: recents,
         ready: true,
+        openingWorkspace: null,
         error: tree.warnings.length
           ? `Cannot read: ${tree.warnings.join(", ")}`
           : "",
@@ -275,9 +337,17 @@ export const useStore = create<State>((set, get) => ({
       document.documentElement.dataset.theme = session.theme;
       connectEvents(ws, set, get);
     } catch (e) {
+      if (!isCurrent() || controller.signal.aborted) return;
       set({ connectionStatus: "failed", error: String(e) });
     } finally {
-      set({ restoring: false });
+      if (isCurrent()) {
+        workspaceOpenController = undefined;
+        set({
+          restoring: false,
+          openingPhase: "idle",
+          openingWorkspace: null,
+        });
+      }
     }
   },
   async reconnectWorkspace() {

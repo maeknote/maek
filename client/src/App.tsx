@@ -205,6 +205,13 @@ function AppContent() {
       state.setError(String(e));
     }
   }
+  const openingMessage = {
+    idle: "Choose a folder to open your Markdown notes.",
+    selecting: "Waiting for folder selection…",
+    opening: "Opening workspace…",
+    indexing: `Reading ${state.openingWorkspace?.name ?? "workspace"}…`,
+    "restoring-tabs": "Restoring previous tabs…",
+  }[state.openingPhase];
   return (
     <>
       {!state.workspace || !state.ready ? (
@@ -213,13 +220,13 @@ function AppContent() {
             <FolderOpen className="w-9 h-9 text-maek-red mb-5" />
             <h1 className="text-2xl font-semibold mb-2">Open your workspace</h1>
             <p className="text-sm text-muted-text mb-6">
-              Choose a folder to open your Markdown notes.
+              {openingMessage}
             </p>
             <Button
               disabled={state.restoring}
               onClick={() => void state.openWorkspace()}
             >
-              {state.restoring ? "Opening…" : "Open Folder"}
+              {state.openingPhase === "selecting" ? "Selecting…" : "Open Folder"}
             </Button>
             <details className="mt-5 text-sm text-muted-text">
               <summary className="cursor-pointer">Enter folder path</summary>
@@ -242,6 +249,16 @@ function AppContent() {
                 </Button>
               </form>
             </details>
+            {state.restoring && (
+              <Button
+                className="mt-3"
+                variant="ghost"
+                size="sm"
+                onClick={state.cancelWorkspaceOpen}
+              >
+                Cancel
+              </Button>
+            )}
             {(state.connectionError || state.error) && (
               <p role="alert" className="mt-4 text-sm text-maek-red">
                 {state.connectionError || state.error}
