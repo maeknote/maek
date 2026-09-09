@@ -330,7 +330,7 @@ function AppContent() {
             </>
           )}
           <main className="flex-1 min-w-0 h-full flex flex-col bg-surface overflow-hidden">
-            <div className="h-[38px] flex items-end border-b border-border-gray shrink-0 px-2 gap-0.5">
+            <div className="workspace-tab-bar h-[38px] flex items-end shrink-0 px-2">
               {collapsed && (
                 <button
                   aria-label="Open sidebar"
@@ -341,7 +341,7 @@ function AppContent() {
                 </button>
               )}
               <div
-                className="flex-1 min-w-0 flex overflow-x-auto items-end"
+                className="workspace-tab-strip flex-1 min-w-0 flex overflow-x-auto items-end"
                 role="tablist"
               >
                 {state.tabs.map((t) => (
@@ -380,10 +380,10 @@ function AppContent() {
                       setTabMenu({ x: e.clientX, y: e.clientY, id: t.id });
                     }}
                     className={cn(
-                      "group relative flex items-center gap-1.5 px-3 h-[34px] cursor-default select-none shrink-0 transition-colors duration-150 focus:outline-none",
+                      "workspace-tab group relative flex items-center gap-1.5 px-3 h-[34px] cursor-default select-none shrink-0 transition-colors duration-150 focus:outline-none",
                       t.id === tab?.id
-                        ? "bg-surface rounded-t-md border-t border-x border-border-gray text-text-main z-10"
-                        : "text-muted-text hover:text-text-main hover:bg-surface-overlay rounded-t-sm",
+                        ? "is-active bg-surface rounded-t-md border-t border-x border-border-gray text-text-main z-10"
+                        : "is-inactive text-muted-text hover:text-text-main hover:bg-surface-overlay rounded-t-sm",
                     )}
                   >
                     <span className="text-xs font-medium whitespace-nowrap">
