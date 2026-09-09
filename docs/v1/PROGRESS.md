@@ -11,14 +11,16 @@ Tiptap extensions/NodeViews, heading/table utilities, fuzzy search and arborist 
 - C6: external changes/conflicts and inode-based rename tracking pass browser tests.
 - C7: text/unsupported/browser image/PDF paths implemented; automated native-boundary tests pass.
 - C8: legacy UI/store/routes/sample data removed. Automated integration checks pass.
+- C9: Vite/Core development lifecycles split; production Local Core static serving,
+  root-scoped WatchHub/FileIndex, event revisions, reconnect state, TanStack Query
+  disk snapshots and browser-session metadata isolation implemented.
 
 ## Final automated run — 2026-09-09
 
 - `npm run typecheck`: passed.
-- `npm test`: 65 tests passed across 4 files.
+- `npm test`: 67 tests passed across 5 files.
 - `npm run build`: passed; the editor bundle still produces the >500 kB chunk warning.
-- `npm run test:e2e`: the original 8-test suite passed; the added `.maek`
-  restored-tab/tree-open regression also passes in isolation (9 covered scenarios).
+- `npm run test:e2e`: 9 browser scenarios passed.
 - `git diff --check`: passed.
 
 Browser coverage: existing nested notes and Korean editing; session/theme restore;
@@ -27,7 +29,8 @@ original file search; text/unsupported previews; tree rename/duplicate/move/Tras
 transport; table/math/task/code/image/frontmatter; delayed-save tab navigation;
 unchanged Markdown bytes/mtime after opening; original `[[` picker and encoded links.
 The tree suite also verifies that selecting a previously unopened note creates and
-activates a second tab after the first tab was restored from `.maek/tabs.json`.
+activates a second tab after the first tab was restored from legacy
+`.maek/tabs.json`. New web state is persisted under `.maek/sessions/web`.
 Screenshots: `test-results/v1-editor-light.png`, `test-results/v1-editor-dark.png`.
 
 Final regressions fixed: readiness changes no longer emit Tiptap document updates

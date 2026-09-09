@@ -9,6 +9,7 @@ import {
   validateFrontmatterYaml,
 } from "./features/editor/utils/frontmatter";
 import { api, ApiError, setHostWorkspace } from "./host";
+import { queryClient } from "./app/query-client";
 
 export interface Tab extends TabItem {
   file: FileContent;
@@ -24,14 +25,17 @@ interface State {
   tabs: Tab[];
   activeTabId: string | null;
   error: string;
+  connectionError: string;
   ready: boolean;
   restoring: boolean;
+  connectionStatus: "closed" | "opening" | "ready" | "reconnecting" | "failed";
   scrollPositions: Record<string, number>;
   expanded: string[];
   theme: "light" | "dark";
   sidebarWidth: number;
   recentFiles: { path: string; lastOpened: number }[];
   openWorkspace: (path?: string) => Promise<void>;
+  reconnectWorkspace: () => Promise<void>;
   refresh: () => Promise<void>;
   openFile: (id: string) => Promise<void>;
   save: (id: string) => Promise<boolean>;
@@ -54,14 +58,74 @@ const saves = new Map<string, Promise<boolean>>();
 let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
 let events: EventSource | null = null;
 let sessionEpoch = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let reconnectAttempt = 0;
 function later() {
   clearTimeout(persistenceTimer);
   persistenceTimer = setTimeout(() => void useStore.getState().persist(), 300);
+}
+function storedWorkspaces(): State["workspaces"] {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem("oh-my-maek:workspaces") ?? "[]",
+    );
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter(
+        (item): item is State["workspaces"][number] =>
+          item &&
+          typeof item.id === "string" &&
+          typeof item.name === "string" &&
+          typeof item.path === "string",
+      )
+      .slice(0, 30);
+  } catch {
+    return [];
+  }
 }
 const patchTab = (id: string, fn: (t: Tab) => Tab) =>
   useStore.setState((s) => ({
     tabs: s.tabs.map((t) => (t.id === id ? fn(t) : t)),
   }));
+function connectEvents(
+  ws: WorkspaceRef,
+  set: (partial: Partial<State>) => void,
+  get: () => State,
+) {
+  events?.close();
+  clearTimeout(reconnectTimer);
+  events = new EventSource(
+    "/api/workspaces/events?workspace=" + encodeURIComponent(ws.wsId),
+  );
+  events.addEventListener(
+    "change",
+    (event) =>
+      void get().change(JSON.parse((event as MessageEvent).data) as Change),
+  );
+  events.addEventListener("rescan", () => void get().refresh());
+  events.addEventListener("watch-error", () => {
+    set({
+      connectionStatus: "failed",
+      connectionError: "File watching stopped. Reconnecting…",
+    });
+    events?.close();
+    reconnectTimer = setTimeout(() => void get().reconnectWorkspace(), 500);
+  });
+  events.onerror = () => {
+    events?.close();
+    set({
+      connectionStatus: "reconnecting",
+      connectionError: "Connection interrupted. Reconnecting…",
+    });
+    const delay = Math.min(500 * 2 ** reconnectAttempt++, 5000);
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => void get().reconnectWorkspace(), delay);
+  };
+  events.onopen = () => {
+    reconnectAttempt = 0;
+    set({ connectionStatus: "ready", connectionError: "" });
+  };
+}
 function makeTab(id: string, file: FileContent): Tab {
   const payload = splitFrontmatter(file.content ?? "");
   return {
@@ -88,15 +152,32 @@ function makeTab(id: string, file: FileContent): Tab {
     generation: 0,
   };
 }
+const treeQuery = (workspace: WorkspaceRef) =>
+  queryClient.fetchQuery({
+    queryKey: ["workspace-tree", workspace.wsId],
+    queryFn: () =>
+      api<{ nodes: FileNode[]; warnings: string[] }>("/api/tree", "GET"),
+  });
+const fileQuery = (workspace: WorkspaceRef, id: string) =>
+  queryClient.fetchQuery({
+    queryKey: ["workspace-file", workspace.wsId, id],
+    queryFn: () =>
+      api<FileContent>(
+        "/api/files/content?path=" + encodeURIComponent(id),
+        "GET",
+      ),
+  });
 export const useStore = create<State>((set, get) => ({
-  workspaces: [],
+  workspaces: storedWorkspaces(),
   workspace: null,
   nodes: [],
   tabs: [],
   activeTabId: null,
   error: "",
+  connectionError: "",
   ready: false,
   restoring: false,
+  connectionStatus: "closed",
   scrollPositions: {},
   expanded: [],
   theme: "light",
@@ -105,7 +186,12 @@ export const useStore = create<State>((set, get) => ({
   setError: (message) => set({ error: message }),
   async openWorkspace(path) {
     if (get().restoring) return;
-    set({ restoring: true, error: "" });
+    set({
+      restoring: true,
+      connectionStatus: "opening",
+      connectionError: "",
+      error: "",
+    });
     try {
       if (!(await get().saveAll())) return;
       const ws = path
@@ -134,15 +220,13 @@ export const useStore = create<State>((set, get) => ({
         nodes: [],
         activeTabId: null,
         ready: false,
+        connectionStatus: "opening",
       });
-      const [tree, session, recents, storedWorkspaces] = await Promise.all([
-        api<{ nodes: FileNode[]; warnings: string[] }>("/api/tree"),
+      const [tree, session, recents] = await Promise.all([
+        treeQuery(ws),
         api<Session>("/api/workspace/tabs"),
         api<{ path: string; lastOpened: number }[]>(
           "/api/workspace/recent-files",
-        ),
-        api<{ id: string; name: string; path: string }[]>(
-          "/api/workspace/workspaces",
         ),
       ]);
       const tabs: Tab[] = [];
@@ -151,9 +235,7 @@ export const useStore = create<State>((set, get) => ({
           tabs.push(
             makeTab(
               id,
-              await api<FileContent>(
-                "/api/files/content?path=" + encodeURIComponent(id),
-              ),
+              await fileQuery(ws, id),
             ),
           );
         } catch {
@@ -167,7 +249,6 @@ export const useStore = create<State>((set, get) => ({
             [
               { id: ws.wsId, name: ws.name, path: ws.root },
               ...get().workspaces,
-              ...storedWorkspaces,
             ].map((w) => [w.path, w]),
           ).values(),
         ].slice(0, 30),
@@ -186,25 +267,47 @@ export const useStore = create<State>((set, get) => ({
           : "",
       });
       localStorage.setItem("oh-my-maek:workspace", ws.root);
+      localStorage.setItem(
+        "oh-my-maek:workspaces",
+        JSON.stringify(get().workspaces),
+      );
       later();
       document.documentElement.dataset.theme = session.theme;
-      events = new EventSource(
-        "/api/workspaces/events?workspace=" + encodeURIComponent(ws.wsId),
-      );
-      events.addEventListener(
-        "change",
-        (e) =>
-          void get().change(JSON.parse((e as MessageEvent).data) as Change),
-      );
-      events.addEventListener("rescan", () => void get().refresh());
-      events.addEventListener("watch-error", () =>
-        set({ error: "File watching stopped. Reconnecting…" }),
-      );
-      events.onerror = () =>
-        set({ error: "Connection interrupted. Reconnecting…" });
-      events.onopen = () => set({ error: "" });
+      connectEvents(ws, set, get);
     } catch (e) {
-      set({ error: String(e) });
+      set({ connectionStatus: "failed", error: String(e) });
+    } finally {
+      set({ restoring: false });
+    }
+  },
+  async reconnectWorkspace() {
+    const current = get().workspace;
+    if (!current || get().restoring) return;
+    set({ restoring: true, connectionStatus: "reconnecting" });
+    try {
+      const ws = await api<WorkspaceRef>(
+        "/api/workspaces/open",
+        "POST",
+        { path: current.root },
+        null,
+      );
+      if (get().workspace?.root !== current.root) return;
+      sessionEpoch++;
+      setHostWorkspace(ws);
+      set({ workspace: ws });
+      connectEvents(ws, set, get);
+      await get().refresh();
+    } catch (error) {
+      set({
+        connectionStatus: "failed",
+        connectionError: "Connection interrupted. Reconnecting…",
+      });
+      const delay = Math.min(500 * 2 ** reconnectAttempt++, 5000);
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(
+        () => void get().reconnectWorkspace(),
+        delay,
+      );
     } finally {
       set({ restoring: false });
     }
@@ -212,9 +315,12 @@ export const useStore = create<State>((set, get) => ({
   async refresh() {
     try {
       const epoch = sessionEpoch;
-      const tree = await api<{ nodes: FileNode[]; warnings: string[] }>(
-        "/api/tree",
-      );
+      const workspace = get().workspace;
+      if (!workspace) return;
+      await queryClient.invalidateQueries({
+        queryKey: ["workspace-tree", workspace.wsId],
+      });
+      const tree = await treeQuery(workspace);
       if (epoch !== sessionEpoch) return;
       set({
         nodes: tree.nodes,
@@ -238,9 +344,9 @@ export const useStore = create<State>((set, get) => ({
     }
     try {
       const epoch = sessionEpoch;
-      const file = await api<FileContent>(
-        "/api/files/content?path=" + encodeURIComponent(id),
-      );
+      const workspace = get().workspace;
+      if (!workspace) return;
+      const file = await fileQuery(workspace, id);
       if (epoch !== sessionEpoch) return;
       set((s) => ({
         tabs: s.tabs.some((t) => t.id === id)
@@ -327,6 +433,12 @@ export const useStore = create<State>((set, get) => ({
           file: { ...t.file, ...result, content },
           status: "saved",
         }));
+        if (get().workspace) {
+          queryClient.setQueryData(
+            ["workspace-file", get().workspace!.wsId, id],
+            { ...tab.file, ...result, content },
+          );
+        }
         return true;
       } catch (e) {
         if (epoch === sessionEpoch)
@@ -368,9 +480,12 @@ export const useStore = create<State>((set, get) => ({
   },
   async reload(id) {
     try {
-      const file = await api<FileContent>(
-        "/api/files/content?path=" + encodeURIComponent(id),
-      );
+      const workspace = get().workspace;
+      if (!workspace) return;
+      await queryClient.invalidateQueries({
+        queryKey: ["workspace-file", workspace.wsId, id],
+      });
+      const file = await fileQuery(workspace, id);
       patchTab(id, (t) => ({
         ...makeTab(id, file),
         generation: t.generation + 1,
@@ -469,9 +584,12 @@ export const useStore = create<State>((set, get) => ({
         continue;
       }
       try {
-        const file = await api<FileContent>(
-          "/api/files/content?path=" + encodeURIComponent(tab.id),
-        );
+        const workspace = get().workspace;
+        if (!workspace) return;
+        await queryClient.invalidateQueries({
+          queryKey: ["workspace-file", workspace.wsId, tab.id],
+        });
+        const file = await fileQuery(workspace, tab.id);
         if (epoch !== sessionEpoch) return;
         const latest = get().tabs.find((t) => t.id === tab.id);
         if (!latest || (file.hash && file.hash === latest.file.hash)) continue;
@@ -560,7 +678,6 @@ export const useStore = create<State>((set, get) => ({
       await Promise.all([
         api("/api/workspace/tabs", "PUT", session, s.workspace),
         api("/api/workspace/recent-files", "PUT", s.recentFiles, s.workspace),
-        api("/api/workspace/workspaces", "PUT", s.workspaces, s.workspace),
       ]);
     } catch (e) {
       set({ error: "Session could not be saved: " + String(e) });

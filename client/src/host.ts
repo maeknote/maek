@@ -1,5 +1,9 @@
 import type { WorkspaceRef } from "@shared/contract";
 let workspace: WorkspaceRef | null = null;
+const sessionKey = "oh-my-maek:browser-session";
+export const browserSessionId =
+  sessionStorage.getItem(sessionKey) ?? crypto.randomUUID();
+sessionStorage.setItem(sessionKey, browserSessionId);
 export function setHostWorkspace(ws: WorkspaceRef) {
   workspace = ws;
 }
@@ -23,6 +27,7 @@ export async function api<T>(
     headers: {
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(ws ? { "X-Workspace-Id": ws.wsId } : {}),
+      "X-Client-Session-Id": browserSessionId,
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });

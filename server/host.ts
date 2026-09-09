@@ -1,7 +1,6 @@
 import Fastify from "fastify";
 import { z } from "zod";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import {
   readdir,
   readFile,
@@ -11,12 +10,10 @@ import {
   lstat,
   rename,
   copyFile,
-  unlink,
 } from "node:fs/promises";
 import { createReadStream, constants } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { watch } from "chokidar";
 import {
   registerWorkspace,
   getWorkspace,
@@ -32,45 +29,18 @@ import { RelPath, WriteFileRequest } from "../shared/contract";
 import type {
   FileNode,
   FileContent,
-  PreviewKind,
-  Change,
+  WorkspaceEvent,
 } from "../shared/workspace";
+import { WorkspaceRuntimeManager } from "./workspace/runtime-manager";
+import { WorkspaceMetadataRepository } from "./metadata/repository";
+import {
+  isIgnored,
+  nodeFor,
+  workspaceTarget as target,
+} from "./workspace/filesystem";
+import { kindFor, previewMime as mime } from "./workspace/file-kind";
 
 const run = promisify(execFile);
-const ignored = new Set([
-  ".maek",
-  ".maek-data",
-  ".git",
-  ".svn",
-  ".hg",
-  ".DS_Store",
-  "node_modules",
-  "dist",
-  "build",
-  ".next",
-  ".nuxt",
-  ".turbo",
-  "coverage",
-  ".venv",
-  "venv",
-  ".virtualenv",
-  "virtualenv",
-  "site-packages",
-  "__pycache__",
-  ".pytest_cache",
-  ".mypy_cache",
-  ".ruff_cache",
-  ".tox",
-  ".ipynb_checkpoints",
-  ".gradle",
-  "Pods",
-  ".terraform",
-  ".cache",
-  ".vscode",
-  ".idea",
-]);
-const isIgnored = (p: string) =>
-  p.split(path.sep).some((s) => ignored.has(s) || s.endsWith(".tmp"));
 const filePath = RelPath.refine(
   (p) => !p.split("/").includes(".."),
   "Parent traversal is forbidden",
@@ -87,114 +57,6 @@ const nameSchema = z
     (n) => n !== "." && n !== ".." && !/[\\/\0]/.test(n) && n !== ".maek",
     "Invalid name",
   );
-const mime: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".svg": "image/svg+xml",
-  ".pdf": "application/pdf",
-};
-function kindFor(p: string): PreviewKind {
-  const ext = path.extname(p).toLowerCase();
-  return ext === ".md" || ext === ".markdown"
-    ? "editor"
-    : ext === ".pdf"
-      ? "pdf"
-      : mime[ext]?.startsWith("image/")
-        ? "image"
-        : [
-              ".txt",
-              ".json",
-              ".yaml",
-              ".yml",
-              ".csv",
-              ".log",
-              ".css",
-              ".js",
-              ".ts",
-              ".py",
-              ".sh",
-              ".xml",
-              ".toml",
-              ".ini",
-            ].includes(ext)
-          ? "text"
-          : "unsupported";
-}
-const nodeFor = (p: string, isDir: boolean): FileNode => ({
-  id: p,
-  name: path.basename(p),
-  parent: path.dirname(p) === "." ? null : path.dirname(p),
-  isDir,
-});
-async function target(ws: Workspace, p: string) {
-  const abs = await resolveInWorkspace(ws, p);
-  let current = ws.root;
-  for (const part of p.split("/").filter(Boolean)) {
-    current = path.join(current, part);
-    const s = await lstat(current).catch(() => null);
-    if (s?.isSymbolicLink())
-      throw badRequest("Symbolic links are not supported");
-  }
-  return abs;
-}
-async function scan(ws: Workspace) {
-  const nodes: FileNode[] = [];
-  const warnings: string[] = [];
-  const pending = [""];
-  while (pending.length) {
-    const dir = pending.pop()!;
-    const entries = await readdir(await target(ws, dir), {
-      withFileTypes: true,
-    }).catch(() => {
-      warnings.push(dir);
-      return [];
-    });
-    for (const e of entries) {
-      const p = path.posix.join(dir, e.name);
-      if (isIgnored(p) || (!e.isDirectory() && !e.isFile())) continue;
-      nodes.push(nodeFor(p, e.isDirectory()));
-      if (e.isDirectory()) pending.push(p);
-    }
-  }
-  nodes.sort(
-    (a, b) =>
-      Number(b.isDir) - Number(a.isDir) ||
-      a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
-  );
-  return { nodes, warnings };
-}
-async function atomic(abs: string, content: string) {
-  const tmp = abs + "." + randomUUID() + ".tmp";
-  try {
-    await writeFile(tmp, content, { flag: "wx", mode: 0o600 });
-    await rename(tmp, abs);
-  } finally {
-    await unlink(tmp).catch(() => {});
-  }
-}
-async function metadata(ws: Workspace, name: string) {
-  const dir = await target(ws, ".maek");
-  await mkdir(dir, { recursive: true });
-  const config = await target(ws, ".maek/config.json");
-  try {
-    await writeFile(
-      config,
-      JSON.stringify(
-        { version: 1, name: ws.name, createdAt: Date.now() },
-        null,
-        2,
-      ),
-      { flag: "wx" },
-    );
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-  }
-  const abs = await target(ws, ".maek/" + name);
-  return abs;
-}
 async function unique(ws: Workspace, dir: string, name: string) {
   for (let n = 1; n < 10000; n++) {
     const ext = path.extname(name);
@@ -226,6 +88,8 @@ export interface HostOptions {
 export function createHost(options: HostOptions = {}) {
   const app = Fastify({ logger: false, bodyLimit: 48 * 1024 * 1024 });
   const streams = new Set<() => Promise<void>>();
+  const runtimes = new WorkspaceRuntimeManager(isIgnored);
+  const metadata = new WorkspaceMetadataRepository();
   const locks = new Map<string, Promise<unknown>>();
   async function serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const prev = locks.get(key) ?? Promise.resolve();
@@ -239,6 +103,7 @@ export function createHost(options: HostOptions = {}) {
   }
   app.addHook("preClose", async () => {
     await Promise.all([...streams].map((close) => close()));
+    await runtimes.close();
   });
   app.addHook("onRequest", async (req, reply) => {
     const host = req.headers.host ?? "";
@@ -269,19 +134,27 @@ export function createHost(options: HostOptions = {}) {
   });
   const wsFor = (req: { headers: Record<string, unknown> }) =>
     getWorkspace(z.string().parse(req.headers["x-workspace-id"]));
+  const sessionFor = (req: { headers: Record<string, unknown> }) =>
+    z
+      .string()
+      .regex(/^[a-zA-Z0-9-]{1,80}$/)
+      .catch("default")
+      .parse(req.headers["x-client-session-id"]);
   app.post("/api/workspaces/open", async (req) => {
     const { path: p } = z.object({ path: z.string().min(1) }).parse(req.body);
     const ws = await registerWorkspace(p);
-    await metadata(ws, "tabs.json");
+    await metadata.path(ws, "config.json");
     return toRef(ws);
   });
   app.post("/api/workspaces/pick", async () => {
     const result = await (options.pick ?? pickDirectory)();
     if (result.status === "ok")
-      await metadata(getWorkspace(result.workspace.wsId), "tabs.json");
+      await metadata.path(getWorkspace(result.workspace.wsId), "config.json");
     return result;
   });
-  app.get("/api/tree", async (req) => scan(wsFor(req)));
+  app.get("/api/tree", async (req) =>
+    runtimes.get(wsFor(req)).files.snapshot(),
+  );
   app.get("/api/files/content", async (req) => {
     const ws = wsFor(req);
     const { path: p } = z.object({ path: filePath }).parse(req.query);
@@ -477,6 +350,36 @@ export function createHost(options: HostOptions = {}) {
     }
     return { ok: true };
   });
+  app.post("/api/run", async (req) => {
+    const ws = wsFor(req);
+    const { cmd, args, cwd: reqCwd } = z
+      .object({
+        cmd: z.string().min(1),
+        args: z.array(z.string()).default([]),
+        cwd: z.string().optional(),
+      })
+      .parse(req.body);
+    const cwd = reqCwd ? await resolveInWorkspace(ws, reqCwd) : ws.root;
+    try {
+      const { stdout, stderr } = await run(cmd, args, {
+        cwd,
+        timeout: 60000,
+        maxBuffer: 10 * 1024 * 1024,
+        env: process.env,
+      });
+      return {
+        stdout: stdout ? stdout.toString() : "",
+        stderr: stderr ? stderr.toString() : "",
+        exitCode: 0,
+      };
+    } catch (e: any) {
+      return {
+        stdout: e.stdout ? e.stdout.toString() : "",
+        stderr: e.stderr ? e.stderr.toString() : String(e.message || e),
+        exitCode: typeof e.code === "number" ? e.code : 1,
+      };
+    }
+  });
   const session = z.object({
     tabs: z.array(filePath).max(200),
     activeTabId: filePath.nullable(),
@@ -488,31 +391,6 @@ export function createHost(options: HostOptions = {}) {
   const recents = z
     .array(z.object({ path: filePath, lastOpened: z.number() }))
     .max(200);
-  const workspaceRecents = z
-    .array(z.object({ id: z.string(), path: z.string(), name: z.string() }))
-    .max(30);
-  app.get("/api/workspace/workspaces", async (req) => {
-    try {
-      return workspaceRecents.parse(
-        JSON.parse(
-          await readFile(await metadata(wsFor(req), "workspaces.json"), "utf8"),
-        ),
-      );
-    } catch {
-      return [];
-    }
-  });
-  app.put("/api/workspace/workspaces", async (req) => {
-    const ws = wsFor(req);
-    const data = workspaceRecents.parse(req.body);
-    return serial(ws.wsId, async () => {
-      await atomic(
-        await metadata(ws, "workspaces.json"),
-        JSON.stringify(data, null, 2),
-      );
-      return { ok: true };
-    });
-  });
   for (const [route, name, schema, fallback] of [
     [
       "tabs",
@@ -531,7 +409,10 @@ export function createHost(options: HostOptions = {}) {
   ] as const) {
     app.get("/api/workspace/" + route, async (req) => {
       const ws = wsFor(req);
-      const abs = await metadata(ws, name);
+      const abs = await metadata.path(
+        ws,
+        `sessions/web/${sessionFor(req)}/${name}`,
+      );
       try {
         const stored = JSON.parse(await readFile(abs, "utf8"));
         const relative = (p: string) =>
@@ -566,6 +447,46 @@ export function createHost(options: HostOptions = {}) {
           );
         return schema.parse(stored);
       } catch {
+        // Legacy desktop metadata is migration input only. The browser never
+        // writes these files, so both applications can use the same workspace.
+        try {
+          const stored = JSON.parse(
+            await readFile(await metadata.path(ws, name), "utf8"),
+          );
+          const relative = (p: string) =>
+            path.isAbsolute(p) ? path.relative(ws.root, p) : p;
+          if (route === "tabs" && typeof stored.version === "number") {
+            return session.parse({
+              ...fallback,
+              ...stored,
+              tabs: stored.tabs
+                .filter(
+                  (tab: { viewKind?: string }) =>
+                    !["database", "meeting", "workspace-settings"].includes(
+                      tab.viewKind ?? "",
+                    ),
+                )
+                .map((tab: { id: string }) => relative(tab.id))
+                .filter((p: string) => !p.startsWith("..")),
+              activeTabId: stored.activeTabId
+                ? relative(stored.activeTabId)
+                : null,
+            });
+          }
+          if (route === "recent-files" && stored.version === 1) {
+            return recents.parse(
+              Object.entries(stored.entries)
+                .map(([p, value]) => ({
+                  path: relative(p),
+                  lastOpened: (value as { lastOpenedAt: number }).lastOpenedAt,
+                }))
+                .filter((file) => !file.path.startsWith(".."))
+                .slice(0, 200),
+            );
+          }
+        } catch {
+          // A missing or corrupt legacy file is equivalent to an empty session.
+        }
         return fallback;
       }
     });
@@ -608,7 +529,11 @@ export function createHost(options: HostOptions = {}) {
             ),
           };
         }
-        await atomic(await metadata(ws, name), JSON.stringify(stored, null, 2));
+        await metadata.writeJson(
+          ws,
+          `sessions/web/${sessionFor(req)}/${name}`,
+          stored,
+        );
         return { ok: true };
       });
     });
@@ -616,103 +541,40 @@ export function createHost(options: HostOptions = {}) {
   app.get("/api/workspaces/events", async (req, reply) => {
     const { workspace } = z.object({ workspace: z.string() }).parse(req.query);
     const ws = getWorkspace(workspace);
-    const watcher = watch(ws.root, {
-      ignoreInitial: false,
-      alwaysStat: true,
-      followSymlinks: false,
-      ignored: (p) => isIgnored(path.relative(ws.root, p)),
-    });
+    const hub = runtimes.get(ws).watcher;
     reply.hijack();
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
-    const send = (event: string, data: unknown) => {
+    const send = (message: WorkspaceEvent) => {
       if (!reply.raw.destroyed)
-        reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        reply.raw.write(
+          `id: ${message.id}\nevent: ${message.event}\ndata: ${JSON.stringify(message.data)}\n\n`,
+        );
     };
-    send("ready", {});
-    let initialized = false;
-    const identities = new Map<string, number>();
-    const removed = new Map<
-      string,
-      { ino: number | undefined; timer: ReturnType<typeof setTimeout> }
-    >();
-    const relocated = new Set<string>();
     let closed = false;
-    const heartbeat = setInterval(() => send("ping", {}), 20000);
+    const heartbeat = setInterval(() => {
+      if (!reply.raw.destroyed) reply.raw.write(": ping\n\n");
+    }, 20000);
+    const parsedLastEventId = Number(req.headers["last-event-id"]);
+    const unsubscribe = hub.subscribe(
+      send,
+      Number.isSafeInteger(parsedLastEventId) && parsedLastEventId >= 0
+        ? parsedLastEventId
+        : undefined,
+    );
     const close = async () => {
       if (closed) return;
       closed = true;
       clearInterval(heartbeat);
-      for (const r of removed.values()) clearTimeout(r.timer);
+      unsubscribe();
       streams.delete(close);
-      await watcher.close();
       reply.raw.end();
     };
     streams.add(close);
     reply.raw.on("close", () => void close());
-    watcher.on("ready", () => {
-      initialized = true;
-      send("rescan", {});
-    });
-    watcher.on("all", (type, abs, stats) => {
-      if (!["add", "change", "unlink", "addDir", "unlinkDir"].includes(type))
-        return;
-      const p = path.relative(ws.root, abs);
-      if (!p || isIgnored(p)) return;
-      const ino = stats?.ino;
-      if (!initialized) {
-        if (ino) identities.set(p, ino);
-        return;
-      }
-      if (type === "unlink" || type === "unlinkDir") {
-        const previous = identities.get(p);
-        identities.delete(p);
-        if (relocated.delete(p)) return;
-        const timer = setTimeout(() => {
-          removed.delete(p);
-          send("change", { type, path: p });
-        }, 180);
-        removed.set(p, { ino: previous, timer });
-        return;
-      }
-      if ((type === "add" || type === "addDir") && ino) {
-        const old = [...removed].find(([old, r]) => old !== p && r.ino === ino);
-        const existing =
-          old?.[0] ??
-          [...identities].find(([old, id]) => old !== p && id === ino)?.[0];
-        if (existing) {
-          if (old) {
-            clearTimeout(old[1].timer);
-            removed.delete(existing);
-          } else relocated.add(existing);
-          identities.delete(existing);
-          identities.set(p, ino);
-          send("change", {
-            type: "rename",
-            source: existing,
-            path: p,
-            node: nodeFor(p, type === "addDir"),
-          });
-          return;
-        }
-      }
-      if (ino) identities.set(p, ino);
-      const event: Change = {
-        type: type as Change["type"],
-        path: p,
-        ...(type === "add" || type === "addDir"
-          ? { node: nodeFor(p, type === "addDir") }
-          : {}),
-      };
-      send("change", event);
-    });
-    watcher.on("error", () => {
-      send("watch-error", {});
-      void close();
-    });
   });
   return app;
 }

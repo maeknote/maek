@@ -18,8 +18,9 @@ Excluded: databases, meetings, AI, terminal, Electron packaging, Windows/Linux.
 | [C6 Watcher](C6-watcher.md) | C1,C4 | external add/change/delete, reconnect, dirty conflict protection |
 | [C7 Preview](C7-preview.md) | C1,C2 | images/PDF/text, unsupported/default-app |
 | [C8 Integration](C8-integration.md) | C3–C7 | no legacy APIs or auto-created data, tests/typecheck/build/E2E |
+| [C9 Runtime architecture](C9-runtime-architecture.md) | C1,C5,C6,C8 | split development lifecycle, one runtime/watcher per root, isolated web sessions, production Local Core |
 
-Follow dependency order; C8 only completes when integrated behavior passes.
+Follow dependency order; C8 and C9 only complete when integrated behavior passes.
 Preserve unrelated worktree changes. Never delete a user's ordinary notes/history
 directory by name: remove only positively identified legacy app data.
 No automated source syncing after V1. Record copied source provenance in this file.
@@ -29,6 +30,8 @@ No automated source syncing after V1. Record copied source provenance in this fi
 Files retain real names and locations. No UUID note schema or catalog is injected.
 Workspace operations use relative paths and existing realpath containment checks.
 Metadata stays in .maek; localStorage only locates the last workspace.
+Desktop session metadata is read-only to the web client; web sessions are namespaced.
+Vite is development-only and never owns the Local Core lifecycle.
 Save compares hash and mtime; a conflict never silently overwrites external edits.
 Deletion uses macOS Trash. No startup operation destroys files.
 Host binds to loopback and rejects foreign origins. Unsupported HTML is never executed.

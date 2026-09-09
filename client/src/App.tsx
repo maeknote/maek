@@ -93,6 +93,16 @@ function Preview({ tab }: { tab: Tab }) {
         {tab.file.content}
       </pre>
     );
+  if (tab.file.kind === "html")
+    return (
+      <iframe
+        key={tab.id + ":" + tab.generation}
+        title={tab.name}
+        srcDoc={tab.file.content}
+        sandbox="allow-scripts allow-same-origin allow-forms"
+        className="flex-1 min-h-0 w-full border-0 bg-white"
+      />
+    );
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-text">
       <FileText size={40} />
@@ -232,9 +242,9 @@ function AppContent() {
                 </Button>
               </form>
             </details>
-            {state.error && (
+            {(state.connectionError || state.error) && (
               <p role="alert" className="mt-4 text-sm text-maek-red">
-                {state.error}
+                {state.connectionError || state.error}
               </p>
             )}
           </section>
@@ -378,9 +388,9 @@ function AppContent() {
                 </button>
               </div>
             </div>
-            {state.error && (
+            {(state.connectionError || state.error) && (
               <div role="alert" className="notice">
-                <span>{state.error}</span>
+                <span>{state.connectionError || state.error}</span>
                 <button
                   onClick={() => state.setError("")}
                   aria-label="Dismiss error"

@@ -36,7 +36,10 @@ beforeEach(async () => {
     url: "/api/workspaces/open",
     payload: { path: root },
   });
-  headers = { "x-workspace-id": response.json().wsId };
+  headers = {
+    "x-workspace-id": response.json().wsId,
+    "x-client-session-id": "host-test",
+  };
 });
 afterEach(async () => {
   await app.close();
@@ -222,16 +225,60 @@ describe("real workspace host", () => {
       session,
     );
     expect(
-      JSON.parse(await readFile(path.join(root, ".maek/tabs.json"), "utf8")),
+      JSON.parse(
+        await readFile(
+          path.join(root, ".maek/sessions/web/host-test/tabs.json"),
+          "utf8",
+        ),
+      ),
     ).toMatchObject({
       version: 4,
       tabs: [{ id: path.join(root, "a.md") }],
       theme: "dark",
     });
-    await writeFile(path.join(root, ".maek/tabs.json"), "{");
+    await writeFile(
+      path.join(root, ".maek/sessions/web/host-test/tabs.json"),
+      "{",
+    );
     expect((await request("GET", "/api/workspace/tabs")).json().tabs).toEqual(
       [],
     );
+  });
+  it("isolates web window sessions and never overwrites desktop tabs", async () => {
+    const desktopTabs = { version: 4, tabs: [], marker: "desktop" };
+    await writeFile(
+      path.join(root, ".maek/tabs.json"),
+      JSON.stringify(desktopTabs),
+    );
+    const session = {
+      tabs: ["a.md"],
+      activeTabId: "a.md",
+      scrollPositions: {},
+      expanded: [],
+      theme: "light",
+      sidebarWidth: 260,
+    };
+    for (const id of ["window-a", "window-b"]) {
+      const response = await app.inject({
+        method: "PUT",
+        url: "/api/workspace/tabs",
+        headers: {
+          ...headers,
+          "x-client-session-id": id,
+        },
+        payload: { ...session, activeTabId: id === "window-a" ? "a.md" : null },
+      });
+      expect(response.statusCode).toBe(200);
+    }
+    expect(
+      JSON.parse(await readFile(path.join(root, ".maek/tabs.json"), "utf8")),
+    ).toEqual(desktopTabs);
+    expect(
+      await stat(path.join(root, ".maek/sessions/web/window-a/tabs.json")),
+    ).toBeTruthy();
+    expect(
+      await stat(path.join(root, ".maek/sessions/web/window-b/tabs.json")),
+    ).toBeTruthy();
   });
   it("classifies previews and never serves HTML or executable content", async () => {
     for (const [file, content] of [
@@ -244,6 +291,12 @@ describe("real workspace host", () => {
       await writeFile(path.join(root, file!), content!);
     expect(
       (await request("GET", "/api/files/content?path=a.html")).json().kind,
+    ).toBe("html");
+    expect(
+      (await request("GET", "/api/files/content?path=a.html")).json().content,
+    ).toBe("<script>bad()</script>");
+    expect(
+      (await request("GET", "/api/files/content?path=a.db")).json().kind,
     ).toBe("unsupported");
     expect(
       (await request("GET", "/api/files/content?path=a.json")).json().kind,
@@ -269,6 +322,15 @@ describe("real workspace host", () => {
     );
     expect(svg.headers["content-security-policy"]).toContain("sandbox");
     expect(svg.headers["x-content-type-options"]).toBe("nosniff");
+
+    // Test /api/run
+    const runRes = await request("POST", "/api/run", {
+      cmd: process.execPath,
+      args: ["-e", "console.log('runner works')"],
+    });
+    expect(runRes.statusCode).toBe(200);
+    expect(runRes.json().stdout.trim()).toBe("runner works");
+    expect(runRes.json().exitCode).toBe(0);
   });
   it("blocks traversal, symlinks, foreign origins and managed metadata mutations", async () => {
     await symlink(tmpdir(), path.join(root, "escape"));

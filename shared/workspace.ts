@@ -5,7 +5,13 @@ export interface FileNode {
   isDir: boolean;
   children?: FileNode[];
 }
-export type PreviewKind = "editor" | "image" | "pdf" | "text" | "unsupported";
+export type PreviewKind =
+  | "editor"
+  | "image"
+  | "pdf"
+  | "text"
+  | "html"
+  | "unsupported";
 export interface FileContent {
   content?: string;
   kind: PreviewKind;
@@ -26,4 +32,10 @@ export interface Change {
   path: string;
   source?: string;
   node?: FileNode;
+}
+export interface WorkspaceEvent {
+  id: number;
+  workspaceRevision: number;
+  event: "ready" | "rescan" | "change" | "watch-error";
+  data: Change | Record<string, never>;
 }

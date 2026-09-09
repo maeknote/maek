@@ -21,7 +21,8 @@ test.beforeEach(() => {
     "---\ncustom: keep-me\n---\n\n# Original\n\nExisting paragraph.\n",
   );
   writeFileSync(path.join(root, "readme.txt"), "Plain text preview");
-  writeFileSync(path.join(root, "index.html"), "<h1>Never execute</h1>");
+  writeFileSync(path.join(root, "index.html"), "<h1>Rendered HTML</h1>");
+  writeFileSync(path.join(root, "data.db"), "\0binary");
 });
 test.afterEach(() => rmSync(root, { recursive: true, force: true }));
 async function open(page: Page) {
@@ -30,6 +31,14 @@ async function open(page: Page) {
   await page.getByRole("textbox", { name: "Workspace path" }).fill(root);
   await page.getByRole("button", { name: "Open", exact: true }).click();
   await expect(page.locator('[data-path="Folder"]')).toBeVisible();
+}
+function webSessionFile(name: string) {
+  const sessionsRoot = path.join(root, ".maek/sessions/web");
+  if (!existsSync(sessionsRoot)) return null;
+  const sessionId = readdirSync(sessionsRoot)[0];
+  if (!sessionId) return null;
+  const file = path.join(sessionsRoot, sessionId, name);
+  return existsSync(file) ? file : null;
 }
 async function editNote(page: Page) {
   await page.locator('[data-path="Folder"]').click();
@@ -58,9 +67,11 @@ test("opens existing nested notes, edits with Tiptap, restores session and theme
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect
     .poll(
-      () =>
-        JSON.parse(readFileSync(path.join(root, ".maek/tabs.json"), "utf8"))
-          .theme,
+      () => {
+        const tabs = webSessionFile("tabs.json");
+        if (!tabs) return undefined;
+        return JSON.parse(readFileSync(tabs, "utf8")).theme;
+      },
     )
     .toBe("dark");
   await page.screenshot({ path: "test-results/v1-editor-dark.png" });
@@ -68,7 +79,7 @@ test("opens existing nested notes, edits with Tiptap, restores session and theme
   await expect(page.locator(".tiptap")).toContainText("한국어 편집");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   expect(readdirSync(root).sort()).toEqual(
-    [".maek", "Folder", "index.html", "readme.txt"].sort(),
+    [".maek", "Folder", "data.db", "index.html", "readme.txt"].sort(),
   );
   expect(errors).toEqual([]);
 });
@@ -118,10 +129,11 @@ test("search, read-only preview, unsupported file and native picker cancel", asy
   await page.getByRole("option").first().click();
   await expect(page.locator("pre")).toHaveText("Plain text preview");
   await page.locator('[data-path="index.html"]').click();
+  await expect(page.locator('iframe[title="index.html"]')).toBeVisible();
+  await page.locator('[data-path="data.db"]').click();
   await expect(
     page.getByText("Unsupported file format", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Never execute", { exact: true })).toHaveCount(0);
 });
 
 test("rename, duplicate, move and delete use the tree and real paths", async ({
@@ -262,9 +274,10 @@ test("opening and switching an untouched note never rewrites its Markdown", asyn
   await expect(page.locator("pre")).toHaveText("Plain text preview");
   await expect
     .poll(
-      () =>
-        JSON.parse(readFileSync(path.join(root, ".maek/tabs.json"), "utf8"))
-          .activeTabId,
+      () => {
+        const tabs = webSessionFile("tabs.json");
+        return tabs ? JSON.parse(readFileSync(tabs, "utf8")).activeTabId : null;
+      },
     )
     .toMatch(/\/readme\.txt$/);
   await page.reload();
@@ -309,12 +322,10 @@ test("opens a new tree note while tabs restored from .maek remain open", async (
   await open(page);
   await editNote(page);
   await expect
-    .poll(() =>
-      existsSync(path.join(root, ".maek/tabs.json"))
-        ? JSON.parse(readFileSync(path.join(root, ".maek/tabs.json"), "utf8"))
-            .tabs.length
-        : 0,
-    )
+    .poll(() => {
+      const tabs = webSessionFile("tabs.json");
+      return tabs ? JSON.parse(readFileSync(tabs, "utf8")).tabs.length : 0;
+    })
     .toBe(1);
   await page.reload();
   await expect(

@@ -13,6 +13,9 @@ npm run dev
 ```
 
 http://127.0.0.1:3000 에서 Open Folder로 기존 폴더를 선택합니다.
+`npm run dev`는 UI/HMR(:3000)과 Local Core(:3001)를 독립 프로세스로
+실행합니다. 일반 사용은 `npm run build && npm start`로 실행하며, 이때는
+Local Core 하나가 빌드된 UI와 파일 API를 함께 제공합니다.
 네이티브 창을 사용할 수 없으면 Enter folder path에 절대 경로를 입력합니다.
 설정 또는 사이드바 폴더 메뉴에서 Workspace를 바꿀 수 있습니다.
 다음 실행 시 마지막 Workspace와 탭을 복원합니다.
@@ -25,15 +28,16 @@ http://127.0.0.1:3000 에서 Open Folder로 기존 폴더를 선택합니다.
   내 폴더/중첩 노트.md
   .maek/
     config.json
-    tabs.json
-    recentFiles.json
-    workspaces.json
     assets/붙여넣은 이미지.png
+    sessions/web/<브라우저 세션>/tabs.json
+    sessions/web/<브라우저 세션>/recentFiles.json
 ```
 
 실제 파일 이름과 위치를 유지합니다. `.maek-data`, `notes/`, `history/`,
 `databases.json`을 자동 생성하지 않습니다. 원본 Maek Note의 version 4 탭 및
-version 1 최근 파일 구조를 사용합니다. 브라우저 localStorage에는 마지막 경로만 저장합니다.
+version 1 최근 파일 구조는 읽기 전용 마이그레이션 입력으로 사용합니다. 웹 앱은
+데스크톱 앱의 `.maek/tabs.json`을 덮어쓰지 않으며 브라우저 세션별 파일에
+저장합니다. 브라우저 localStorage에는 마지막 경로와 표시용 최근 Workspace만 저장합니다.
 일반 `notes`·`history` 폴더는 사용자 파일로 취급하며 자동 삭제하지 않습니다.
 
 편집 후 1.5초, 탭 전환, 창 포커스 해제, Cmd+S에 저장합니다. 파일 해시·수정 시각을
@@ -67,5 +71,5 @@ npm run build
 npm run test:e2e
 ```
 
-[마스터 명세](docs/v1/MASTER.md)에서 C1–C8 순서와 완료 조건을 관리합니다.
+[마스터 명세](docs/v1/MASTER.md)에서 C1–C9 순서와 완료 조건을 관리합니다.
 [검증 상태](docs/v1/PROGRESS.md)에는 자동 검증 결과와 남은 데스크톱 검증을 기록합니다.
