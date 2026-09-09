@@ -34,9 +34,11 @@ beforeEach(async () => {
   const response = await app.inject({
     method: "POST",
     url: "/api/workspaces/open",
+    headers: { host: "127.0.0.1" },
     payload: { path: root },
   });
   headers = {
+    host: "127.0.0.1",
     "x-workspace-id": response.json().wsId,
     "x-client-session-id": "host-test",
   };
@@ -280,7 +282,7 @@ describe("real workspace host", () => {
       await stat(path.join(root, ".maek/sessions/web/window-b/tabs.json")),
     ).toBeTruthy();
   });
-  it("classifies previews and never serves HTML or executable content", async () => {
+  it("classifies previews and serves artifact files through the isolated route", async () => {
     for (const [file, content] of [
       ["a.html", "<script>bad()</script>"],
       ["a.json", "{}"],
@@ -311,7 +313,7 @@ describe("real workspace host", () => {
         })
       ).statusCode,
     ).toBe(400);
-    const ws = headers["x-workspace-id"];
+    const ws = headers["x-workspace-id"]!;
     expect(
       (await request("GET", `/api/files/raw?workspace=${ws}&path=a.html`))
         .statusCode,
@@ -322,6 +324,43 @@ describe("real workspace host", () => {
     );
     expect(svg.headers["content-security-policy"]).toContain("sandbox");
     expect(svg.headers["x-content-type-options"]).toBe("nosniff");
+
+    await mkdir(path.join(root, "artifact"));
+    await writeFile(
+      path.join(root, "artifact", "index.html"),
+      '<link rel="stylesheet" href="app.css"><script src="app.js"></script>',
+    );
+    await writeFile(path.join(root, "artifact", "app.css"), "body { color: red }");
+    await writeFile(path.join(root, "artifact", "app.js"), "window.ready = true");
+    const artifactBase = `/_artifacts/${encodeURIComponent(ws)}/artifact`;
+    const artifact = await request("GET", `${artifactBase}/index.html`);
+    expect(artifact.statusCode).toBe(200);
+    expect(artifact.headers["content-type"]).toContain("text/html");
+    expect(artifact.headers["content-security-policy"]).toContain(
+      "allow-scripts",
+    );
+    expect((await request("GET", `${artifactBase}/app.css`)).headers["content-type"])
+      .toContain("text/css");
+    expect((await request("GET", `${artifactBase}/app.js`)).body).toContain(
+      "window.ready",
+    );
+    expect((await request("GET", `${artifactBase}/missing.json`)).statusCode).toBe(
+      404,
+    );
+    expect(
+      (await request("GET", `/_artifacts/${encodeURIComponent(ws)}/.maek/config.json`))
+        .statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/workspaces/open",
+          headers: { host: "localhost" },
+          payload: { path: root },
+        })
+      ).statusCode,
+    ).toBe(403);
 
     // Test /api/run
     const runRes = await request("POST", "/api/run", {
@@ -361,7 +400,7 @@ describe("real workspace host", () => {
         await app.inject({
           method: "GET",
           url: "/api/tree",
-          headers: { host: "attacker.example", ...headers },
+          headers: { ...headers, host: "attacker.example" },
         })
       ).statusCode,
     ).toBe(403);

@@ -10,9 +10,10 @@ import {
   Moon,
   Sun,
   ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 import { useStore, schedulePersistence, type Tab } from "./store";
-import { api, rawUrl } from "./host";
+import { api, artifactUrl, rawUrl } from "./host";
 import { Explorer } from "./features/explorer/Explorer";
 import { MarkdownEditor } from "./features/editor/MarkdownEditor";
 import { TitleBar } from "./features/editor/components/TitleBar";
@@ -68,6 +69,41 @@ function Modal({
     </Dialog.Root>
   );
 }
+function HtmlArtifactPreview({ tab }: { tab: Tab }) {
+  const fileUrl = artifactUrl(tab.id);
+  const [nonce, setNonce] = useState(0);
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      <div className="artifact-toolbar">
+        <span className="artifact-status">HTML artifact</span>
+        <button
+          type="button"
+          onClick={() => setNonce((value) => value + 1)}
+          aria-label="Reload HTML artifact"
+        >
+          <RefreshCw size={14} />
+          Reload
+        </button>
+        <button
+          type="button"
+          onClick={() => window.open(fileUrl, "_blank", "noopener,noreferrer")}
+        >
+          <ExternalLink size={14} />
+          Open in browser
+        </button>
+      </div>
+      <iframe
+        key={`${fileUrl}:${tab.generation}:${nonce}`}
+        title={tab.name}
+        src={fileUrl}
+        sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
+        className="flex-1 min-h-0 w-full border-0 bg-white"
+      />
+    </div>
+  );
+}
+
 function Preview({ tab }: { tab: Tab }) {
   if (tab.file.kind === "image")
     return (
@@ -94,15 +130,7 @@ function Preview({ tab }: { tab: Tab }) {
       </pre>
     );
   if (tab.file.kind === "html")
-    return (
-      <iframe
-        key={tab.id + ":" + tab.generation}
-        title={tab.name}
-        srcDoc={tab.file.content}
-        sandbox="allow-scripts allow-same-origin allow-forms"
-        className="flex-1 min-h-0 w-full border-0 bg-white"
-      />
-    );
+    return <HtmlArtifactPreview key={tab.id} tab={tab} />;
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-text">
       <FileText size={40} />

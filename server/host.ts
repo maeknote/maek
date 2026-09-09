@@ -38,7 +38,11 @@ import {
   nodeFor,
   workspaceTarget as target,
 } from "./workspace/filesystem";
-import { kindFor, previewMime as mime } from "./workspace/file-kind";
+import {
+  artifactMime,
+  kindFor,
+  previewMime as mime,
+} from "./workspace/file-kind";
 
 const run = promisify(execFile);
 const filePath = RelPath.refine(
@@ -109,6 +113,10 @@ export function createHost(options: HostOptions = {}) {
     const host = req.headers.host ?? "";
     if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host))
       return reply.code(403).send({ message: "Use the local address" });
+    if (/^localhost(?::\d+)?$/.test(host) && req.url.startsWith("/api/"))
+      return reply
+        .code(403)
+        .send({ message: "Artifact previews cannot access application APIs" });
     if (req.headers.origin && req.headers.origin !== `http://${host}`)
       return reply
         .code(403)
@@ -200,6 +208,33 @@ export function createHost(options: HostOptions = {}) {
     return reply
       .type(mime[path.extname(p).toLowerCase()]!)
       .send(createReadStream(abs));
+  });
+  app.get("/_artifacts/:workspace/*", async (req, reply) => {
+    const { workspace, "*": requestedPath } = z
+      .object({ workspace: z.string(), "*": z.string() })
+      .parse(req.params);
+    const relativePath = filePath
+      .refine((p) => !p.split("/").includes(".maek"), "Managed workspace path")
+      .parse(requestedPath);
+    const ws = getWorkspace(workspace);
+    let abs = await target(ws, relativePath);
+    let info = await stat(abs);
+    if (info.isDirectory()) {
+      abs = await target(ws, path.posix.join(relativePath, "index.html"));
+      info = await stat(abs);
+    }
+    if (!info.isFile()) throw badRequest("Not a regular file");
+    const extension = path.extname(abs).toLowerCase();
+    const contentType = artifactMime[extension] ?? "application/octet-stream";
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Cache-Control", "no-store");
+    if (extension === ".html" || extension === ".htm") {
+      reply.header(
+        "Content-Security-Policy",
+        "sandbox allow-scripts allow-same-origin allow-forms allow-downloads",
+      );
+    }
+    return reply.type(contentType).send(createReadStream(abs));
   });
   app.post("/api/files", async (req) => {
     const ws = wsFor(req);

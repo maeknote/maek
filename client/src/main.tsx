@@ -7,10 +7,16 @@ import "./workspace.css";
 import "katex/dist/katex.min.css";
 import App from "./App";
 import { queryClient } from "./app/query-client";
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </StrictMode>,
-);
+if (location.hostname === "localhost") {
+  location.replace(
+    `${location.protocol}//127.0.0.1:${location.port}${location.pathname}${location.search}${location.hash}`,
+  );
+} else {
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+}

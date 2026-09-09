@@ -44,6 +44,10 @@ export async function api<T>(
 }
 export const rawUrl = (p: string) =>
   `/api/files/raw?workspace=${encodeURIComponent(workspace?.wsId ?? "")}&path=${encodeURIComponent(p.replace(/^\//, ""))}`;
+export const artifactUrl = (p: string) => {
+  const segments = p.replace(/^\//, "").split("/").map(encodeURIComponent);
+  return `${location.protocol}//localhost:${location.port}/_artifacts/${encodeURIComponent(workspace?.wsId ?? "")}/${segments.join("/")}`;
+};
 export async function toBase64(file: File) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let s = "";

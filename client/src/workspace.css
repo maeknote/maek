@@ -20,3 +20,12 @@ body,
 .notice button {
   @apply underline shrink-0;
 }
+.artifact-toolbar {
+  @apply min-h-9 shrink-0 flex items-center gap-1 border-b border-border-gray px-3 text-xs text-muted-text;
+}
+.artifact-toolbar button {
+  @apply inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-overlay hover:text-neutral-ink;
+}
+.artifact-status {
+  @apply mr-auto truncate;
+}

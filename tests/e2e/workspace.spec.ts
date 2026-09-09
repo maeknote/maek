@@ -21,7 +21,24 @@ test.beforeEach(() => {
     "---\ncustom: keep-me\n---\n\n# Original\n\nExisting paragraph.\n",
   );
   writeFileSync(path.join(root, "readme.txt"), "Plain text preview");
-  writeFileSync(path.join(root, "index.html"), "<h1>Rendered HTML</h1>");
+  writeFileSync(
+    path.join(root, "index.html"),
+    `<h1>Rendered HTML</h1>
+     <p id="data">Loading</p>
+     <button id="action">Run action</button>
+     <script>
+       fetch("artifact-data.json").then((response) => response.json()).then((data) => {
+         document.querySelector("#data").textContent = data.message;
+       });
+       document.querySelector("#action").addEventListener("click", () => {
+         document.querySelector("#action").textContent = "Action ran";
+       });
+     </script>`,
+  );
+  writeFileSync(
+    path.join(root, "artifact-data.json"),
+    JSON.stringify({ message: "Artifact data loaded" }),
+  );
   writeFileSync(path.join(root, "data.db"), "\0binary");
 });
 test.afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -79,7 +96,14 @@ test("opens existing nested notes, edits with Tiptap, restores session and theme
   await expect(page.locator(".tiptap")).toContainText("한국어 편집");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   expect(readdirSync(root).sort()).toEqual(
-    [".maek", "Folder", "data.db", "index.html", "readme.txt"].sort(),
+    [
+      ".maek",
+      "Folder",
+      "artifact-data.json",
+      "data.db",
+      "index.html",
+      "readme.txt",
+    ].sort(),
   );
   expect(errors).toEqual([]);
 });
@@ -129,7 +153,10 @@ test("search, read-only preview, unsupported file and native picker cancel", asy
   await page.getByRole("option").first().click();
   await expect(page.locator("pre")).toHaveText("Plain text preview");
   await page.locator('[data-path="index.html"]').click();
-  await expect(page.locator('iframe[title="index.html"]')).toBeVisible();
+  const artifact = page.frameLocator('iframe[title="index.html"]');
+  await expect(artifact.locator("#data")).toHaveText("Artifact data loaded");
+  await artifact.getByRole("button", { name: "Run action" }).click();
+  await expect(artifact.getByRole("button", { name: "Action ran" })).toBeVisible();
   await page.locator('[data-path="data.db"]').click();
   await expect(
     page.getByText("Unsupported file format", { exact: true }),
