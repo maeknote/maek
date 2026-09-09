@@ -79,7 +79,7 @@ export async function scanWorkspace(workspace: Workspace) {
   while (pending.length) {
     const directory = pending.pop()!;
     const entries = await readdir(
-      await workspaceTarget(workspace, directory),
+      path.join(workspace.root, directory),
       { withFileTypes: true },
     ).catch(() => {
       warnings.push(directory);
