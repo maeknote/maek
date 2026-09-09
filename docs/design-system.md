@@ -1,7 +1,7 @@
 # Maek Note 디자인 이식
 
-기준: maeknote-app a9786d6. 실제 원본 토큰과 공통 컴포넌트는
-`client/src/shared/design`, `client/src/shared/components`에 있습니다.
+기준: maeknote-app a9786d6. 현재 사용하는 CSS 토큰과 공통 컴포넌트는
+`client/src/shared/design/css`, `client/src/shared/components`에 있습니다.
 `client/src/main.tsx`가 전역 CSS를 주입하고 Workspace store가 테마를 복원합니다.
 
 원본 Button, FloatingMenu, MenuItem, Toast, FolderSelector, TitleBar,
@@ -18,5 +18,4 @@ Electron IPC는 `client/src/host.ts`와 `server/host.ts`의 HTTP/SSE로 대체�
 Workspace는 실제 폴더 전체를 스캔합니다. 파일은 기존 경로에서 편집하며
 앱 메타데이터만 `.maek/`에 저장합니다. UI는 DB·회의·AI·터미널을 노출하지 않습니다.
 
-[마스터 명세](v1/MASTER.md), [디자인 명세](v1/C2-design.md),
-[검증 현황](v1/PROGRESS.md)을 참고하세요.
+런타임과 데이터 보존 규칙은 [아키텍처 문서](architecture.md)를 참고하세요.

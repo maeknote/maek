@@ -1,4 +1,4 @@
-# oh-my-maek V1
+# oh-my-maek
 
 macOS localhost에서 실행하는 개인용 Markdown Workspace 앱입니다.
 Maek Note의 디자인 컴포넌트, Tiptap 에디터 확장과 react-arborist 트리를 이식했습니다.
@@ -53,9 +53,9 @@ Reload, Save a copy, Close를 제공합니다. 저장되지 않은 편집본이 
 - Finder 드롭 가져오기, Finder에서 보기, macOS 휴지통 이동
 - 다중 탭, 탭 순서 이동, 빠른 파일 검색, 최근 파일, Workspace·스크롤·테마 복원
 - 외부 파일 변경과 이름 변경 실시간 반영, 미저장 충돌 보호
-- 이미지·PDF·텍스트 읽기 전용 미리보기, 미지원 형식의 기본 앱 열기
+- 이미지·PDF·텍스트 읽기 전용 미리보기, sandboxed HTML 미리보기, 미지원 형식의 기본 앱 열기
 
-DB, 회의, AI, 터미널과 HTML 실행은 미지원입니다. Markdown은 1 MiB 초과 시
+DB, 회의, AI와 터미널은 미지원입니다. Markdown은 1 MiB 초과 시
 읽기 전용, 텍스트는 32 MiB 초과 시 미지원으로 처리합니다. 심볼릭 링크와
 원본의 의존성·빌드 캐시 폴더는 탐색 대상에서 제외됩니다.
 
@@ -71,5 +71,4 @@ npm run build
 npm run test:e2e
 ```
 
-[마스터 명세](docs/v1/MASTER.md)에서 C1–C9 순서와 완료 조건을 관리합니다.
-[검증 상태](docs/v1/PROGRESS.md)에는 자동 검증 결과와 남은 데스크톱 검증을 기록합니다.
+현재 런타임 경계와 데이터 보존 규칙은 [아키텍처 문서](docs/architecture.md)를 참고하세요.
