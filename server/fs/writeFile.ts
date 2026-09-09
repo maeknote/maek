@@ -1,4 +1,6 @@
-import { readFile as fsReadFile, writeFile as fsWriteFile, stat } from 'node:fs/promises'
+import { readFile as fsReadFile, writeFile as fsWriteFile, stat, rename, unlink, access } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import type { WriteFileRequest, WriteFileResult } from '@shared/contract'
 import { RpcHttpError, conflict, fsError, isErrno } from '../errors'
 import { getWorkspace } from '../workspaces'
@@ -62,11 +64,22 @@ export async function writeFile(req: WriteFileRequest): Promise<WriteFileResult>
   }
 
   const bytes = Buffer.from(req.content, 'utf-8')
+  const tmp = `${abs}.${randomUUID()}.tmp`
   try {
-    await fsWriteFile(abs, bytes)
+    if (stats) await access(abs, constants.W_OK)
+    await fsWriteFile(tmp, bytes, { flag: 'wx', mode: stats ? stats.mode & 0o777 : 0o600 })
+    // Recheck after preparing the atomic replacement, minimizing the external-write window.
+    if (stats && !force) {
+      const current = await fsReadFile(abs).catch(() => { throw conflict('deleted', 'File disappeared before save') })
+      if (sha256(current) !== req.baseHash) throw conflict('changed', 'File changed before save')
+    }
+    await rename(tmp, abs)
   } catch (err) {
+    if (err instanceof RpcHttpError) throw err
     // T9: a read-only file is a defined outcome, not an opaque 500.
     throw fsError(err, req.path)
+  } finally {
+    await unlink(tmp).catch(() => {})
   }
 
   const after = await stat(abs).catch((err) => {

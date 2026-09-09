@@ -1,0 +1,181 @@
+diff --git a/node_modules/react-arborist/dist/module/components/list-outer-element.js b/node_modules/react-arborist/dist/module/components/list-outer-element.js
+index d726f57..e52a8ff 100644
+--- a/node_modules/react-arborist/dist/module/components/list-outer-element.js
++++ b/node_modules/react-arborist/dist/module/components/list-outer-element.js
+@@ -25,11 +25,16 @@ export const ListOuterElement = forwardRef(function Outer(props, ref) {
+ });
+ const DropContainer = () => {
+     const tree = useTreeApi();
++    const paddingTop = tree.props.paddingTop ?? tree.props.padding ?? 0;
++    const paddingBottom = tree.props.paddingBottom ?? tree.props.padding ?? 0;
++    const totalHeight = tree.visibleNodes.length * tree.rowHeight + paddingTop + paddingBottom;
+     return (_jsx("div", { style: {
+-            height: tree.visibleNodes.length * tree.rowHeight,
++            height: totalHeight,
+             width: "100%",
+             position: "absolute",
+             left: "0",
+             right: "0",
++            top: -paddingTop,
++            pointerEvents: "none",
+         }, children: _jsx(Cursor, {}) }));
+ };
+diff --git a/node_modules/react-arborist/dist/module/dnd/compute-drop.js b/node_modules/react-arborist/dist/module/dnd/compute-drop.js
+index a50f4f3..710c6c8 100644
+--- a/node_modules/react-arborist/dist/module/dnd/compute-drop.js
++++ b/node_modules/react-arborist/dist/module/dnd/compute-drop.js
+@@ -59,6 +59,21 @@ function highlightCursor(id) {
+         id,
+     };
+ }
++/**
++ * Find the containing folder at or above the given level.
++ * Used for X-position based dynamic outdent.
++ */
++function findContainingFolderAtLevel(node, targetLevel) {
++    if (!node) return null;
++    let current = node;
++    // Walk up to find a folder at or above target level
++    while (current && current.level > targetLevel) {
++        current = current.parent;
++    }
++    // If current is a file, go to its parent folder
++    if (current && !current.isInternal) current = current.parent;
++    return current;
++}
+ function walkUpFrom(node, level) {
+     var _a;
+     let drop = node;
+@@ -70,70 +85,49 @@ function walkUpFrom(node, level) {
+     return { parentId, index };
+ }
+ /**
+- * This is the most complex, tricky function in the whole repo.
++ * Modified computeDrop for folder-only drop targeting.
++ * Always returns folder highlight instead of line cursor.
+  */
+ export function computeDrop(args) {
+-    var _a;
+     const hover = measureHover(args.element, args.offset);
+     const indent = args.indent;
+     const hoverLevel = Math.round(Math.max(0, hover.x - indent) / indent);
+-    const { node, nextNode, prevNode } = args;
+-    const [above, below] = getNodesAroundCursor(node, prevNode, nextNode, hover);
+-    /* Hovering over the middle of a folder */
+-    if (node && node.isInternal && hover.inMiddle) {
+-        return {
+-            drop: dropAt(node.id, null),
+-            cursor: highlightCursor(node.id),
+-        };
+-    }
+-    /*
+-     * Now we only need to care about the node above the cursor
+-     * -----------                            -------
+-     */
+-    /* There is no node above the cursor line */
+-    if (!above) {
++    const { node, prevNode } = args;
++
++    /* No node under cursor - hovering over empty space (outer area) */
++    if (!node) {
+         return {
+-            drop: dropAt((_a = below === null || below === void 0 ? void 0 : below.parent) === null || _a === void 0 ? void 0 : _a.id, 0),
+-            cursor: lineCursor(0, 0),
++            drop: dropAt(null, 0),
++            cursor: noCursor(),
+         };
+     }
+-    /* The node above the cursor line is an item */
+-    if (isItem(above)) {
+-        const level = bound(hoverLevel, (below === null || below === void 0 ? void 0 : below.level) || 0, above.level);
++
++    const targetNode = node;
++
++    /* For folders: drop into that folder */
++    if (targetNode.isInternal) {
++        // Check if we should go to a parent folder based on mouse X position
++        const folder = findContainingFolderAtLevel(targetNode, hoverLevel);
++        const dropFolder = folder || targetNode;
+         return {
+-            drop: walkUpFrom(above, level),
+-            cursor: lineCursor(above.rowIndex + 1, level),
++            drop: dropAt(dropFolder.id, null),
++            cursor: highlightCursor(dropFolder.id),
+         };
+     }
+-    /* The node above the cursor line is a closed folder */
+-    if (isClosed(above)) {
+-        const level = bound(hoverLevel, (below === null || below === void 0 ? void 0 : below.level) || 0, above.level);
++
++    /* For files: drop into the containing folder */
++    // Find the containing folder, respecting mouse X position for outdent
++    const folder = findContainingFolderAtLevel(targetNode, hoverLevel);
++    if (folder) {
+         return {
+-            drop: walkUpFrom(above, level),
+-            cursor: lineCursor(above.rowIndex + 1, level),
++            drop: dropAt(folder.id, null),
++            cursor: highlightCursor(folder.id),
+         };
+     }
+-    /* The node above the cursor line is an open folder with no children */
+-    if (isOpenWithEmptyChildren(above)) {
+-        const level = bound(hoverLevel, 0, above.level + 1);
+-        if (level > above.level) {
+-            /* Will be the first child of the empty folder */
+-            return {
+-                drop: dropAt(above.id, 0),
+-                cursor: lineCursor(above.rowIndex + 1, level),
+-            };
+-        }
+-        else {
+-            /* Will be a sibling or grandsibling of the empty folder */
+-            return {
+-                drop: walkUpFrom(above, level),
+-                cursor: lineCursor(above.rowIndex + 1, level),
+-            };
+-        }
+-    }
+-    /* The node above the cursor is a an open folder with children */
++
++    /* Fallback: drop to root */
+     return {
+-        drop: dropAt(above === null || above === void 0 ? void 0 : above.id, 0),
+-        cursor: lineCursor(above.rowIndex + 1, above.level + 1),
++        drop: dropAt(null, 0),
++        cursor: noCursor(),
+     };
+ }
+diff --git a/node_modules/react-arborist/dist/module/dnd/outer-drop-hook.js b/node_modules/react-arborist/dist/module/dnd/outer-drop-hook.js
+index 7923010..8cf73e3 100644
+--- a/node_modules/react-arborist/dist/module/dnd/outer-drop-hook.js
++++ b/node_modules/react-arborist/dist/module/dnd/outer-drop-hook.js
+@@ -2,6 +2,8 @@ import { useDrop } from "react-dnd";
+ import { useTreeApi } from "../context";
+ import { computeDrop } from "./compute-drop";
+ import { actions as dnd } from "../state/dnd-slice";
++import { safeRun } from "../utils";
++import { ROOT_ID } from "../data/create-root";
+ export function useOuterDrop() {
+     const tree = useTreeApi();
+     // In case we drop an item at the bottom of the list
+@@ -36,6 +38,19 @@ export function useOuterDrop() {
+                 tree.hideCursor();
+             }
+         },
++        drop: (_, m) => {
++            if (!m.canDrop())
++                return null;
++            let { parentId, index, dragIds } = tree.state.dnd;
++            safeRun(tree.props.onMove, {
++                dragIds,
++                parentId: parentId === ROOT_ID ? null : parentId,
++                index: index === null ? 0 : index,
++                dragNodes: tree.dragNodes,
++                parentNode: tree.get(parentId),
++            });
++            if (parentId) tree.open(parentId);
++        },
+     }), [tree]);
+     drop(tree.listEl);
+ }

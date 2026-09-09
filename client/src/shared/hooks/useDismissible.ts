@@ -1,0 +1,75 @@
+/**
+ * useDismissible Hook
+ *
+ * Handles click-outside and Escape key dismissal for floating UI elements.
+ * Consolidates duplicated logic from NewNoteMenu, ExplorerContextMenu, etc.
+ */
+
+import { useEffect, type RefObject } from "react";
+
+interface UseDismissibleOptions {
+  /** Whether the dismissible element is currently open */
+  isOpen: boolean;
+  /** Callback when the element should be dismissed */
+  onClose: () => void;
+  /** Refs to elements that should NOT trigger dismiss when clicked */
+  refs: RefObject<HTMLElement | null>[];
+  /** Whether to listen for Escape key (default: true) */
+  escapeKey?: boolean;
+  /** Whether to listen for outside clicks (default: true) */
+  outsideClick?: boolean;
+}
+
+/**
+ * Hook to handle dismissing floating UI elements (menus, popovers, modals)
+ *
+ * @example
+ * ```tsx
+ * const menuRef = useRef<HTMLDivElement>(null)
+ *
+ * useDismissible({
+ *   isOpen,
+ *   onClose,
+ *   refs: [menuRef, anchorRef],
+ * })
+ * ```
+ */
+export function useDismissible({
+  isOpen,
+  onClose,
+  refs,
+  escapeKey = true,
+  outsideClick = true,
+}: UseDismissibleOptions): void {
+  // Handle outside click
+  useEffect(() => {
+    if (!isOpen || !outsideClick) return;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      // Check if click is inside any of the provided refs
+      const isInside = refs.some((ref) => ref.current?.contains(target));
+      if (!isInside) {
+        onClose();
+      }
+    };
+
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [isOpen, onClose, refs, outsideClick]);
+
+  // Handle Escape key
+  useEffect(() => {
+    if (!isOpen || !escapeKey) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose, escapeKey]);
+}

@@ -1,0 +1,2062 @@
+@import "katex/dist/katex.min.css";
+
+/* Tab bar scrollbar hide */
+.tab-scroll-hide {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+.tab-scroll-hide::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Webkit */
+}
+
+/* Editor base styles */
+.maek-editor-pane {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.maek-editor-scroll {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.ProseMirror {
+  outline: none;
+  min-height: 100%;
+  padding: 2rem;
+  font-family: var(--font-editor, var(--font-sans));
+  font-size: var(--font-editor-size, 1rem);
+  line-height: var(--line-spacing-editor, 1.6);
+}
+
+.ProseMirror:focus {
+  outline: none;
+}
+
+/* Placeholder */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-dim);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* Headings */
+.ProseMirror h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  line-height: 1.25;
+}
+
+.ProseMirror h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.3;
+}
+
+.ProseMirror h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+}
+
+.ProseMirror .maek-heading-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: 0.02em;
+  width: 0.95rem;
+  height: 0.95rem;
+  margin-right: 0.18rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  border-radius: 0.25rem;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
+}
+
+.ProseMirror .maek-heading-toggle-icon {
+  width: 0.72rem;
+  height: 0.72rem;
+  transform-origin: center;
+  transition: transform 140ms ease;
+}
+
+.ProseMirror
+  .maek-heading-toggle[data-state="expanded"]
+  .maek-heading-toggle-icon {
+  transform: rotate(90deg);
+}
+
+.ProseMirror .maek-heading-toggle:hover {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-text-dim) 12%, transparent);
+}
+
+.ProseMirror .maek-heading-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-maek-red) 55%, white);
+  outline-offset: 2px;
+  color: var(--color-text);
+}
+
+.ProseMirror .maek-collapsed-heading-content {
+  display: none !important;
+}
+
+.maek-heading-rail {
+  position: absolute;
+  top: 1.75rem;
+  right: 1rem;
+  width: 2rem;
+  max-height: min(22rem, calc(100% - 3.5rem));
+  box-sizing: border-box;
+  padding: 0.65rem 0.5rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: auto;
+  z-index: 20;
+  transition:
+    width 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding 180ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.maek-heading-rail:hover,
+.maek-heading-rail:focus-within {
+  width: min(18rem, calc(100% - 2rem));
+  padding: 0.75rem;
+  border-color: var(--color-border-subtle);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(16px);
+}
+
+.maek-heading-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.maek-heading-rail-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  width: 100%;
+}
+
+.maek-heading-rail-marker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 1.45rem;
+  padding: 0.15rem 0;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  opacity: 0.78;
+  cursor: pointer;
+  transition:
+    opacity 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.maek-heading-rail-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transform: translateX(0.4rem);
+  transition:
+    opacity 120ms ease,
+    transform 180ms ease;
+}
+
+.maek-heading-rail:hover .maek-heading-rail-label,
+.maek-heading-rail:focus-within .maek-heading-rail-label {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.maek-heading-rail-marker[data-heading-level="1"] .maek-heading-rail-label {
+  color: var(--color-text);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.maek-heading-rail-marker[data-heading-level="2"] .maek-heading-rail-label {
+  padding-left: 0.75rem;
+  font-weight: 520;
+}
+
+.maek-heading-rail-marker[data-heading-level="3"] .maek-heading-rail-label {
+  padding-left: 1.5rem;
+  color: var(--color-text-dim);
+  font-size: 0.7rem;
+}
+
+.maek-heading-rail-line {
+  display: block;
+  flex: 0 0 auto;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-dim) 36%, white);
+  transition:
+    width 180ms ease,
+    height 140ms ease,
+    background-color 140ms ease;
+}
+
+.maek-heading-rail-marker[data-heading-level="1"] .maek-heading-rail-line {
+  width: 1rem;
+}
+
+.maek-heading-rail-marker[data-heading-level="2"] .maek-heading-rail-line {
+  width: 0.72rem;
+}
+
+.maek-heading-rail-marker[data-heading-level="3"] .maek-heading-rail-line {
+  width: 0.48rem;
+}
+
+.maek-heading-rail-marker[data-active="true"] {
+  opacity: 1;
+}
+
+.maek-heading-rail-marker[data-active="true"] .maek-heading-rail-line {
+  height: 3px;
+  background: var(--color-maek-red);
+}
+
+.maek-heading-rail-marker:hover,
+.maek-heading-rail-marker:focus-visible {
+  opacity: 1;
+}
+
+.maek-heading-rail-marker:hover,
+.maek-heading-rail-marker:focus-visible {
+  background: var(--color-surface-overlay);
+}
+
+.maek-heading-rail-marker[data-active="true"] .maek-heading-rail-label {
+  color: var(--color-maek-red);
+}
+
+.maek-heading-rail-marker:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-maek-red) 55%, white);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .maek-heading-rail,
+  .maek-heading-rail-marker,
+  .maek-heading-rail-label,
+  .maek-heading-rail-line {
+    transition: none;
+  }
+}
+
+/* Paragraphs */
+.ProseMirror p {
+  margin-bottom: 0.5rem;
+}
+
+/* Lists */
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-left: 1.5rem;
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror li {
+  margin: 0;
+}
+
+.ProseMirror li + li {
+  margin-top: 0.25rem;
+}
+
+.ProseMirror li > p {
+  margin-bottom: 0;
+}
+
+.ProseMirror li > ul,
+.ProseMirror li > ol {
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+
+.ProseMirror ul {
+  list-style-type: disc;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+}
+
+/* ===========================================
+   Task List (Checklist) Styles
+   =========================================== */
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.ProseMirror ul[data-type="taskList"] li + li {
+  margin-top: 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  margin-top: 0.25rem;
+  user-select: none;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--color-destructive);
+  width: 14px;
+  height: 14px;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Remove extra paragraph margin inside task list items */
+.ProseMirror ul[data-type="taskList"] li > div > p {
+  margin-bottom: 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div > p {
+  text-decoration: line-through;
+  color: var(--color-text-dim);
+}
+
+/* Nested task lists */
+.ProseMirror ul[data-type="taskList"] ul[data-type="taskList"] {
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+  padding-left: 0.75rem;
+}
+
+/* Horizontal rule */
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--color-table-border);
+  margin: 1.5rem 0;
+}
+
+/* Bold & Italic */
+.ProseMirror strong {
+  font-weight: 600;
+}
+
+.ProseMirror em {
+  font-style: italic;
+}
+
+/* Inline code */
+.ProseMirror code {
+  background-color: var(--color-inline-code-bg);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-family: "Fira Code", "SF Mono", "Consolas", monospace;
+  font-size: 0.875em;
+  color: var(--color-inline-code-text);
+}
+
+.ProseMirror .tiptap-math-inline {
+  display: inline-flex;
+  vertical-align: baseline;
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-shell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ProseMirror .tiptap-math-inline.is-preview-only .math-inline-shell {
+  cursor: pointer;
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-preview,
+.ProseMirror .tiptap-math-inline .math-inline-placeholder,
+.ProseMirror .tiptap-math-inline .math-inline-error {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-preview {
+  padding: 0 0.05rem;
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-placeholder,
+.ProseMirror .tiptap-math-inline .math-inline-error {
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-placeholder {
+  color: var(--color-text-dim);
+  background: color-mix(in srgb, var(--color-muted, #f5f5f5) 80%, transparent);
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-error {
+  color: var(--color-destructive);
+  background: color-mix(in srgb, var(--color-destructive) 8%, transparent);
+}
+
+.ProseMirror
+  .tiptap-math-inline
+  .math-inline-preview[data-tooltip]:hover::before,
+.ProseMirror
+  .tiptap-math-inline
+  .math-inline-preview[data-tooltip]:focus-visible::before,
+.ProseMirror
+  .tiptap-math-inline
+  .math-inline-placeholder[data-tooltip]:hover::before,
+.ProseMirror
+  .tiptap-math-inline
+  .math-inline-placeholder[data-tooltip]:focus-visible::before,
+.ProseMirror .tiptap-math-inline .math-inline-error[data-tooltip]:hover::before,
+.ProseMirror
+  .tiptap-math-inline
+  .math-inline-error[data-tooltip]:focus-visible::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 450;
+  white-space: nowrap;
+  color: var(--color-tooltip-text);
+  background: var(--color-tooltip-bg);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: 1px solid var(--color-table-border);
+  border-radius: 999px;
+  padding: 0.2rem 0.3rem 0.2rem 0.6rem;
+  background: color-mix(
+    in srgb,
+    var(--color-surface-elevated, #fff) 92%,
+    transparent
+  );
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-input {
+  min-width: 8rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-family: "Fira Code", "SF Mono", "Consolas", monospace;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  outline: none;
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-input::placeholder {
+  color: var(--color-text-dim);
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-done {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid var(--color-table-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-surface, #fff) 92%, transparent);
+  color: var(--color-text);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-done:hover {
+  border-color: var(--color-text-dim);
+  background: color-mix(in srgb, var(--color-muted, #f5f5f5) 82%, transparent);
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-done:focus-visible {
+  outline: 2px solid
+    color-mix(in srgb, var(--color-destructive) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.ProseMirror .tiptap-math-inline .math-inline-done[data-tooltip]:hover::before,
+.ProseMirror
+  .tiptap-math-inline
+  .math-inline-done[data-tooltip]:focus-visible::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 450;
+  white-space: nowrap;
+  color: var(--color-tooltip-text);
+  background: var(--color-tooltip-bg);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Blockquote */
+.ProseMirror blockquote {
+  border-left: 3px solid var(--color-blockquote-border);
+  padding-left: 1rem;
+  margin-left: 0;
+  margin-right: 0;
+  font-style: italic;
+  color: var(--color-blockquote-text);
+}
+
+/* ===========================================
+   Table Styles
+   =========================================== */
+.ProseMirror table {
+  border-collapse: collapse;
+  width: auto;
+  margin: 1rem 0;
+  overflow: visible;
+  table-layout: auto;
+}
+
+.ProseMirror table.maek-table {
+  position: relative;
+}
+
+.ProseMirror table td,
+.ProseMirror table th {
+  border: 1px solid var(--color-table-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  position: relative;
+  min-width: 60px;
+}
+
+.ProseMirror table th {
+  background-color: var(--color-table-header-bg);
+  font-weight: 600;
+}
+
+.ProseMirror table .selectedCell {
+  background-color: var(--color-table-selected-bg);
+}
+
+.ProseMirror table .selectedCell::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background-color: rgba(59, 130, 246, 0.1);
+  pointer-events: none;
+}
+
+/* Hide column resize handle (disabled) */
+.ProseMirror .column-resize-handle {
+  display: none;
+}
+
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin: 1rem 0;
+  position: relative;
+}
+
+.ProseMirror .resize-cursor {
+  cursor: default;
+}
+
+/* ===========================================
+   MAEK Table Grip & Overlay Styles
+   =========================================== */
+
+/* Grip Container */
+.maek-table-grip-container {
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.maek-table-grip-container.visible {
+  opacity: 1;
+}
+
+/* Row Grip */
+.maek-table-row-grip {
+  position: absolute;
+  left: -28px;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text-dim);
+  border-radius: 4px;
+  transition: all 150ms ease;
+  pointer-events: auto;
+}
+
+.maek-table-row-grip:hover {
+  color: var(--color-blockquote-text);
+  background-color: var(--color-inline-code-bg);
+}
+
+.maek-table-row-grip.is-header {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.maek-table-row-grip.is-header:hover {
+  background-color: transparent;
+}
+
+/* Column Grip */
+.maek-table-column-grip {
+  position: absolute;
+  top: -28px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text-dim);
+  border-radius: 4px;
+  transition: all 150ms ease;
+  pointer-events: auto;
+}
+
+.maek-table-column-grip:hover {
+  color: var(--color-blockquote-text);
+  background-color: var(--color-inline-code-bg);
+}
+
+/* ===========================================
+   Table Add Buttons (row/column)
+   =========================================== */
+
+/* Container for add buttons - always visible */
+.table-add-buttons-container {
+  z-index: 99;
+}
+
+/* Edge zone - hover area for triggering button visibility */
+.table-edge-zone {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  z-index: 50;
+}
+
+/* Bottom edge zone (for add row) */
+.table-edge-zone-bottom {
+  left: 0;
+  bottom: -24px;
+  height: 24px;
+}
+
+/* Right edge zone (for add column) */
+.table-edge-zone-right {
+  top: 0;
+  right: -24px;
+  width: 24px;
+}
+
+/* Add button base style */
+.table-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-input-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--color-input-border);
+  color: var(--color-text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 150ms ease,
+    background 150ms ease;
+  pointer-events: auto;
+}
+
+/* Button sizing - stretch to edge zone */
+.table-edge-zone-bottom .table-add-btn {
+  width: 100%;
+  height: 18px;
+  border-radius: 0 0 4px 4px;
+}
+
+.table-edge-zone-right .table-add-btn {
+  width: 18px;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+}
+
+/* Show button on hover (edge zone or button itself) */
+.table-edge-zone:hover .table-add-btn,
+.table-add-btn:hover {
+  opacity: 1;
+}
+
+/* Button active/hover state */
+.table-add-btn:hover {
+  background: var(--color-overlay-bg-strong);
+  color: var(--color-text-body);
+}
+
+/* Table context menu now uses shared FloatingMenu and MenuItem components */
+
+/* ===========================================
+   Code Block Styles (VS Code Dark+ Theme)
+   =========================================== */
+.ProseMirror .tiptap-code-block {
+  background-color: var(--color-code-block-bg);
+  color: var(--color-code-block-text);
+  padding: 0;
+  border-radius: 0.5rem;
+  font-family: "Fira Code", "SF Mono", "Consolas", monospace;
+  font-size: 0.875rem;
+  margin: 1rem 0;
+  line-height: 1.5;
+  position: relative;
+}
+
+.ProseMirror .tiptap-code-block .code-block-content {
+  display: block;
+  padding: 1rem;
+  background: none;
+  border-radius: 0;
+  color: inherit;
+  font-size: inherit;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Code block header bar */
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--color-code-block-header-bg);
+  border-radius: 0.5rem 0.5rem 0 0;
+  font-size: 12px;
+  color: var(--color-code-block-text-dim);
+  font-family: "Fira Code", "SF Mono", "Consolas", monospace;
+  user-select: none;
+}
+
+/* Language selector button */
+.code-block-lang {
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--color-code-block-text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 120ms ease;
+}
+
+.code-block-lang:hover {
+  color: var(--color-code-block-text);
+  background: var(--color-hover);
+}
+
+/* Language dropdown */
+.code-block-lang-dropdown {
+  display: flex;
+  flex-direction: column;
+}
+
+.code-block-lang-search {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--color-text-body);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-border-subtle);
+  border-radius: 14px 14px 0 0;
+  outline: none;
+  font-family: "Fira Code", "SF Mono", "Consolas", monospace;
+}
+
+.code-block-lang-search::placeholder {
+  color: var(--color-text-dim);
+}
+
+.code-block-lang-list {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.code-block-lang-list::-webkit-scrollbar {
+  display: none;
+}
+
+.code-block-lang-empty {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--color-text-dim);
+  text-align: center;
+}
+
+/* Copy button — visible on hover */
+.code-block-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 11px;
+  color: var(--color-code-block-text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  opacity: 0;
+  transition: all 120ms ease;
+}
+
+.tiptap-code-block:hover .code-block-copy-btn {
+  opacity: 1;
+}
+
+/* ===========================================
+   Math Block Styles
+   =========================================== */
+
+.ProseMirror .tiptap-math-block {
+  margin: 1.25rem 0;
+}
+
+.ProseMirror .tiptap-math-block .math-block-shell {
+  position: relative;
+}
+
+.ProseMirror .tiptap-math-block.is-editing .math-block-shell {
+  border: 1px solid var(--color-table-border);
+  border-radius: 0.875rem;
+  background: color-mix(
+    in srgb,
+    var(--color-surface-elevated, #fff) 88%,
+    transparent
+  );
+  overflow: hidden;
+}
+
+.ProseMirror .tiptap-math-block.is-preview-only .math-block-shell {
+  padding-right: 2.25rem;
+}
+
+.ProseMirror .tiptap-math-block.is-selected.is-editing .math-block-shell {
+  border-color: var(--color-destructive);
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--color-destructive) 35%, transparent);
+}
+
+.ProseMirror .tiptap-math-block .math-block-toggle {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--color-table-border);
+  border-radius: 9999px;
+  padding: 0;
+  background: color-mix(
+    in srgb,
+    var(--color-surface-elevated, #fff) 92%,
+    transparent
+  );
+  color: var(--color-text);
+  opacity: 0;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 0.12);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+  z-index: 1;
+}
+
+.ProseMirror .tiptap-math-block.is-editing .math-block-toggle {
+  opacity: 1;
+  transform: none;
+}
+
+.ProseMirror .tiptap-math-block .math-block-toggle:hover {
+  border-color: var(--color-text-dim);
+  background: color-mix(in srgb, var(--color-muted, #f5f5f5) 82%, transparent);
+}
+
+.ProseMirror .tiptap-math-block:hover .math-block-toggle,
+.ProseMirror .tiptap-math-block.is-editing .math-block-toggle,
+.ProseMirror .tiptap-math-block .math-block-toggle:focus-visible {
+  opacity: 1;
+}
+
+.ProseMirror .tiptap-math-block.is-preview-only:hover .math-block-toggle,
+.ProseMirror
+  .tiptap-math-block.is-preview-only
+  .math-block-toggle:focus-visible {
+  transform: translateY(0);
+}
+
+.ProseMirror .tiptap-math-block.is-preview-only .math-block-toggle {
+  transform: translateY(-2px);
+}
+
+.ProseMirror .tiptap-math-block .math-block-toggle:focus-visible {
+  outline: 2px solid
+    color-mix(in srgb, var(--color-destructive) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.ProseMirror .tiptap-math-block .math-block-toggle[data-tooltip]:hover::before,
+.ProseMirror
+  .tiptap-math-block
+  .math-block-toggle[data-tooltip]:focus-visible::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 450;
+  white-space: nowrap;
+  color: var(--color-tooltip-text);
+  background: var(--color-tooltip-bg);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.ProseMirror .tiptap-math-block .math-block-source {
+  display: block;
+  width: 100%;
+  min-height: 8rem;
+  border: 0;
+  border-bottom: 1px solid var(--color-table-border);
+  padding: 1rem;
+  background: transparent;
+  color: var(--color-text);
+  resize: vertical;
+  font-family: "Fira Code", "SF Mono", "Consolas", monospace;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  outline: none;
+}
+
+.ProseMirror .tiptap-math-block .math-block-source::placeholder {
+  color: var(--color-text-dim);
+}
+
+.ProseMirror .tiptap-math-block .math-block-preview-shell {
+  padding: 1rem 1.125rem;
+  background: color-mix(in srgb, var(--color-surface, #fff) 90%, transparent);
+}
+
+.ProseMirror .tiptap-math-block.is-preview-only .math-block-preview-shell {
+  padding: 0;
+  background: transparent;
+}
+
+.ProseMirror .tiptap-math-block .math-block-preview {
+  overflow-x: auto;
+}
+
+.ProseMirror .tiptap-math-block.is-preview-only .math-block-preview {
+  padding: 0.125rem 0;
+}
+
+.ProseMirror .tiptap-math-block .math-block-preview .katex-display {
+  margin: 0;
+}
+
+.ProseMirror .tiptap-math-block .math-block-placeholder {
+  font-size: 0.9rem;
+  color: var(--color-text-dim);
+}
+
+.ProseMirror .tiptap-math-block .math-block-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--color-destructive);
+}
+
+.ProseMirror .tiptap-math-block .math-block-error-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.ProseMirror .tiptap-math-block .math-block-error-message {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.code-block-copy-btn:hover {
+  color: var(--color-code-block-text);
+  background: var(--color-hover);
+}
+
+.code-block-copy-btn[data-tooltip]:hover::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 450;
+  white-space: nowrap;
+  color: var(--color-tooltip-text);
+  background: var(--color-tooltip-bg);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.code-block-content {
+  min-height: 1.5em;
+}
+
+/* Syntax highlighting colors (themed via CSS variables) */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-link {
+  color: var(--color-syntax-keyword);
+}
+
+.hljs-string,
+.hljs-title,
+.hljs-name,
+.hljs-type,
+.hljs-attribute,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition,
+.hljs-variable,
+.hljs-template-tag,
+.hljs-template-variable {
+  color: var(--color-syntax-string);
+}
+
+.hljs-number {
+  color: var(--color-syntax-number);
+}
+
+.hljs-function {
+  color: var(--color-syntax-function);
+}
+
+.hljs-comment,
+.hljs-quote,
+.hljs-deletion,
+.hljs-meta {
+  color: var(--color-syntax-comment);
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-title,
+.hljs-section,
+.hljs-doctag,
+.hljs-type,
+.hljs-name,
+.hljs-strong {
+  font-weight: normal;
+}
+
+.hljs-built_in,
+.hljs-class .hljs-title {
+  color: var(--color-syntax-type);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-params {
+  color: var(--color-syntax-variable);
+}
+
+.hljs-attr {
+  color: var(--color-syntax-variable);
+}
+
+.hljs-regexp {
+  color: var(--color-syntax-regexp);
+}
+
+.text-preview-surface.preview-surface {
+  background: var(--color-code-block-bg);
+  border: 1px solid var(--color-code-block-header-bg);
+}
+
+.text-preview-surface.preview-surface::before {
+  display: none;
+}
+
+.text-preview-shell {
+  min-height: 100%;
+}
+
+.text-preview-pre {
+  margin: 0;
+  min-height: 100%;
+  padding: 28px 32px;
+  overflow: auto;
+}
+
+.text-preview-code {
+  display: block;
+  color: var(--color-code-block-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.text-preview-shell.is-wrapped .text-preview-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.text-preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  padding: 24px;
+  color: var(--color-muted-text);
+  font-size: 13px;
+}
+
+/* ===========================================
+   Link Styles
+   =========================================== */
+.ProseMirror a.maek-link {
+  color: var(--color-maek-red);
+  text-decoration: underline;
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--color-maek-red) 30%,
+    transparent
+  );
+  text-underline-offset: 2px;
+  transition: text-decoration-color 150ms ease;
+  cursor: text;
+}
+
+.ProseMirror a.maek-link:hover {
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--color-maek-red) 70%,
+    transparent
+  );
+}
+
+/* Note link - internal .md reference */
+.ProseMirror a.maek-note-link {
+  cursor: pointer;
+}
+
+.ProseMirror a.maek-note-link::before {
+  content: "";
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 0.15em;
+  vertical-align: -0.1em;
+  background: currentColor;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 13H8'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 13H8'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3C/svg%3E");
+  mask-size: contain;
+  -webkit-mask-size: contain;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+}
+
+/* ===========================================
+   Strikethrough
+   =========================================== */
+.ProseMirror s {
+  text-decoration: line-through;
+  color: var(--color-text-dim);
+}
+
+/* ===========================================
+   Note Picker (Liquid Glass)
+   =========================================== */
+.maek-note-picker {
+  width: 320px;
+  max-height: 340px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  box-shadow: var(--glass-shadow), var(--glass-shadow-inset);
+  animation: menu-fade-in 150ms ease-out;
+}
+
+.maek-note-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.maek-note-picker-search-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.maek-note-picker-input {
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-text-body);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.maek-note-picker-input::placeholder {
+  color: var(--color-text-dim);
+}
+
+.maek-note-picker-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.maek-note-picker-list::-webkit-scrollbar {
+  display: none;
+}
+
+.maek-note-picker-empty {
+  padding: 20px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-dim);
+}
+
+.maek-note-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--color-text-body);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 120ms ease;
+  text-align: left;
+}
+
+.maek-note-picker-item:hover,
+.maek-note-picker-item.focused {
+  background: var(--color-overlay-bg);
+}
+
+.maek-note-picker-item:active {
+  background: var(--color-overlay-bg-strong);
+}
+
+.maek-note-picker-item-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.maek-note-picker-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.maek-note-picker-item-name {
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--color-text-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.maek-note-picker-item-path {
+  font-size: 11px;
+  color: var(--color-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===========================================
+   Slash Command Menu (Liquid Glass)
+   =========================================== */
+.maek-slash-menu {
+  min-width: 240px;
+  max-width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  box-shadow: var(--glass-shadow), var(--glass-shadow-inset);
+  padding: 6px;
+  animation: menu-fade-in 150ms ease-out;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.maek-slash-menu::-webkit-scrollbar {
+  display: none;
+}
+
+.maek-slash-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--color-text-body);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 120ms ease;
+  text-align: left;
+}
+
+.maek-slash-menu-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.maek-slash-menu-item.selected {
+  background: var(--color-overlay-bg);
+}
+
+.maek-slash-menu-item.disabled.selected {
+  background: transparent;
+}
+
+.maek-slash-menu-item:hover:not(.selected) {
+  background: var(--color-overlay-bg);
+}
+
+.maek-slash-menu-item.disabled:hover:not(.selected) {
+  background: transparent;
+}
+
+.maek-slash-menu.keyboard-nav .maek-slash-menu-item:hover:not(.selected) {
+  background: transparent;
+}
+
+.maek-slash-menu-item:active {
+  background: var(--color-overlay-bg-strong);
+  transform: scale(0.98);
+}
+
+.maek-slash-menu-item.disabled:active {
+  background: transparent;
+  transform: none;
+}
+
+.maek-slash-menu-item-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-input-bg);
+  border-radius: 6px;
+  border: 1px solid var(--color-overlay-bg);
+}
+
+.maek-slash-menu-item-icon svg {
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+}
+
+.maek-slash-menu-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.maek-slash-menu-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-body);
+}
+
+.maek-slash-menu-item-description {
+  font-size: 11px;
+  color: var(--color-text-dim);
+}
+
+.maek-slash-menu-item-shortcut {
+  margin-left: auto;
+  font-size: 11px;
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  color: var(--color-text-dim);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.maek-slash-menu-item-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-dim);
+  background: var(--color-overlay-bg);
+  flex-shrink: 0;
+}
+
+/* ===========================================
+   Bubble Toolbar (Liquid Glass)
+   =========================================== */
+.maek-bubble-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  box-shadow: var(--glass-shadow), var(--glass-shadow-inset);
+  padding: 4px;
+  animation: menu-fade-in 150ms ease-out;
+}
+
+.maek-bubble-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-body);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.maek-bubble-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.maek-bubble-btn:hover {
+  background: var(--color-overlay-bg);
+}
+
+.maek-bubble-btn.active {
+  background: var(--color-overlay-bg-strong);
+  color: var(--color-maek-red);
+}
+
+.maek-bubble-btn--wide {
+  width: auto;
+  padding: 0 8px;
+  gap: 2px;
+}
+
+.maek-bubble-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-overlay-bg-strong);
+  margin: 0 2px;
+}
+
+/* Bubble menu link input */
+.maek-link-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+}
+
+.maek-link-input input {
+  width: 200px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 6px;
+  background: var(--color-input-bg);
+  outline: none;
+  color: var(--color-text-body);
+}
+
+.maek-link-input input:focus {
+  border-color: var(--color-input-border-focus);
+}
+
+.maek-link-input input::placeholder {
+  color: var(--color-text-dim);
+}
+
+.maek-link-input-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.maek-link-input-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.maek-link-input-btn.confirm {
+  color: var(--color-blockquote-text);
+}
+
+.maek-link-input-btn.confirm:hover {
+  background: var(--color-overlay-bg);
+}
+
+.maek-link-input-btn.remove {
+  color: var(--color-destructive);
+}
+
+.maek-link-input-btn.remove:hover {
+  background: var(--color-destructive-hover-bg);
+}
+
+/* ===========================================
+   Link Hover Menu (Liquid Glass)
+   =========================================== */
+.maek-link-hover-menu {
+  z-index: 1060;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  box-shadow: var(--glass-shadow), var(--glass-shadow-inset);
+  padding: 6px 8px;
+  animation: menu-fade-in 150ms ease-out;
+}
+
+/* Preview mode */
+.maek-link-hover-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.maek-link-hover-url {
+  font-size: 12px;
+  color: var(--color-blockquote-text);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maek-link-hover-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.maek-link-hover-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-blockquote-text);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.maek-link-hover-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.maek-link-hover-btn:hover {
+  background: var(--color-overlay-bg);
+  color: var(--color-text-body);
+}
+
+/* Edit mode */
+.maek-link-hover-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px;
+}
+
+.maek-link-hover-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.maek-link-hover-label {
+  font-size: 11px;
+  color: var(--color-text-dim);
+  width: 30px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.maek-link-hover-input {
+  width: 200px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 5px;
+  background: var(--color-input-bg);
+  outline: none;
+  color: var(--color-text-body);
+}
+
+.maek-link-hover-input:focus {
+  border-color: var(--color-input-border-focus);
+}
+
+.maek-link-hover-note-picker-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 200px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 5px;
+  background: var(--color-input-bg);
+  color: var(--color-text-body);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.maek-link-hover-note-picker-btn:hover {
+  border-color: var(--color-input-border-focus);
+}
+
+.maek-link-hover-note-icon {
+  width: 12px;
+  height: 12px;
+  color: var(--color-maek-red);
+  flex-shrink: 0;
+}
+
+.maek-link-hover-note-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.maek-link-hover-input::placeholder {
+  color: var(--color-text-dim);
+}
+
+.maek-link-hover-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.maek-link-hover-btn.save {
+  color: var(--color-blockquote-text);
+}
+
+.maek-link-hover-btn.save:hover {
+  background: var(--color-overlay-bg);
+  color: var(--color-text-body);
+}
+
+.maek-link-hover-btn.cancel {
+  color: var(--color-text-dim);
+}
+
+.maek-link-hover-btn.cancel:hover {
+  background: var(--color-overlay-bg);
+  color: var(--color-blockquote-text);
+}
+
+.maek-title-copy-btn {
+  position: relative;
+}
+
+/* ===========================================
+   Icon Button Tooltips
+   =========================================== */
+.maek-bubble-btn::after,
+.maek-link-hover-btn::after,
+.maek-title-copy-btn::after {
+  content: attr(aria-label);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 450;
+  white-space: nowrap;
+  color: var(--color-tooltip-text);
+  background: var(--color-tooltip-bg);
+  border-radius: 4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.maek-bubble-btn:hover::after,
+.maek-link-hover-btn:hover::after,
+.maek-title-copy-btn:hover::after {
+  opacity: 1;
+}
+
+/* Keep title copy tooltip inside center panel near right edge */
+.maek-title-copy-btn::after {
+  top: calc(100% + 6px);
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  z-index: 1200;
+}
+
+/* ===========================================
+   Image Node
+   =========================================== */
+.ProseMirror .maek-note-image-node {
+  display: block;
+  margin: 1.25rem 0;
+  position: relative;
+}
+
+.ProseMirror .maek-note-image-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.ProseMirror .maek-note-image-render {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  border: 1px solid
+    color-mix(in srgb, var(--color-border-gray) 72%, transparent);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+/* Delete button */
+.ProseMirror .maek-note-image-delete {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--color-table-border);
+  border-radius: 9999px;
+  padding: 0;
+  background: color-mix(
+    in srgb,
+    var(--color-surface-elevated, #fff) 92%,
+    transparent
+  );
+  color: var(--color-text);
+  opacity: 0;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 0.12);
+  transition:
+    opacity 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+  z-index: 2;
+}
+
+.ProseMirror .maek-note-image-node:hover .maek-note-image-delete,
+.ProseMirror .maek-note-image-node.is-selected .maek-note-image-delete,
+.ProseMirror .maek-note-image-delete:focus-visible {
+  opacity: 1;
+}
+
+.ProseMirror .maek-note-image-delete:hover {
+  border-color: color-mix(in srgb, var(--color-destructive) 60%, transparent);
+  color: var(--color-destructive);
+  background: color-mix(
+    in srgb,
+    var(--color-destructive) 8%,
+    var(--color-surface-elevated, #fff)
+  );
+}
+
+.ProseMirror .maek-note-image-delete:focus-visible {
+  outline: 2px solid
+    color-mix(in srgb, var(--color-destructive) 30%, transparent);
+  outline-offset: 2px;
+}
+
+/* Resize handles — shared */
+.ProseMirror .maek-note-image-resize-handle-right,
+.ProseMirror .maek-note-image-resize-handle-bottom,
+.ProseMirror .maek-note-image-resize-handle-corner {
+  position: absolute;
+  opacity: 0;
+  background: color-mix(in srgb, var(--color-text-dim) 30%, transparent);
+  transition:
+    opacity 160ms ease,
+    background 160ms ease;
+  z-index: 2;
+}
+
+/* Right handle */
+.ProseMirror .maek-note-image-resize-handle-right {
+  right: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 80px;
+  cursor: col-resize;
+  border-radius: 4px;
+}
+
+/* Bottom handle */
+.ProseMirror .maek-note-image-resize-handle-bottom {
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 8px;
+  width: 80px;
+  cursor: row-resize;
+  border-radius: 4px;
+}
+
+/* Corner handle — rounded L following image border-radius */
+.ProseMirror .maek-note-image-resize-handle-corner {
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  border-radius: 0 0 14px 0;
+  background: transparent;
+  border-right: 4px solid
+    color-mix(in srgb, var(--color-text-dim) 40%, transparent);
+  border-bottom: 4px solid
+    color-mix(in srgb, var(--color-text-dim) 40%, transparent);
+}
+
+/* Show on hover / selected / resizing */
+.ProseMirror .maek-note-image-node:hover .maek-note-image-resize-handle-right,
+.ProseMirror .maek-note-image-node:hover .maek-note-image-resize-handle-bottom,
+.ProseMirror .maek-note-image-node:hover .maek-note-image-resize-handle-corner,
+.ProseMirror
+  .maek-note-image-node.is-selected
+  .maek-note-image-resize-handle-right,
+.ProseMirror
+  .maek-note-image-node.is-selected
+  .maek-note-image-resize-handle-bottom,
+.ProseMirror
+  .maek-note-image-node.is-selected
+  .maek-note-image-resize-handle-corner,
+.ProseMirror
+  .maek-note-image-node.is-resizing
+  .maek-note-image-resize-handle-right,
+.ProseMirror
+  .maek-note-image-node.is-resizing
+  .maek-note-image-resize-handle-bottom,
+.ProseMirror
+  .maek-note-image-node.is-resizing
+  .maek-note-image-resize-handle-corner {
+  opacity: 1;
+}
+
+/* Hover feedback */
+.ProseMirror .maek-note-image-resize-handle-right:hover,
+.ProseMirror .maek-note-image-resize-handle-bottom:hover {
+  background: color-mix(in srgb, var(--color-text-dim) 50%, transparent);
+}
+
+.ProseMirror .maek-note-image-resize-handle-corner:hover {
+  border-right-color: color-mix(
+    in srgb,
+    var(--color-text-dim) 60%,
+    transparent
+  );
+  border-bottom-color: color-mix(
+    in srgb,
+    var(--color-text-dim) 60%,
+    transparent
+  );
+}
+
+.ProseMirror .maek-note-image-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.95rem 1rem;
+  border-radius: 14px;
+  border: 1px dashed
+    color-mix(in srgb, var(--color-border-gray) 78%, transparent);
+  background: color-mix(in srgb, var(--color-surface-overlay) 68%, white);
+  color: var(--color-muted-text);
+}
+
+.ProseMirror .maek-note-image-fallback-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-neutral-ink);
+}
+
+.ProseMirror .maek-note-image-fallback-status {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--color-text-dim);
+}
+
+.ProseMirror .maek-note-image-fallback-path {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.ProseMirror .maek-note-image-placeholder {
+  display: block;
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px dashed
+    color-mix(in srgb, var(--color-border-gray) 78%, transparent);
+  background: color-mix(in srgb, var(--color-surface-overlay) 52%, white);
+  color: var(--color-muted-text);
+  font-size: 0.85rem;
+}

@@ -1,0 +1,1 @@
+export { MathInlineView } from "./MathInlineView";

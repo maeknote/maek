@@ -6,9 +6,7 @@ import { createApp } from './app'
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const port = Number(process.env.PORT ?? 3000)
-const app = createApp(
-  path.resolve(process.env.MAEK_DATA_DIR ?? path.join(root, '.maek-data'))
-)
+const app = createApp()
 const vite = await createViteServer({
   configFile: path.join(root, 'vite.config.ts'),
   root: path.join(root, 'client'),

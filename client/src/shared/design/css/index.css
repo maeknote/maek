@@ -1,0 +1,16 @@
+/**
+ * Design System - CSS Entry Point
+ *
+ * This file imports all design system CSS and Tailwind directives.
+ * Imported directly in main.tsx.
+ */
+
+/* Design System CSS */
+@import "./variables.css";
+@import "./effects.css";
+@import "./global.css";
+
+/* Tailwind CSS */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

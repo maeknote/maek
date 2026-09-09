@@ -1,20 +1,12 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './notes/NotesApp'
-import { DesignProvider } from './design/DesignProvider'
-import { WorkspaceProvider } from './Workspace'
-import './notes/notes.css'
-import 'katex/dist/katex.min.css'
-
-const container = document.getElementById('root')
-if (!container) throw new Error('#root를 찾을 수 없습니다')
-
-createRoot(container).render(
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import "./host";
+import "./shared/design/css/index.css";
+import "./workspace.css";
+import "katex/dist/katex.min.css";
+import App from "./App";
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <DesignProvider>
-      <WorkspaceProvider>
-        <App />
-      </WorkspaceProvider>
-    </DesignProvider>
-  </StrictMode>
-)
+    <App />
+  </StrictMode>,
+);

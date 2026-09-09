@@ -33,7 +33,7 @@ export const WsId = z.string().min(1).max(64)
 
 export const WorkspaceRef = z.object({
   wsId: WsId,
-  /** Absolute, realpath-resolved root. Display + localStorage recents only. */
+  /** Absolute, realpath-resolved root. Display and Workspace restoration. */
   root: z.string(),
   /** Basename of the root, for the window/gate label. */
   name: z.string()
@@ -55,7 +55,7 @@ export const PickDirectoryResult = z.discriminatedUnion('status', [
 export type PickDirectoryResult = z.infer<typeof PickDirectoryResult>
 
 // ---------------------------------------------------------------------------
-// openWorkspace — path-input fallback AND reopening a localStorage recent
+// openWorkspace — path-input fallback and reopening a remembered Workspace
 // ---------------------------------------------------------------------------
 
 export const OpenWorkspaceRequest = z.object({

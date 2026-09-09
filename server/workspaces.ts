@@ -9,8 +9,8 @@ import { RpcHttpError, badRequest, fsError } from './errors'
  * The workspace registry — the only place absolute paths live on the server.
  *
  * In-memory on purpose: it dies with the process, which is correct for a tool
- * whose only run mode is `npm run dev`. The client keeps the *paths* in
- * localStorage (T14 recents) and re-registers them via openWorkspace, so a
+ * whose only run mode is `npm run dev`. The client keeps the last path in
+ * localStorage and Workspace history in .maek, then re-registers via openWorkspace, so a
  * wsId is a handle to this process, never a persisted identifier.
  */
 export interface Workspace {

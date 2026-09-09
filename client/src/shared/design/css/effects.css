@@ -1,0 +1,678 @@
+/**
+ * Design System - Effect Classes
+ *
+ * Reusable CSS classes for common visual effects.
+ * These consolidate duplicated styles from editor.css, chat.css, explorer.css.
+ */
+
+/* ========== Glass Surface Effect ========== */
+/* Primary liquid glass effect used for menus, popovers, and overlays */
+.glass-surface {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--glass-shadow), var(--glass-shadow-inset);
+}
+
+/* Glass modal effect for settings modal and file picker */
+.glass-modal {
+  background: var(--modal-bg);
+  backdrop-filter: var(--modal-blur);
+  -webkit-backdrop-filter: var(--modal-blur);
+  border: 1px solid var(--modal-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--modal-shadow);
+}
+
+/* Opaque variant for compact dropdowns that should visually match modal surfaces
+   without allowing content behind the menu to show through. */
+.opaque-menu-surface {
+  background: var(--color-background);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--modal-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--modal-shadow);
+}
+
+/* Glass panel with texture overlay (for larger panels) */
+.glass-panel {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  box-shadow: var(--shadow-panel);
+}
+
+.glass-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.5;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  z-index: 1;
+}
+
+.glass-panel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.95) 18%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(255, 255, 255, 0.95) 82%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+.glass-panel-inner {
+  box-shadow: var(--shadow-glass-inner);
+}
+
+/* ========== Preview Frame ========== */
+.preview-frame-toolbar {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: rgba(255, 255, 255, 0.74);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.preview-frame-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius-full);
+  background: var(--color-input-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    var(--shadow-sm);
+}
+
+.preview-frame-icon-button {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius-full);
+  background: var(--color-input-bg);
+  color: var(--color-muted-text);
+  box-shadow: var(--shadow-sm);
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.preview-frame-icon-button:hover:not(:disabled) {
+  color: var(--color-neutral-ink);
+  background: var(--color-overlay-bg);
+  border-color: var(--color-border-subtle);
+}
+
+.preview-frame-icon-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.preview-frame-icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.preview-frame-icon-button {
+  position: relative;
+}
+
+.preview-frame-icon-button[data-tooltip]:hover::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 450;
+  white-space: nowrap;
+  color: var(--color-tooltip-text);
+  background: var(--color-tooltip-bg);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.preview-surface {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
+  background: #ffffff;
+  box-shadow: var(--shadow-floating);
+}
+
+.preview-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  pointer-events: none;
+}
+
+[data-theme="dark"] .preview-frame-toolbar {
+  background: rgba(28, 27, 26, 0.74);
+}
+
+[data-theme="dark"] .preview-frame-chip {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    var(--shadow-sm);
+}
+
+[data-theme="dark"] .preview-surface {
+  background: var(--color-paper-white);
+  box-shadow: var(--shadow-floating);
+}
+
+[data-theme="dark"] .preview-surface::before {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ========== Meeting Notes ========== */
+.transcription-progress-track {
+  position: relative;
+}
+
+.transcription-progress-bar {
+  position: relative;
+  overflow: hidden;
+}
+
+.transcription-progress-bar[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.38) 48%,
+    transparent 100%
+  );
+  animation: transcription-progress-sheen 1.6s ease-in-out infinite;
+}
+
+@keyframes transcription-progress-sheen {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ========== Menu Components ========== */
+/* Base menu container */
+.menu-container {
+  min-width: 180px;
+  padding: 6px;
+}
+
+/* Menu item - common style for all menu items */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--color-neutral-ink);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  outline: none;
+}
+
+.menu-item:hover:not(.disabled):not(:disabled) {
+  background: var(--color-hover);
+}
+
+.menu-item:active:not(.disabled):not(:disabled) {
+  background: var(--color-active);
+  transform: scale(0.98);
+}
+
+.menu-item.selected {
+  color: var(--color-maek-red);
+}
+
+.menu-item.destructive {
+  color: var(--color-destructive);
+}
+
+.menu-item.destructive:hover:not(.disabled):not(:disabled) {
+  background: var(--color-destructive-hover-bg);
+}
+
+.menu-item.disabled,
+.menu-item:disabled {
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+}
+
+.menu-item-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.menu-item-label {
+  flex: 1;
+}
+
+.menu-item-shortcut {
+  font-size: 11px;
+  color: var(--color-muted-text);
+  opacity: 0.7;
+}
+
+/* Menu separator */
+.menu-separator {
+  height: 1px;
+  background: var(--color-border-subtle);
+  margin: 4px 6px;
+}
+
+/* ========== Animations ========== */
+@keyframes menu-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cursor-blink {
+  0%,
+  50% {
+    opacity: 0.7;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Animation utility classes */
+.animate-menu-in {
+  animation: menu-fade-in 150ms ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 150ms ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 150ms ease-out;
+}
+
+/* ========== Focus States ========== */
+/* Remove all focus rings globally (per DESIGN_GUIDE.md) */
+:focus-visible {
+  outline: none !important;
+}
+
+/* Custom focus indicator using maek-red */
+.focus-ring-red:focus-visible {
+  outline: 2px solid var(--color-maek-red) !important;
+  outline-offset: -2px;
+}
+
+/* Subtle background focus indicator */
+.focus-bg:focus-visible {
+  background: var(--color-hover);
+}
+
+/* ========== Settings Slider ========== */
+/* Custom range input for settings (font size, line spacing) */
+.settings-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--color-slider-track);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--color-maek-red);
+  border-radius: 50%;
+  cursor: grab;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.settings-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.settings-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.1);
+}
+
+.settings-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--color-maek-red);
+  border: none;
+  border-radius: 50%;
+  cursor: grab;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.settings-slider::-moz-range-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.settings-slider::-moz-range-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.1);
+}
+
+.settings-slider::-moz-range-track {
+  height: 4px;
+  background: var(--color-slider-track);
+  border-radius: 2px;
+}
+
+/* Stepper buttons for precise value control */
+.settings-stepper-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 14px;
+  background: transparent;
+  border: none;
+  color: var(--color-muted-text);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+  border-radius: 3px;
+}
+
+.settings-stepper-btn:hover:not(:disabled) {
+  color: var(--color-neutral-ink);
+  background: var(--color-overlay-bg);
+}
+
+.settings-stepper-btn:active:not(:disabled) {
+  background: var(--color-overlay-bg-strong);
+}
+
+.settings-stepper-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ========== Toggle Switch ========== */
+/* Custom toggle switch for settings (model enable/disable) */
+.toggle-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--color-toggle-bg);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+  flex-shrink: 0;
+}
+
+.toggle-switch.active {
+  background: var(--color-maek-red);
+}
+
+.toggle-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--color-toggle-knob);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  transition: transform 150ms ease;
+}
+
+.toggle-switch.active::after {
+  transform: translateX(16px);
+}
+
+.toggle-switch.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ========== Frontmatter Mode Switch ========== */
+/* Liquid-glass pill button for switching between Properties / Source views */
+.frontmatter-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--color-muted-text);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px) saturate(1.6);
+  -webkit-backdrop-filter: blur(12px) saturate(1.6);
+  border: 1px solid var(--glass-border);
+  border-radius: 9999px;
+  box-shadow:
+    var(--glass-shadow-inset),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: all 150ms ease;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.frontmatter-mode-switch:hover {
+  color: var(--color-neutral-ink);
+  background: var(--color-overlay-bg);
+  border-color: var(--color-input-border);
+  box-shadow:
+    var(--glass-shadow-inset),
+    0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.frontmatter-mode-switch:active {
+  background: var(--color-overlay-bg-strong);
+  transform: scale(0.97);
+}
+
+.frontmatter-mode-switch--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ========== Title Cell Action Button ========== */
+/* Liquid-glass icon button for database title cell hover actions */
+.title-cell-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--color-muted-text);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px) saturate(1.6);
+  -webkit-backdrop-filter: blur(12px) saturate(1.6);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow:
+    var(--glass-shadow-inset),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.title-cell-action-btn:hover {
+  color: var(--color-neutral-ink);
+  background: var(--color-overlay-bg);
+  border-color: var(--color-input-border);
+  box-shadow:
+    var(--glass-shadow-inset),
+    0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.title-cell-action-btn:active {
+  background: var(--color-overlay-bg-strong);
+  transform: scale(0.95);
+}
+
+/* ========== Accordion Card ========== */
+/* Collapsible card for provider settings */
+.accordion-card {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-paper-white);
+  overflow: hidden;
+  transition: box-shadow 150ms ease;
+}
+
+.accordion-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.accordion-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 120ms ease;
+}
+
+.accordion-card-header:hover {
+  background: var(--color-overlay-bg);
+}
+
+.accordion-card-content {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+/* ========== Checkbox ========== */
+/* Custom checkbox for model selection */
+.model-checkbox {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--color-checkbox-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 120ms ease;
+  flex-shrink: 0;
+}
+
+.model-checkbox.checked {
+  background: var(--color-maek-red);
+  border-color: var(--color-maek-red);
+}
+
+.model-checkbox.checked::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.model-checkbox.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ========== Dark Theme Overrides ========== */
+[data-theme="dark"] .glass-panel {
+  border-color: transparent;
+}
+
+[data-theme="dark"] .glass-panel::before {
+  mix-blend-mode: soft-light;
+  opacity: 0.3;
+}
+
+[data-theme="dark"] .glass-panel::after {
+  background: transparent;
+}
