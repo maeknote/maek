@@ -1,6 +1,15 @@
 #!/bin/zsh
 set -eu
 
+# Ensure user paths and node/nvm are available in macOS GUI environment
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$PATH"
+if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+  set +u
+  export NVM_DIR="$HOME/.nvm"
+  \. "$NVM_DIR/nvm.sh"
+  set -u
+fi
+
 project_root="__PROJECT_ROOT__"
 url="http://127.0.0.1:3000"
 
