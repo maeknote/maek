@@ -155,6 +155,7 @@ function AppContent() {
   const state = useStore();
   const [search, setSearch] = useState(false),
     [settings, setSettings] = useState(false),
+    [showQuitConfirm, setShowQuitConfirm] = useState(false),
     [path, setPath] = useState(""),
     [collapsed, setCollapsed] = useState(false),
     [shuttingDown, setShuttingDown] = useState(false);
@@ -193,12 +194,18 @@ function AppContent() {
     }
   }
   async function quitServer() {
-    if (!window.confirm("Stop Maek? You can start it again from its Desktop icon."))
-      return;
     try {
       await api("/api/app/quit", "POST");
+      setShowQuitConfirm(false);
       setSettings(false);
       setShuttingDown(true);
+      setTimeout(() => {
+        try {
+          window.close();
+        } catch {
+          // Browser may restrict window.close if not opened by script
+        }
+      }, 500);
     } catch (e) {
       state.setError(String(e));
     }
@@ -258,12 +265,15 @@ function AppContent() {
   if (shuttingDown)
     return (
       <div className="h-screen flex items-center justify-center bg-warm-vellum">
-        <section className="glass-panel rounded-2xl p-8 w-[440px] text-neutral-ink text-center">
+        <section className="glass-panel rounded-2xl p-8 w-[440px] text-neutral-ink text-center shadow-xl">
           <Power className="w-9 h-9 text-maek-red mx-auto mb-5" />
           <h1 className="text-2xl font-semibold mb-2">Maek stopped</h1>
-          <p className="text-sm text-muted-text">
-            Start it again by opening the Maek icon on your Desktop.
+          <p className="text-sm text-muted-text mb-6">
+            You can safely close this browser tab.
           </p>
+          <Button variant="outline" onClick={() => window.close()}>
+            Close Tab
+          </Button>
         </section>
       </div>
     );
@@ -333,6 +343,7 @@ function AppContent() {
                   onSearch={() => setSearch(true)}
                   onSettings={() => setSettings(true)}
                   onCollapse={() => setCollapsed(true)}
+                  onQuit={() => setShowQuitConfirm(true)}
                 />
               </aside>
               <div
@@ -606,18 +617,37 @@ function AppContent() {
             {state.theme === "dark" ? "Light" : "Dark"}
           </Button>
         </div>
-        <div className="mt-6 pt-4 border-t border-border-gray">
-          <Button variant="outline" onClick={() => void quitServer()}>
-            <Power size={16} />
-            Quit server
-          </Button>
-          <p className="text-xs text-muted-text mt-2">
-            Stops the local app. Your notes are not changed.
-          </p>
-        </div>
-        <p className="text-xs text-muted-text mt-4">
+        <p className="text-xs text-muted-text mt-6 pt-4 border-t border-border-gray">
           ⌘P Search · ⌘N New note · ⌘S Save · ⌘W Close tab
         </p>
+      </Modal>
+      <Modal
+        title="Stop Maek?"
+        open={showQuitConfirm}
+        onClose={() => setShowQuitConfirm(false)}
+      >
+        <div className="text-center py-2">
+          <div className="mx-auto bg-red-50 dark:bg-red-950/30 w-12 h-12 rounded-full flex items-center justify-center mb-4 text-maek-red">
+            <Power size={24} />
+          </div>
+          <p className="text-sm text-muted-text mb-6">
+            The local server will shut down. You can start it again from your Desktop icon.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <Button
+              variant="outline"
+              onClick={() => setShowQuitConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-maek-red text-white hover:bg-maek-red/90 border-0"
+              onClick={() => void quitServer()}
+            >
+              Stop Server
+            </Button>
+          </div>
+        </div>
       </Modal>
       {tabMenu && (
         <FloatingMenu

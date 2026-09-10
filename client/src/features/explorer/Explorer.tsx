@@ -6,6 +6,7 @@ import {
   FileText,
   FolderPlus,
   Plus,
+  Power,
   RefreshCw,
   Search,
   Settings,
@@ -28,8 +29,9 @@ interface Props {
   onSearch: () => void;
   onSettings: () => void;
   onCollapse: () => void;
+  onQuit: () => void;
 }
-export function Explorer({ onSearch, onSettings, onCollapse }: Props) {
+export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const { nodes, workspace, restoring, expanded, workspaces } = useStore();
   const container = useRef<HTMLDivElement>(null),
     tree = useRef<TreeApi<FileNode>>(null);
@@ -376,13 +378,21 @@ export function Explorer({ onSearch, onSettings, onCollapse }: Props) {
           </p>
         )}
       </div>
-      <div className="px-3 py-2 shrink-0 border-t border-default flex items-center">
+      <div className="px-3 py-2 shrink-0 border-t border-default flex items-center justify-between">
         <button
           className="icon-button"
           aria-label="Open settings"
           onClick={onSettings}
         >
           <Settings size={16} />
+        </button>
+        <button
+          className="icon-button text-maek-red hover:bg-red-50 dark:hover:bg-red-950/30"
+          aria-label="Quit server"
+          title="Quit server"
+          onClick={onQuit}
+        >
+          <Power size={16} />
         </button>
       </div>
       {menu && (
