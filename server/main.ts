@@ -12,6 +12,26 @@ const port = Number(
 );
 const app = createApp();
 
+let stopping: Promise<void> | undefined;
+const stop = () => {
+  stopping ??= app.close();
+  return stopping;
+};
+
+app.post("/api/app/quit", async () => {
+  // Let Fastify flush this response before closing the listener that serves it.
+  setTimeout(() => {
+    void stop().then(
+      () => process.exit(0),
+      (error) => {
+        console.error("Failed to stop maek:", error);
+        process.exit(1);
+      },
+    );
+  }, 100);
+  return { stopping: true };
+});
+
 if (!isDevelopment) {
   const dist = path.join(repositoryRoot, "dist");
   await access(dist).catch(() => {
@@ -33,20 +53,15 @@ if (!isDevelopment) {
 await app.listen({ port, host: "127.0.0.1" });
 console.log(
   isDevelopment
-    ? `oh-my-maek core → http://127.0.0.1:${port}`
-    : `oh-my-maek → http://127.0.0.1:${port}`,
+    ? `maek core → http://127.0.0.1:${port}`
+    : `maek → http://127.0.0.1:${port}`,
 );
 
-let stopping: Promise<void> | undefined;
-const stop = () => {
-  stopping ??= app.close();
-  return stopping;
-};
 const onSignal = () => {
   void stop().then(
     () => process.exit(0),
     (error) => {
-      console.error("Failed to stop oh-my-maek:", error);
+      console.error("Failed to stop maek:", error);
       process.exit(1);
     },
   );

@@ -10,6 +10,7 @@ import {
   Moon,
   Sun,
   ExternalLink,
+  Power,
   RefreshCw,
 } from "lucide-react";
 import { useStore, schedulePersistence, type Tab } from "./store";
@@ -155,7 +156,8 @@ function AppContent() {
   const [search, setSearch] = useState(false),
     [settings, setSettings] = useState(false),
     [path, setPath] = useState(""),
-    [collapsed, setCollapsed] = useState(false);
+    [collapsed, setCollapsed] = useState(false),
+    [shuttingDown, setShuttingDown] = useState(false);
   const [tabMenu, setTabMenu] = useState<{
     x: number;
     y: number;
@@ -186,6 +188,17 @@ function AppContent() {
       });
       await state.refresh();
       await state.openFile(n.id);
+    } catch (e) {
+      state.setError(String(e));
+    }
+  }
+  async function quitServer() {
+    if (!window.confirm("Stop Maek? You can start it again from its Desktop icon."))
+      return;
+    try {
+      await api("/api/app/quit", "POST");
+      setSettings(false);
+      setShuttingDown(true);
     } catch (e) {
       state.setError(String(e));
     }
@@ -242,6 +255,18 @@ function AppContent() {
     indexing: `Reading ${state.openingWorkspace?.name ?? "workspace"}…`,
     "restoring-tabs": "Restoring previous tabs…",
   }[state.openingPhase];
+  if (shuttingDown)
+    return (
+      <div className="h-screen flex items-center justify-center bg-warm-vellum">
+        <section className="glass-panel rounded-2xl p-8 w-[440px] text-neutral-ink text-center">
+          <Power className="w-9 h-9 text-maek-red mx-auto mb-5" />
+          <h1 className="text-2xl font-semibold mb-2">Maek stopped</h1>
+          <p className="text-sm text-muted-text">
+            Start it again by opening the Maek icon on your Desktop.
+          </p>
+        </section>
+      </div>
+    );
   return (
     <>
       {!state.workspace || !state.ready ? (
@@ -580,6 +605,15 @@ function AppContent() {
             {state.theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}{" "}
             {state.theme === "dark" ? "Light" : "Dark"}
           </Button>
+        </div>
+        <div className="mt-6 pt-4 border-t border-border-gray">
+          <Button variant="outline" onClick={() => void quitServer()}>
+            <Power size={16} />
+            Quit server
+          </Button>
+          <p className="text-xs text-muted-text mt-2">
+            Stops the local app. Your notes are not changed.
+          </p>
         </div>
         <p className="text-xs text-muted-text mt-4">
           ⌘P Search · ⌘N New note · ⌘S Save · ⌘W Close tab

@@ -1,4 +1,4 @@
-# oh-my-maek
+# maek
 
 macOS localhost에서 실행하는 개인용 Markdown Workspace 앱입니다.
 Maek Note의 디자인 컴포넌트, Tiptap 에디터 확장과 react-arborist 트리를 이식했습니다.
@@ -16,6 +16,21 @@ http://127.0.0.1:3000 에서 Open Folder로 기존 폴더를 선택합니다.
 `npm run dev`는 UI/HMR(:3000)과 Local Core(:3001)를 독립 프로세스로
 실행합니다. 일반 사용은 `npm run build && npm start`로 실행하며, 이때는
 Local Core 하나가 빌드된 UI와 파일 API를 함께 제공합니다.
+
+### Desktop 아이콘 (macOS)
+
+빌드 후 아래 명령을 한 번 실행하면 Desktop에 `Maek.app`이 생깁니다.
+아이콘을 클릭하면 `npm start`로 서버를 실행하고 브라우저를 엽니다. 이미 실행 중이면
+새 서버를 만들지 않고 기존 창을 엽니다.
+
+```sh
+npm run build
+npm run install:desktop
+```
+
+앱 안에서는 Settings(⌘,) → **Quit server**로 로컬 서버를 종료할 수 있습니다.
+프로젝트 폴더를 다른 곳으로 옮긴 경우에는 `npm run install:desktop`을 다시 실행하세요.
+
 네이티브 창을 사용할 수 없으면 Enter folder path에 절대 경로를 입력합니다.
 설정 또는 사이드바 폴더 메뉴에서 Workspace를 바꿀 수 있습니다.
 다음 실행 시 마지막 Workspace와 탭을 복원합니다.
