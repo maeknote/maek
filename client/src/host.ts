@@ -1,8 +1,10 @@
 import type { WorkspaceRef } from "@shared/contract";
 let workspace: WorkspaceRef | null = null;
-const sessionKey = "oh-my-maek:browser-session";
+const sessionKey = "maek:browser-session";
 export const browserSessionId =
-  sessionStorage.getItem(sessionKey) ?? crypto.randomUUID();
+  sessionStorage.getItem(sessionKey) ??
+  sessionStorage.getItem("oh-my-maek:browser-session") ??
+  crypto.randomUUID();
 sessionStorage.setItem(sessionKey, browserSessionId);
 export function setHostWorkspace(ws: WorkspaceRef) {
   workspace = ws;

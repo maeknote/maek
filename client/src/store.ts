@@ -72,7 +72,9 @@ function later() {
 function storedWorkspaces(): State["workspaces"] {
   try {
     const value = JSON.parse(
-      localStorage.getItem("oh-my-maek:workspaces") ?? "[]",
+      localStorage.getItem("maek:workspaces") ??
+        localStorage.getItem("oh-my-maek:workspaces") ??
+        "[]",
     );
     if (!Array.isArray(value)) return [];
     return value
@@ -328,9 +330,9 @@ export const useStore = create<State>((set, get) => ({
           ? `Cannot read: ${tree.warnings.join(", ")}`
           : "",
       });
-      localStorage.setItem("oh-my-maek:workspace", ws.root);
+      localStorage.setItem("maek:workspace", ws.root);
       localStorage.setItem(
-        "oh-my-maek:workspaces",
+        "maek:workspaces",
         JSON.stringify(get().workspaces),
       );
       later();

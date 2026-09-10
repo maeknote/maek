@@ -1,9 +1,9 @@
 {
-  "name": "oh-my-maek",
+  "name": "maek",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Maek Note Markdown workspace on localhost",
+  "description": "Maek Markdown workspace on localhost",
   "scripts": {
     "postinstall": "patch-package",
     "dev": "concurrently --kill-others --names core,ui \"npm:dev:core\" \"npm:dev:ui\"",

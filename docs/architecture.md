@@ -1,6 +1,6 @@
 # Architecture
 
-oh-my-maek은 브라우저 UI와 로컬 파일 시스템 코어로 구성된 macOS용 Markdown
+maek은 브라우저 UI와 로컬 파일 시스템 코어로 구성된 macOS용 Markdown
 workspace입니다. 실제 파일이 유일한 원본이며 인덱스와 UI 상태는 다시 만들 수 있는
 파생 데이터로 취급합니다.
 

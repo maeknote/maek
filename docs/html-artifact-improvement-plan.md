@@ -58,7 +58,7 @@
 
 ### 3. 루틴처럼 서버가 필요한 아티팩트 연결
 
-파일 미리보기와 연결할 로컬 앱 URL을 artifact별로 지정하는 모델을 추가한다. 루틴은 기존 `serve.py`가 제공하는 실제 HTML URL을 iframe에서 열어 HTML과 API가 같은 서버를 사용하게 한다. 루틴 전용 API를 oh-my-maek의 `/api` 아래에 복제하지 않는다.
+파일 미리보기와 연결할 로컬 앱 URL을 artifact별로 지정하는 모델을 추가한다. 루틴은 기존 `serve.py`가 제공하는 실제 HTML URL을 iframe에서 열어 HTML과 API가 같은 서버를 사용하게 한다. 루틴 전용 API를 maek의 `/api` 아래에 복제하지 않는다.
 
 - 설정은 workspace와 artifact 상대경로를 키로 관리하고 UI 세션 메타데이터와 분리한다.
 - 최초 버전은 실행 중인 로컬 서버 연결, health 확인, 연결 실패 안내, 다시 연결, 외부 브라우저 열기를 제공한다.

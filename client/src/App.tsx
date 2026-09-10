@@ -169,7 +169,9 @@ function AppContent() {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    const last = localStorage.getItem("oh-my-maek:workspace");
+    const last =
+      localStorage.getItem("maek:workspace") ??
+      localStorage.getItem("oh-my-maek:workspace");
     if (last) void state.openWorkspace(last);
   }, []);
   useEffect(() => {
