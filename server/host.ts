@@ -446,10 +446,10 @@ export function createHost(options: HostOptions = {}) {
   ] as const) {
     app.get("/api/workspace/" + route, async (req) => {
       const ws = wsFor(req);
-      const abs = await metadata.path(
-        ws,
-        `sessions/web/${sessionFor(req)}/${name}`,
-      );
+      const relativePath = route === "folder-appearance" 
+        ? name 
+        : `sessions/web/${sessionFor(req)}/${name}`;
+      const abs = await metadata.path(ws, relativePath);
       try {
         const stored = JSON.parse(await readFile(abs, "utf8"));
         const relative = (p: string) =>
@@ -485,46 +485,47 @@ export function createHost(options: HostOptions = {}) {
         if (route === "folder-appearance") return appearance.parse(stored);
         return schema.parse(stored);
       } catch {
-        // Legacy desktop metadata is migration input only. The browser never
-        // writes these files, so both applications can use the same workspace.
-        try {
-          const stored = JSON.parse(
-            await readFile(await metadata.path(ws, name), "utf8"),
-          );
-          const relative = (p: string) =>
-            path.isAbsolute(p) ? path.relative(ws.root, p) : p;
-          if (route === "tabs" && typeof stored.version === "number") {
-            return session.parse({
-              ...fallback,
-              ...stored,
-              tabs: stored.tabs
-                .filter(
-                  (tab: { viewKind?: string }) =>
-                    !["database", "meeting", "workspace-settings"].includes(
-                      tab.viewKind ?? "",
-                    ),
-                )
-                .map((tab: { id: string }) => relative(tab.id))
-                .filter((p: string) => !p.startsWith("..")),
-              activeTabId: stored.activeTabId
-                ? relative(stored.activeTabId)
-                : null,
-            });
-          }
-          if (route === "recent-files" && stored.version === 1) {
-            return recents.parse(
-              Object.entries(stored.entries)
-                .map(([p, value]) => ({
-                  path: relative(p),
-                  lastOpened: (value as { lastOpenedAt: number }).lastOpenedAt,
-                }))
-                .filter((file) => !file.path.startsWith(".."))
-                .slice(0, 200),
+        if (route !== "folder-appearance") {
+          // Legacy desktop metadata is migration input only. The browser never
+          // writes these files, so both applications can use the same workspace.
+          try {
+            const stored = JSON.parse(
+              await readFile(await metadata.path(ws, name), "utf8"),
             );
+            const relative = (p: string) =>
+              path.isAbsolute(p) ? path.relative(ws.root, p) : p;
+            if (route === "tabs" && typeof stored.version === "number") {
+              return session.parse({
+                ...fallback,
+                ...stored,
+                tabs: stored.tabs
+                  .filter(
+                    (tab: { viewKind?: string }) =>
+                      !["database", "meeting", "workspace-settings"].includes(
+                        tab.viewKind ?? "",
+                      ),
+                  )
+                  .map((tab: { id: string }) => relative(tab.id))
+                  .filter((p: string) => !p.startsWith("..")),
+                activeTabId: stored.activeTabId
+                  ? relative(stored.activeTabId)
+                  : null,
+              });
+            }
+            if (route === "recent-files" && stored.version === 1) {
+              return recents.parse(
+                Object.entries(stored.entries)
+                  .map(([p, value]) => ({
+                    path: relative(p),
+                    lastOpened: (value as { lastOpenedAt: number }).lastOpenedAt,
+                  }))
+                  .filter((file) => !file.path.startsWith(".."))
+                  .slice(0, 200),
+              );
+            }
+          } catch {
+            // A missing or corrupt legacy file is equivalent to an empty session.
           }
-          if (route === "folder-appearance") return appearance.parse(stored);
-        } catch {
-          // A missing or corrupt legacy file is equivalent to an empty session.
         }
         return fallback;
       }
@@ -570,9 +571,12 @@ export function createHost(options: HostOptions = {}) {
         } else if (route === "folder-appearance") {
           stored = appearance.parse(data);
         }
+        const relativePath = route === "folder-appearance" 
+          ? name 
+          : `sessions/web/${sessionFor(req)}/${name}`;
         await metadata.writeJson(
           ws,
-          `sessions/web/${sessionFor(req)}/${name}`,
+          relativePath,
           stored,
         );
         return { ok: true };
