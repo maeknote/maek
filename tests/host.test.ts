@@ -211,9 +211,12 @@ describe("real workspace host", () => {
         .nodes.some((n: { id: string }) => n.id.startsWith(".maek")),
     ).toBe(false);
   });
-  it("persists and restores workspace metadata and handles corrupt session JSON", async () => {
-    const session = {
-      tabs: ["a.md"],
+  it("stores the open-tab list in the root document and UI state per browser", async () => {
+    const rootTabs = { tabs: ["a.md"], activeTabId: "a.md" };
+    expect(
+      (await request("PUT", "/api/workspace/tabs", rootTabs)).statusCode,
+    ).toBe(200);
+    const ui = {
       activeTabId: "a.md",
       scrollPositions: { "a.md": 123 },
       expanded: ["folder"],
@@ -221,65 +224,167 @@ describe("real workspace host", () => {
       sidebarWidth: 280,
     };
     expect(
-      (await request("PUT", "/api/workspace/tabs", session)).statusCode,
+      (await request("PUT", "/api/workspace/ui-state", ui)).statusCode,
     ).toBe(200);
     expect((await request("GET", "/api/workspace/tabs")).json()).toEqual(
-      session,
+      rootTabs,
     );
+    expect((await request("GET", "/api/workspace/ui-state")).json()).toEqual(
+      ui,
+    );
+    // The open-tab list lives in the workspace-root document, in the original
+    // app's version-4 format with absolute paths.
+    expect(
+      JSON.parse(await readFile(path.join(root, ".maek/tabs.json"), "utf8")),
+    ).toMatchObject({
+      version: 4,
+      tabs: [{ id: path.join(root, "a.md"), viewKind: "editor" }],
+      activeTabId: path.join(root, "a.md"),
+    });
+    // UI state stays in the per-browser session file, never the root document.
     expect(
       JSON.parse(
         await readFile(
-          path.join(root, ".maek/sessions/web/host-test/tabs.json"),
+          path.join(root, ".maek/sessions/web/host-test/ui.json"),
           "utf8",
         ),
       ),
-    ).toMatchObject({
-      version: 4,
-      tabs: [{ id: path.join(root, "a.md") }],
-      theme: "dark",
-    });
-    await writeFile(
-      path.join(root, ".maek/sessions/web/host-test/tabs.json"),
-      "{",
-    );
+    ).toMatchObject({ theme: "dark", sidebarWidth: 280 });
+    // A corrupt root document degrades to an empty tab list.
+    await writeFile(path.join(root, ".maek/tabs.json"), "{");
     expect((await request("GET", "/api/workspace/tabs")).json().tabs).toEqual(
       [],
     );
   });
-  it("isolates web window sessions and never overwrites desktop tabs", async () => {
-    const desktopTabs = { version: 4, tabs: [], marker: "desktop" };
+  it("reads only web-supported tabs from a version-4 root document as relative paths", async () => {
     await writeFile(
       path.join(root, ".maek/tabs.json"),
-      JSON.stringify(desktopTabs),
+      JSON.stringify({
+        version: 4,
+        tabs: [
+          { id: path.join(root, "note.md"), viewKind: "editor" },
+          { id: path.join(root, "sheet"), viewKind: "database" },
+          { id: path.join(root, "team meeting"), viewKind: "meeting" },
+          { id: "/outside/other.md", viewKind: "editor" },
+          { id: path.join(root, "preview.pdf"), viewKind: "preview" },
+        ],
+        activeTabId: path.join(root, "note.md"),
+      }),
     );
-    const session = {
+    expect((await request("GET", "/api/workspace/tabs")).json()).toEqual({
+      tabs: ["note.md", "preview.pdf"],
+      activeTabId: "note.md",
+    });
+  });
+  it("preserves desktop-only tabs, unknown fields, groups and splits when the web reorders", async () => {
+    const original = {
+      version: 4,
+      tabs: [
+        { id: path.join(root, "sheet"), viewKind: "database", extra: "keep" },
+        { id: path.join(root, "a.md"), viewKind: "editor" },
+        { id: path.join(root, "b.md"), viewKind: "editor" },
+      ],
+      activeTabId: path.join(root, "a.md"),
+      tabGroups: [{ id: "g1", tabIds: ["x"] }],
+      editorSplit: { layout: "columns-2" },
+      windowBounds: { width: 1200 },
+    };
+    await writeFile(
+      path.join(root, ".maek/tabs.json"),
+      JSON.stringify(original),
+    );
+    // Web reorders its two file tabs and drops none.
+    expect(
+      (
+        await request("PUT", "/api/workspace/tabs", {
+          tabs: ["b.md", "a.md"],
+          activeTabId: "b.md",
+        })
+      ).statusCode,
+    ).toBe(200);
+    const stored = JSON.parse(
+      await readFile(path.join(root, ".maek/tabs.json"), "utf8"),
+    );
+    // Desktop-only entry, its unknown field, groups and split survive.
+    expect(stored.tabGroups).toEqual(original.tabGroups);
+    expect(stored.editorSplit).toEqual(original.editorSplit);
+    expect(stored.windowBounds).toEqual(original.windowBounds);
+    expect(stored.tabs).toEqual([
+      { id: path.join(root, "sheet"), viewKind: "database", extra: "keep" },
+      expect.objectContaining({ id: path.join(root, "b.md") }),
+      expect.objectContaining({ id: path.join(root, "a.md") }),
+    ]);
+    // The desktop-only tab stays hidden from the web view, in the new order.
+    expect((await request("GET", "/api/workspace/tabs")).json()).toEqual({
+      tabs: ["b.md", "a.md"],
+      activeTabId: "b.md",
+    });
+  });
+  it("seeds the shared root document from a browser's legacy session tabs", async () => {
+    // Legacy per-browser session file (old Session shape) is migration input.
+    await mkdir(path.join(root, ".maek/sessions/web/host-test"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(root, ".maek/sessions/web/host-test/tabs.json"),
+      JSON.stringify({
+        version: 4,
+        tabs: [{ id: path.join(root, "legacy.md"), viewKind: "editor" }],
+        activeTabId: path.join(root, "legacy.md"),
+        theme: "dark",
+      }),
+    );
+    expect((await request("GET", "/api/workspace/tabs")).json()).toEqual({
+      tabs: ["legacy.md"],
+      activeTabId: "legacy.md",
+    });
+    // UI state migrates theme from the same legacy file.
+    expect(
+      (await request("GET", "/api/workspace/ui-state")).json().theme,
+    ).toBe("dark");
+  });
+  it("shares the root tab list across browsers but isolates UI state", async () => {
+    const inject = (
+      id: string,
+      method: "GET" | "PUT",
+      url: string,
+      payload?: Record<string, unknown>,
+    ) =>
+      app.inject({
+        method,
+        url,
+        headers: { ...headers, "x-client-session-id": id },
+        ...(payload === undefined ? {} : { payload }),
+      });
+    await inject("window-a", "PUT", "/api/workspace/tabs", {
       tabs: ["a.md"],
+      activeTabId: "a.md",
+    });
+    await inject("window-a", "PUT", "/api/workspace/ui-state", {
       activeTabId: "a.md",
       scrollPositions: {},
       expanded: [],
+      theme: "dark",
+      sidebarWidth: 300,
+    });
+    await inject("window-b", "PUT", "/api/workspace/ui-state", {
+      activeTabId: null,
+      scrollPositions: {},
+      expanded: [],
       theme: "light",
-      sidebarWidth: 260,
-    };
-    for (const id of ["window-a", "window-b"]) {
-      const response = await app.inject({
-        method: "PUT",
-        url: "/api/workspace/tabs",
-        headers: {
-          ...headers,
-          "x-client-session-id": id,
-        },
-        payload: { ...session, activeTabId: id === "window-a" ? "a.md" : null },
-      });
-      expect(response.statusCode).toBe(200);
-    }
+      sidebarWidth: 200,
+    });
+    // Both browsers read the same shared tab list from the root document.
+    expect((await inject("window-a", "GET", "/api/workspace/tabs")).json().tabs).toEqual(["a.md"]);
+    expect((await inject("window-b", "GET", "/api/workspace/tabs")).json().tabs).toEqual(["a.md"]);
+    // UI state is isolated per browser.
+    expect((await inject("window-a", "GET", "/api/workspace/ui-state")).json().theme).toBe("dark");
+    expect((await inject("window-b", "GET", "/api/workspace/ui-state")).json().theme).toBe("light");
     expect(
-      JSON.parse(await readFile(path.join(root, ".maek/tabs.json"), "utf8")),
-    ).toEqual(desktopTabs);
-    expect(
-      await stat(path.join(root, ".maek/sessions/web/window-a/tabs.json")),
+      await stat(path.join(root, ".maek/sessions/web/window-a/ui.json")),
     ).toBeTruthy();
     expect(
-      await stat(path.join(root, ".maek/sessions/web/window-b/tabs.json")),
+      await stat(path.join(root, ".maek/sessions/web/window-b/ui.json")),
     ).toBeTruthy();
   });
   it("classifies previews and serves artifact files through the isolated route", async () => {

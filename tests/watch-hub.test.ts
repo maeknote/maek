@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { registerWorkspace } from "../server/workspaces";
 import { WorkspaceRuntimeManager } from "../server/workspace/runtime-manager";
+import { isIgnored } from "../server/workspace/filesystem";
 
 const roots: string[] = [];
 const managers: WorkspaceRuntimeManager[] = [];
@@ -95,4 +96,36 @@ describe("WorkspaceRuntimeManager", () => {
     },
     10_000,
   );
+
+  it("emits a single tabs-session-changed event when the root tabs document is replaced", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "maek-watch-tabs-"));
+    roots.push(root);
+    await mkdir(path.join(root, ".maek"), { recursive: true });
+    const workspace = await registerWorkspace(root);
+    const manager = new WorkspaceRuntimeManager(isIgnored);
+    managers.push(manager);
+    const runtime = manager.get(workspace);
+
+    const events: string[] = [];
+    await new Promise<void>((resolve) => {
+      let ready = false;
+      runtime.watcher.subscribe((event) => {
+        if (event.event === "ready" && !ready) {
+          ready = true;
+          // Simulate the desktop app's atomic replace of the shared document.
+          void (async () => {
+            const target = path.join(root, ".maek/tabs.json");
+            const temporary = target + ".tmp";
+            await writeFile(temporary, JSON.stringify({ version: 4, tabs: [] }));
+            await rename(temporary, target);
+          })();
+        }
+        if (event.event === "tabs-session-changed") {
+          events.push(event.event);
+          setTimeout(resolve, 250); // Allow any duplicate emits to arrive.
+        }
+      });
+    });
+    expect(events).toEqual(["tabs-session-changed"]);
+  }, 10_000);
 });

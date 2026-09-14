@@ -43,6 +43,11 @@ import {
   kindFor,
   previewMime as mime,
 } from "./workspace/file-kind";
+import {
+  readRootTabs,
+  mergeRootTabs,
+  type RootTabsDocument,
+} from "./workspace/root-tabs";
 
 const run = promisify(execFile);
 const filePath = RelPath.refine(
@@ -415,34 +420,154 @@ export function createHost(options: HostOptions = {}) {
       };
     }
   });
-  const session = z.object({
+  const rootTabsInput = z.object({
     tabs: z.array(filePath).max(200),
+    activeTabId: filePath.nullable(),
+  });
+  const uiState = z.object({
     activeTabId: filePath.nullable(),
     scrollPositions: z.record(z.string(), z.number().min(0)),
     expanded: z.array(filePath),
     theme: z.enum(["light", "dark"]),
     sidebarWidth: z.number().min(180).max(600),
   });
+  const uiStateFallback = {
+    activeTabId: null,
+    scrollPositions: {},
+    expanded: [],
+    theme: "light" as const,
+    sidebarWidth: 260,
+  };
+  const readJson = async (abs: string): Promise<unknown> =>
+    JSON.parse(await readFile(abs, "utf8"));
+
+  // The open-tab list and order live in the workspace-root `.maek/tabs.json`
+  // (original app "version 4" document), shared by every browser. The web app
+  // reads only the tabs it can display and preserves everything else on write.
+  app.get("/api/workspace/tabs", async (req) => {
+    const ws = wsFor(req);
+    try {
+      const document = (await readJson(
+        await metadata.path(ws, "tabs.json"),
+      )) as RootTabsDocument;
+      return readRootTabs(ws.root, document);
+    } catch {
+      // No root document yet: seed the shared list from this browser's own
+      // legacy session file so an existing web workspace keeps its tabs. The
+      // legacy file is migration input only and is never written back.
+      try {
+        const legacy = (await readJson(
+          await metadata.path(ws, `sessions/web/${sessionFor(req)}/tabs.json`),
+        )) as { tabs?: unknown; activeTabId?: unknown };
+        const relative = (p: string) =>
+          path.isAbsolute(p) ? path.relative(ws.root, p) : p;
+        const entries = Array.isArray(legacy.tabs) ? legacy.tabs : [];
+        const tabs = entries
+          .map((t: unknown) =>
+            typeof t === "string"
+              ? relative(t)
+              : relative(String((t as { id?: unknown }).id ?? "")),
+          )
+          .filter(
+            (p: string) => p && !p.startsWith("..") && !path.isAbsolute(p),
+          );
+        const active =
+          typeof legacy.activeTabId === "string"
+            ? relative(legacy.activeTabId)
+            : null;
+        return {
+          tabs,
+          activeTabId: active && tabs.includes(active) ? active : null,
+        };
+      } catch {
+        return { tabs: [], activeTabId: null };
+      }
+    }
+  });
+  app.put("/api/workspace/tabs", async (req) => {
+    const ws = wsFor(req);
+    const data = rootTabsInput.parse(req.body);
+    return serial(ws.wsId + ":tabs.json", async () => {
+      let existing: RootTabsDocument | null = null;
+      try {
+        existing = (await readJson(
+          await metadata.path(ws, "tabs.json"),
+        )) as RootTabsDocument;
+      } catch {
+        existing = null;
+      }
+      const merged = mergeRootTabs(
+        ws.root,
+        existing,
+        data.tabs,
+        data.activeTabId,
+      );
+      await metadata.writeJson(ws, "tabs.json", merged);
+      return { ok: true };
+    });
+  });
+
+  // Per-browser presentation state (theme, layout, selection, scroll). Never
+  // shared through the root document.
+  app.get("/api/workspace/ui-state", async (req) => {
+    const ws = wsFor(req);
+    const sessionDir = `sessions/web/${sessionFor(req)}`;
+    const relative = (p: string) =>
+      path.isAbsolute(p) ? path.relative(ws.root, p) : p;
+    try {
+      return uiState.parse(await readJson(await metadata.path(ws, `${sessionDir}/ui.json`)));
+    } catch {
+      // Migrate from this browser's legacy session tabs.json (old Session).
+      try {
+        const legacy = (await readJson(
+          await metadata.path(ws, `${sessionDir}/tabs.json`),
+        )) as Partial<{
+          activeTabId: string | null;
+          scrollPositions: Record<string, number>;
+          expanded: string[];
+          theme: "light" | "dark";
+          sidebarWidth: number;
+        }>;
+        const active =
+          typeof legacy.activeTabId === "string"
+            ? relative(legacy.activeTabId)
+            : null;
+        return uiState.parse({
+          activeTabId: active && !active.startsWith("..") ? active : null,
+          scrollPositions: Object.fromEntries(
+            Object.entries(legacy.scrollPositions ?? {}).map(([p, v]) => [
+              relative(p),
+              v,
+            ]),
+          ),
+          expanded: (legacy.expanded ?? [])
+            .map(relative)
+            .filter((p: string) => !p.startsWith("..")),
+          theme: legacy.theme ?? "light",
+          sidebarWidth: legacy.sidebarWidth ?? 260,
+        });
+      } catch {
+        return uiStateFallback;
+      }
+    }
+  });
+  app.put("/api/workspace/ui-state", async (req) => {
+    const ws = wsFor(req);
+    const data = uiState.parse(req.body);
+    const relativePath = `sessions/web/${sessionFor(req)}/ui.json`;
+    return serial(ws.wsId + ":" + relativePath, async () => {
+      await metadata.writeJson(ws, relativePath, data);
+      return { ok: true };
+    });
+  });
+
   const recents = z
     .array(z.object({ path: filePath, lastOpened: z.number() }))
     .max(200);
-  const appearance = z.record(z.string(), z.string());
+  const appearance = z.object({ version: z.number().default(1), folders: z.record(z.string(), z.object({ icon: z.string(), iconColor: z.string().default("accent") })) });
   for (const [route, name, schema, fallback] of [
-    [
-      "tabs",
-      "tabs.json",
-      session,
-      {
-        tabs: [],
-        activeTabId: null,
-        scrollPositions: {},
-        expanded: [],
-        theme: "light",
-        sidebarWidth: 260,
-      },
-    ],
     ["recent-files", "recentFiles.json", recents, []],
-    ["folder-appearance", "folderAppearance.json", appearance, {}],
+    ["folder-appearance", "folder-appearance.json", appearance, {}],
   ] as const) {
     app.get("/api/workspace/" + route, async (req) => {
       const ws = wsFor(req);
@@ -454,24 +579,6 @@ export function createHost(options: HostOptions = {}) {
         const stored = JSON.parse(await readFile(abs, "utf8"));
         const relative = (p: string) =>
           path.isAbsolute(p) ? path.relative(ws.root, p) : p;
-        if (route === "tabs" && typeof stored.version === "number") {
-          return session.parse({
-            ...fallback,
-            ...stored,
-            tabs: stored.tabs
-              .filter(
-                (t: { viewKind?: string }) =>
-                  !["database", "meeting", "workspace-settings"].includes(
-                    t.viewKind ?? "",
-                  ),
-              )
-              .map((t: { id: string }) => relative(t.id))
-              .filter((p: string) => !p.startsWith("..")),
-            activeTabId: stored.activeTabId
-              ? relative(stored.activeTabId)
-              : null,
-          });
-        }
         if (route === "recent-files" && stored.version === 1)
           return recents.parse(
             Object.entries(stored.entries)
@@ -494,24 +601,6 @@ export function createHost(options: HostOptions = {}) {
             );
             const relative = (p: string) =>
               path.isAbsolute(p) ? path.relative(ws.root, p) : p;
-            if (route === "tabs" && typeof stored.version === "number") {
-              return session.parse({
-                ...fallback,
-                ...stored,
-                tabs: stored.tabs
-                  .filter(
-                    (tab: { viewKind?: string }) =>
-                      !["database", "meeting", "workspace-settings"].includes(
-                        tab.viewKind ?? "",
-                      ),
-                  )
-                  .map((tab: { id: string }) => relative(tab.id))
-                  .filter((p: string) => !p.startsWith("..")),
-                activeTabId: stored.activeTabId
-                  ? relative(stored.activeTabId)
-                  : null,
-              });
-            }
             if (route === "recent-files" && stored.version === 1) {
               return recents.parse(
                 Object.entries(stored.entries)
@@ -535,28 +624,7 @@ export function createHost(options: HostOptions = {}) {
       const data = schema.parse(req.body);
       return serial(ws.wsId, async () => {
         let stored: unknown = data;
-        if (route === "tabs") {
-          const s = session.parse(data);
-          stored = {
-            ...s,
-            version: 4,
-            activeTabId: s.activeTabId
-              ? path.join(ws.root, s.activeTabId)
-              : null,
-            tabs: s.tabs.map((p) => ({
-              id: path.join(ws.root, p),
-              name: path.basename(p),
-              parentName: path.basename(path.dirname(p)),
-              isEphemeral: false,
-              viewKind:
-                kindFor(p) === "editor"
-                  ? "editor"
-                  : kindFor(p) === "unsupported"
-                    ? "unsupported"
-                    : "preview",
-            })),
-          };
-        } else if (route === "recent-files") {
+        if (route === "recent-files") {
           stored = {
             version: 1,
             entries: Object.fromEntries(

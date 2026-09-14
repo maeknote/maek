@@ -12,12 +12,11 @@ import {
   Power,
   RefreshCw,
 } from "lucide-react";
-import { useStore, schedulePersistence, type Tab } from "./store";
+import { useStore, schedulePersistence, markTabsDirty, type Tab } from "./store";
 import { api, artifactUrl, rawUrl } from "./host";
 import { Explorer } from "./features/explorer/Explorer";
 import { MarkdownEditor } from "./features/editor/MarkdownEditor";
 import { TitleBar } from "./features/editor/components/TitleBar";
-import { FrontmatterPanel } from "./features/editor/components/FrontmatterPanel";
 import { WorkspaceDashboard } from "./features/editor/components/WorkspaceDashboard";
 import { FolderKanbanView } from "./features/database/kanban/FolderKanbanView";
 import {
@@ -402,27 +401,6 @@ function AppContent() {
                       <PanelIcon side="left" isExpanded={false} size={16} />
                     </button>
                   )}
-                  {tab.id.split("/").map((part, i, parts) => (
-                    <span key={i} className="inline-flex items-center gap-1">
-                      {i > 0 && <span>/</span>}
-                      <button
-                        onClick={() => {
-                          const p = parts.slice(0, i + 1).join("/");
-                          if (i < parts.length - 1) {
-                            useStore.setState((s) => ({
-                              expanded: [...new Set([...s.expanded, p])],
-                            }));
-                            window.dispatchEvent(
-                              new CustomEvent("focus-folder", { detail: p }),
-                            );
-                            schedulePersistence();
-                          }
-                        }}
-                      >
-                        {part}
-                      </button>
-                    </span>
-                  ))}
                   <span className="ml-auto" role="status">
                     {tab.status === "saving"
                       ? "Saving…"
@@ -467,6 +445,7 @@ function AppContent() {
                             activeTabId:
                               s.tabs.find((t) => t.id !== tab.id)?.id ?? null,
                           }));
+                          markTabsDirty();
                           schedulePersistence();
                         }
                       }}
@@ -476,16 +455,10 @@ function AppContent() {
                   </div>
                 ) : null}
                 {tab.viewKind === "editor" ? (
-                  <>
-                    <FrontmatterPanel
-                      tab={tab}
-                      onSave={() => void state.save(tab.id)}
-                    />
-                    <MarkdownEditor
-                      key={tab.id + ":" + tab.generation}
-                      tab={tab}
-                    />
-                  </>
+                  <MarkdownEditor
+                    key={tab.id + ":" + tab.generation}
+                    tab={tab}
+                  />
                 ) : (
                   <Preview tab={tab} />
                 )}

@@ -9,6 +9,7 @@ import {
   renameSync,
   statSync,
   existsSync,
+  realpathSync,
 } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -57,6 +58,11 @@ function webSessionFile(name: string) {
   const file = path.join(sessionsRoot, sessionId, name);
   return existsSync(file) ? file : null;
 }
+/** The shared open-tab list lives in the workspace-root version-4 document. */
+function rootTabsDocument(): { tabs: { id: string }[]; activeTabId: string | null } | null {
+  const file = path.join(root, ".maek/tabs.json");
+  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
+}
 async function editNote(page: Page) {
   await page.locator('[data-path="Folder"]').click();
   await page.locator('[data-path="Folder/기존 노트.md"]').click();
@@ -85,9 +91,9 @@ test("opens existing nested notes, edits with Tiptap, restores session and theme
   await expect
     .poll(
       () => {
-        const tabs = webSessionFile("tabs.json");
-        if (!tabs) return undefined;
-        return JSON.parse(readFileSync(tabs, "utf8")).theme;
+        const ui = webSessionFile("ui.json");
+        if (!ui) return undefined;
+        return JSON.parse(readFileSync(ui, "utf8")).theme;
       },
     )
     .toBe("dark");
@@ -222,10 +228,6 @@ test("original slash menu, table, math, image and frontmatter work in Tiptap", a
   await expect(page.locator(".maek-slash-menu")).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.locator(".tiptap table")).toHaveCount(1);
-  await page.getByRole("button", { name: "1 properties" }).click();
-  await expect(
-    page.getByRole("textbox", { name: "key", exact: true }),
-  ).toHaveValue("custom");
   const file = path.join(root, "rich.md");
   writeFileSync(
     file,
@@ -302,11 +304,11 @@ test("opening and switching an untouched note never rewrites its Markdown", asyn
   await expect
     .poll(
       () => {
-        const tabs = webSessionFile("tabs.json");
-        return tabs ? JSON.parse(readFileSync(tabs, "utf8")).activeTabId : null;
+        const ui = webSessionFile("ui.json");
+        return ui ? JSON.parse(readFileSync(ui, "utf8")).activeTabId : null;
       },
     )
-    .toMatch(/\/readme\.txt$/);
+    .toBe("readme.txt");
   await page.reload();
   await expect(page.locator("pre")).toHaveText("Plain text preview");
   expect(readFileSync(file, "utf8")).toBe(original);
@@ -349,10 +351,7 @@ test("opens a new tree note while tabs restored from .maek remain open", async (
   await open(page);
   await editNote(page);
   await expect
-    .poll(() => {
-      const tabs = webSessionFile("tabs.json");
-      return tabs ? JSON.parse(readFileSync(tabs, "utf8")).tabs.length : 0;
-    })
+    .poll(() => rootTabsDocument()?.tabs.length ?? 0)
     .toBe(1);
   await page.reload();
   await expect(
@@ -362,4 +361,253 @@ test("opens a new tree note while tabs restored from .maek remain open", async (
   await expect(page.locator('[data-tab-id="second.md"]')).toBeVisible();
   await expect(page.locator(".tiptap")).toContainText("Second note");
   await expect(page.locator('[role="tab"]')).toHaveCount(2);
+});
+
+/** Basenames of web-managed tabs in root .maek/tabs.json order. */
+function rootTabOrder(): string[] {
+  const doc = rootTabsDocument();
+  if (!doc) return [];
+  return doc.tabs.map((t) => path.basename(t.id));
+}
+/**
+ * Absolute id in the form the server stores it — the workspace root is
+ * realpath-resolved, so external writes must match that to be recognised.
+ */
+function noteId(relative: string): string {
+  return path.join(realpathSync(root), relative);
+}
+
+/**
+ * Drives the same pointer gesture as a user. `toBottomHalf` drops onto the lower
+ * half of the target row (insertion after it).
+ */
+async function dragTab(
+  page: Page,
+  fromId: string,
+  toId: string,
+  toBottomHalf = true,
+) {
+  const from = page.locator(`[data-tab-id="${fromId}"]`);
+  const to = page.locator(`[data-tab-id="${toId}"]`);
+  const fromBox = await from.boundingBox();
+  const toBox = await to.boundingBox();
+  if (!fromBox || !toBox) throw new Error("drag target missing");
+  await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    toBox.x + toBox.width / 2,
+    toBox.y + toBox.height * (toBottomHalf ? 0.75 : 0.25),
+    { steps: 5 },
+  );
+  await page.mouse.up();
+}
+
+async function openThreeNotes(page: Page) {
+  writeFileSync(path.join(root, "one.md"), "# One\n");
+  writeFileSync(path.join(root, "two.md"), "# Two\n");
+  writeFileSync(path.join(root, "three.md"), "# Three\n");
+  await expect(page.locator('[data-path="one.md"]')).toBeVisible();
+  for (const name of ["one.md", "two.md", "three.md"]) {
+    await page.locator(`[data-path="${name}"]`).click();
+    await expect(page.locator(`[data-tab-id="${name}"]`)).toBeVisible();
+  }
+  // Wait for the client to flush the open-tab list to the shared root document
+  // before any external edit races the initial persist.
+  await expect
+    .poll(() => rootTabOrder())
+    .toEqual(["one.md", "two.md", "three.md"]);
+}
+
+test("reorders open notes in the sidebar and persists the root document order", async ({
+  page,
+}) => {
+  await open(page);
+  await openThreeNotes(page);
+  await expect
+    .poll(() => rootTabOrder())
+    .toEqual(["one.md", "two.md", "three.md"]);
+
+  // Drag the first note below the last one. Targeting the bottom half of the
+  // last row places the insertion point at the end of the list.
+  await dragTab(page, "one.md", "three.md", true);
+
+  await expect
+    .poll(() => rootTabOrder())
+    .toEqual(["two.md", "three.md", "one.md"]);
+
+  // The order survives a reload, restored from the shared document.
+  await page.reload();
+  await expect(page.locator('[data-tab-id="one.md"]')).toBeVisible();
+  const ids = await page.locator("[data-tab-id]").evaluateAll((nodes) =>
+    nodes.map((n) => n.getAttribute("data-tab-id")),
+  );
+  expect(ids).toEqual(["two.md", "three.md", "one.md"]);
+});
+
+test("live-updates the open-note list when the root document changes externally", async ({
+  page,
+}) => {
+  await open(page);
+  await openThreeNotes(page);
+  await page.locator('[data-tab-id="two.md"]').click();
+
+  // The desktop app rewrites the shared document: reorder and add a note.
+  writeFileSync(path.join(root, "four.md"), "# Four\n");
+  writeFileSync(
+    path.join(root, ".maek/tabs.json"),
+    JSON.stringify({
+      version: 4,
+      tabs: [
+        { id: noteId("three.md"), viewKind: "editor" },
+        { id: noteId("two.md"), viewKind: "editor" },
+        { id: noteId("one.md"), viewKind: "editor" },
+        { id: noteId("four.md"), viewKind: "editor" },
+      ],
+      activeTabId: noteId("one.md"),
+    }),
+  );
+
+  await expect(page.locator('[data-tab-id="four.md"]')).toBeVisible();
+  await expect
+    .poll(async () =>
+      page.locator("[data-tab-id]").evaluateAll((nodes) =>
+        nodes.map((n) => n.getAttribute("data-tab-id")),
+      ),
+    )
+    .toEqual(["three.md", "two.md", "one.md", "four.md"]);
+  // The active tab is preserved because it was not removed externally.
+  await expect(page.locator('[data-tab-id="two.md"]')).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("selects a neighbour only when the active note is removed externally", async ({
+  page,
+}) => {
+  await open(page);
+  await openThreeNotes(page);
+  await page.locator('[data-tab-id="two.md"]').click();
+
+  // Remove the active note (two.md) from the shared document.
+  writeFileSync(
+    path.join(root, ".maek/tabs.json"),
+    JSON.stringify({
+      version: 4,
+      tabs: [
+        { id: noteId("one.md"), viewKind: "editor" },
+        { id: noteId("three.md"), viewKind: "editor" },
+      ],
+      activeTabId: noteId("one.md"),
+    }),
+  );
+
+  await expect(page.locator('[data-tab-id="two.md"]')).toHaveCount(0);
+  await expect
+    .poll(async () =>
+      page.locator("[data-tab-id]").evaluateAll((nodes) =>
+        nodes.map((n) => n.getAttribute("data-tab-id")),
+      ),
+    )
+    .toEqual(["one.md", "three.md"]);
+  // A neighbour becomes active because the previous selection is gone.
+  await expect(page.locator('[data-tab-id="one.md"]')).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("keeps a desktop-only tab in the document but hidden after a web reorder", async ({
+  page,
+}) => {
+  // Seed the shared document with a desktop-only database tab plus two notes.
+  writeFileSync(path.join(root, "one.md"), "# One\n");
+  writeFileSync(path.join(root, "two.md"), "# Two\n");
+  mkdirSync(path.join(root, ".maek"), { recursive: true });
+  writeFileSync(
+    path.join(root, ".maek/tabs.json"),
+    JSON.stringify({
+      version: 4,
+      tabs: [
+        { id: noteId("sheet"), viewKind: "database", keep: "yes" },
+        { id: noteId("one.md"), viewKind: "editor" },
+        { id: noteId("two.md"), viewKind: "editor" },
+      ],
+      activeTabId: noteId("one.md"),
+    }),
+  );
+  await open(page);
+  // The database tab never appears in the web sidebar.
+  await expect(page.locator('[data-tab-id="one.md"]')).toBeVisible();
+  await expect(page.locator('[data-tab-id="two.md"]')).toBeVisible();
+  await expect(page.locator('[data-tab-id="sheet"]')).toHaveCount(0);
+
+  // Reorder the two web notes; the desktop-only tab must survive on disk.
+  await dragTab(page, "one.md", "two.md", true);
+  await expect
+    .poll(() => rootTabOrder())
+    .toEqual(["sheet", "two.md", "one.md"]);
+  await expect
+    .poll(() => {
+      const doc = rootTabsDocument();
+      return doc
+        ? doc.tabs.find((t) => t.id === noteId("sheet"))
+        : undefined;
+    })
+    .toMatchObject({ viewKind: "database", keep: "yes" });
+});
+
+test("saves an unsaved note before honouring an external close", async ({
+  page,
+}) => {
+  await open(page);
+  await editNote(page);
+  await expect.poll(() => rootTabOrder()).toEqual(["기존 노트.md"]);
+  await page.locator(".tiptap").click();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type(" Pending edit");
+
+  // The note is externally removed from the shared document while dirty.
+  writeFileSync(
+    path.join(root, ".maek/tabs.json"),
+    JSON.stringify({ version: 4, tabs: [], activeTabId: null }),
+  );
+
+  // The pending edit is flushed to disk, then the tab closes.
+  await expect
+    .poll(() => readFileSync(path.join(root, "Folder/기존 노트.md"), "utf8"))
+    .toContain("Pending edit");
+  await expect(
+    page.locator('[data-tab-id="Folder/기존 노트.md"]'),
+  ).toHaveCount(0);
+});
+
+test("keeps an externally-closed note open when its save conflicts", async ({
+  page,
+}) => {
+  await open(page);
+  await editNote(page);
+  await expect.poll(() => rootTabOrder()).toEqual(["기존 노트.md"]);
+  await page.locator(".tiptap").click();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type(" Local only");
+
+  // A conflicting external write makes the save fail with a 409.
+  writeFileSync(
+    path.join(root, "Folder/기존 노트.md"),
+    "# Disk wins\n\nConflicting content",
+  );
+  writeFileSync(
+    path.join(root, ".maek/tabs.json"),
+    JSON.stringify({ version: 4, tabs: [], activeTabId: null }),
+  );
+
+  // The tab stays open with the local edit preserved and an error shown.
+  await expect(page.getByRole("alert")).toContainText(
+    /externally|changed|unsaved|conflict|바뀌/,
+  );
+  await expect(page.locator(".tiptap")).toContainText("Local only");
+  await expect(
+    page.locator('[data-tab-id="Folder/기존 노트.md"]'),
+  ).toBeVisible();
 });

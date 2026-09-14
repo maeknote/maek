@@ -43,17 +43,22 @@ npm run install:desktop
   내 폴더/중첩 노트.md
   .maek/
     config.json
+    tabs.json
     assets/붙여넣은 이미지.png
-    sessions/web/<브라우저 세션>/tabs.json
+    sessions/web/<브라우저 세션>/ui.json
     sessions/web/<브라우저 세션>/recentFiles.json
 ```
 
 실제 파일 이름과 위치를 유지합니다. `.maek-data`, `notes/`, `history/`,
-`databases.json`을 자동 생성하지 않습니다. 원본 Maek Note의 version 4 탭 및
-version 1 최근 파일 구조는 읽기 전용 마이그레이션 입력으로 사용합니다. 웹 앱은
-데스크톱 앱의 `.maek/tabs.json`을 덮어쓰지 않으며 브라우저 세션별 파일에
-저장합니다. 브라우저 localStorage에는 마지막 경로와 표시용 최근 Workspace만 저장합니다.
-일반 `notes`·`history` 폴더는 사용자 파일로 취급하며 자동 삭제하지 않습니다.
+`databases.json`을 자동 생성하지 않습니다. 열린 탭 목록과 순서는 workspace 루트의
+`.maek/tabs.json`(원본 앱 version 4 형식)을 단일 원본으로 공유하며, 데스크톱 앱이
+파일을 바꾸면 웹에도 실시간 반영합니다. 웹은 표시할 수 있는 파일 탭만 관리하고
+원본 전용 탭·그룹·분할 정보와 알 수 없는 필드는 병합 저장으로 보존합니다. 테마·
+사이드바 폭·펼침·스크롤·선택 탭 같은 표시 상태는 브라우저 세션별 `ui.json`에,
+최근 파일은 `recentFiles.json`에 저장합니다. 원본 Maek Note의 version 4 탭 및
+version 1 최근 파일 구조는 읽기 전용 마이그레이션 입력으로 사용합니다. 브라우저
+localStorage에는 마지막 경로와 표시용 최근 Workspace만 저장합니다. 일반 `notes`·
+`history` 폴더는 사용자 파일로 취급하며 자동 삭제하지 않습니다.
 
 편집 후 1.5초, 탭 전환, 창 포커스 해제, Cmd+S에 저장합니다. 파일 해시·수정 시각을
 검사한 뒤 원자적으로 교체합니다. 외부 편집과 충돌하면 로컬 편집본을 유지하며

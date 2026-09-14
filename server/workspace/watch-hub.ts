@@ -12,6 +12,8 @@ type Subscriber = (event: WorkspaceEvent) => void;
  */
 export class WorkspaceWatchHub {
   private watcher: FSWatcher | undefined;
+  private tabsWatcher: FSWatcher | undefined;
+  private tabsDebounce: ReturnType<typeof setTimeout> | undefined;
   private subscribers = new Set<Subscriber>();
   private identities = new Map<string, number>();
   private removed = new Map<
@@ -158,15 +160,49 @@ export class WorkspaceWatchHub {
     watcher.on("error", () => {
       this.emit("watch-error", {});
     });
+    this.startTabsWatcher();
+  }
+
+  /**
+   * The workspace-root `.maek/tabs.json` is excluded from the tree watcher
+   * (all `.maek` metadata is ignored), yet the web UI must react when the
+   * desktop app rewrites the shared open-tab list. Watch just that file and
+   * coalesce the add/unlink/change burst of an atomic replace into a single
+   * `tabs-session-changed` event.
+   */
+  private startTabsWatcher() {
+    const tabsPath = path.join(this.workspace.root, ".maek", "tabs.json");
+    const tabsWatcher = watch(tabsPath, {
+      ignoreInitial: true,
+      alwaysStat: false,
+      followSymlinks: false,
+      // The atomic replace writes a sibling `.tmp` then renames over the
+      // target; only react to the final file itself.
+      ignored: (absolutePath) =>
+        absolutePath !== tabsPath && absolutePath.endsWith(".tmp"),
+    });
+    this.tabsWatcher = tabsWatcher;
+    const schedule = () => {
+      clearTimeout(this.tabsDebounce);
+      this.tabsDebounce = setTimeout(() => {
+        if (this.ready) this.emit("tabs-session-changed", {});
+      }, 120);
+    };
+    tabsWatcher.on("add", schedule);
+    tabsWatcher.on("change", schedule);
+    tabsWatcher.on("unlink", schedule);
+    tabsWatcher.on("error", () => {});
   }
 
   async close(): Promise<void> {
     this.closing ??= (async () => {
       for (const item of this.removed.values()) clearTimeout(item.timer);
       this.removed.clear();
+      clearTimeout(this.tabsDebounce);
       this.subscribers.clear();
-      await this.watcher?.close();
+      await Promise.all([this.watcher?.close(), this.tabsWatcher?.close()]);
       this.watcher = undefined;
+      this.tabsWatcher = undefined;
     })();
     return this.closing;
   }

@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import type { WorkspaceRef } from "@shared/contract";
-import type { FileNode, FileContent, Session, Change } from "@shared/workspace";
+import type {
+  FileNode,
+  FileContent,
+  Change,
+  RootTabs,
+  UiState,
+} from "@shared/workspace";
 import type { TabItem, FrontmatterViewMode } from "./features/editor/types";
 import {
   splitFrontmatter,
@@ -48,6 +54,8 @@ interface State {
   saveAll: () => Promise<boolean>;
   closeTab: (id: string) => Promise<void>;
   setActiveTab: (id: string) => void;
+  reorderTabs: (fromIndex: number, insertionIndex: number) => void;
+  syncTabsFromRoot: () => Promise<void>;
   updateBody: (id: string, body: string) => void;
   rebase: (id: string, body: string) => void;
   reload: (id: string) => Promise<void>;
@@ -68,6 +76,16 @@ let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let reconnectAttempt = 0;
 let workspaceOpenEpoch = 0;
 let workspaceOpenController: AbortController | undefined;
+/**
+ * Whether this browser changed the open-tab list (open/close/reorder) since the
+ * last persist. Only a tab-list change rewrites the shared root `.maek/tabs.json`
+ * — UI-only autosaves (scroll, theme, sidebar) never touch it, so an idle
+ * browser cannot clobber an external edit and the watcher does not feed back.
+ */
+let tabsDirty = false;
+export function markTabsDirty() {
+  tabsDirty = true;
+}
 function later() {
   clearTimeout(persistenceTimer);
   persistenceTimer = setTimeout(() => void useStore.getState().persist(), 300);
@@ -113,6 +131,10 @@ function connectEvents(
       void get().change(JSON.parse((event as MessageEvent).data) as Change),
   );
   events.addEventListener("rescan", () => void get().refresh());
+  events.addEventListener(
+    "tabs-session-changed",
+    () => void get().syncTabsFromRoot(),
+  );
   events.addEventListener("watch-error", () => {
     set({
       connectionStatus: "failed",
@@ -329,10 +351,17 @@ export const useStore = create<State>((set, get) => ({
       set({ openingWorkspace: ws, openingPhase: "indexing" });
       await get().persist();
       if (!isCurrent()) return;
-      const [tree, session, recents] = await Promise.all([
+      const [tree, rootTabs, ui, recents] = await Promise.all([
         treeQuery(ws, controller.signal),
-        api<Session>(
+        api<RootTabs>(
           "/api/workspace/tabs",
+          "GET",
+          undefined,
+          ws,
+          controller.signal,
+        ),
+        api<UiState>(
+          "/api/workspace/ui-state",
           "GET",
           undefined,
           ws,
@@ -349,7 +378,7 @@ export const useStore = create<State>((set, get) => ({
       if (!isCurrent()) return;
       set({ openingPhase: "restoring-tabs" });
       const tabs: Tab[] = [];
-      for (const id of session.tabs) {
+      for (const id of rootTabs.tabs) {
         try {
           const file = await fileQuery(ws, id, controller.signal);
           if (!isCurrent()) return;
@@ -363,6 +392,15 @@ export const useStore = create<State>((set, get) => ({
       events?.close();
       sessionEpoch++;
       setHostWorkspace(ws);
+      // Per-browser selection wins; fall back to the root document's active tab,
+      // then the first restored tab.
+      const preferredActive =
+        ui.activeTabId && tabs.some((t) => t.id === ui.activeTabId)
+          ? ui.activeTabId
+          : rootTabs.activeTabId &&
+              tabs.some((t) => t.id === rootTabs.activeTabId)
+            ? rootTabs.activeTabId
+            : (tabs[0]?.id ?? null);
       set({
         workspace: ws,
         nodes: tree.nodes,
@@ -375,13 +413,11 @@ export const useStore = create<State>((set, get) => ({
           ).values(),
         ].slice(0, 30),
         tabs,
-        activeTabId: tabs.some((t) => t.id === session.activeTabId)
-          ? session.activeTabId
-          : (tabs[0]?.id ?? null),
-        scrollPositions: session.scrollPositions,
-        expanded: session.expanded,
-        theme: session.theme,
-        sidebarWidth: session.sidebarWidth,
+        activeTabId: preferredActive,
+        scrollPositions: ui.scrollPositions,
+        expanded: ui.expanded,
+        theme: ui.theme,
+        sidebarWidth: ui.sidebarWidth,
         recentFiles: recents,
         ready: true,
         openingWorkspace: null,
@@ -394,8 +430,9 @@ export const useStore = create<State>((set, get) => ({
         "maek:workspaces",
         JSON.stringify(get().workspaces),
       );
+      tabsDirty = false;
       later();
-      document.documentElement.dataset.theme = session.theme;
+      document.documentElement.dataset.theme = ui.theme;
       connectEvents(ws, set, get);
     } catch (e) {
       if (!isCurrent() || controller.signal.aborted) return;
@@ -492,6 +529,7 @@ export const useStore = create<State>((set, get) => ({
         ].slice(0, 200),
         error: "",
       }));
+      tabsDirty = true;
       later();
     } catch (e) {
       set({ error: String(e) });
@@ -502,6 +540,110 @@ export const useStore = create<State>((set, get) => ({
     if (previous && previous !== id) void get().save(previous);
     set({ activeTabId: id });
     later();
+  },
+  reorderTabs(fromIndex, insertionIndex) {
+    const tabs = [...get().tabs];
+    if (
+      fromIndex < 0 ||
+      fromIndex >= tabs.length ||
+      insertionIndex < 0 ||
+      insertionIndex > tabs.length
+    )
+      return;
+    const [moving] = tabs.splice(fromIndex, 1);
+    if (!moving) return;
+    // The insertion index refers to the pre-removal list; shift it left when
+    // the moved item sat before the insertion point.
+    const target = insertionIndex > fromIndex ? insertionIndex - 1 : insertionIndex;
+    if (target === fromIndex) return; // No-op self drop.
+    tabs.splice(target, 0, moving);
+    set({ tabs });
+    tabsDirty = true;
+    later();
+  },
+  async syncTabsFromRoot() {
+    const workspace = get().workspace;
+    if (!workspace || !get().ready) return;
+    // A local tab-list change is pending persist; let it win rather than
+    // reverting to a stale document. Our own write will re-sync afterwards.
+    if (tabsDirty) return;
+    const epoch = sessionEpoch;
+    let snapshot: RootTabs;
+    try {
+      snapshot = await api<RootTabs>("/api/workspace/tabs", "GET", undefined, workspace);
+    } catch {
+      return;
+    }
+    if (epoch !== sessionEpoch) return;
+    const current = get().tabs;
+    const currentFileIds = current.filter((t) => !isVirtualTabId(t.id)).map((t) => t.id);
+    // Loop guard: our own write echoes back through the watcher. When the file
+    // tab order already matches the document there is nothing to do.
+    const sameOrder =
+      currentFileIds.length === snapshot.tabs.length &&
+      currentFileIds.every((id, i) => id === snapshot.tabs[i]);
+    if (sameOrder) return;
+    const byId = new Map(current.map((t) => [t.id, t]));
+    // Externally removed file tabs: try to save dirty ones first, then close.
+    const removed = currentFileIds.filter((id) => !snapshot.tabs.includes(id));
+    const keptDueToConflict = new Set<string>();
+    for (const id of removed) {
+      const tab = byId.get(id);
+      if (tab && isTabDirty(tab)) {
+        const saved = await get().save(id);
+        if (epoch !== sessionEpoch) return;
+        if (!saved) {
+          keptDueToConflict.add(id);
+          patchTab(id, (t) => ({
+            ...t,
+            status: t.status === "conflict" ? "conflict" : "error",
+            error:
+              t.error ??
+              "This note was closed elsewhere but has unsaved changes.",
+          }));
+        }
+      }
+    }
+    // Rebuild the ordered file-tab list from the document, reusing live tab
+    // objects; load any newly opened file tabs.
+    const nextFileTabs: Tab[] = [];
+    for (const id of snapshot.tabs) {
+      const existing = byId.get(id);
+      if (existing) {
+        nextFileTabs.push(existing);
+        continue;
+      }
+      try {
+        const file = await fileQuery(workspace, id);
+        if (epoch !== sessionEpoch) return;
+        nextFileTabs.push(makeTab(id, file));
+      } catch {
+        /* Missing files do not resurrect. */
+      }
+    }
+    // Re-add tabs we could not close due to a save conflict.
+    for (const id of keptDueToConflict) {
+      const tab = byId.get(id);
+      if (tab && !nextFileTabs.some((t) => t.id === id)) nextFileTabs.push(tab);
+    }
+    // Virtual tabs (dashboard/kanban) are client-only; keep them at the end.
+    const virtualTabs = current.filter((t) => isVirtualTabId(t.id));
+    const nextTabs = [...nextFileTabs, ...virtualTabs];
+    const previousActive = get().activeTabId;
+    const activeStillOpen =
+      previousActive && nextTabs.some((t) => t.id === previousActive);
+    set({
+      tabs: nextTabs,
+      // Only move selection when the active tab was removed externally.
+      activeTabId: activeStillOpen
+        ? previousActive
+        : (nextTabs[0]?.id ?? null),
+    });
+    // We just adopted the document's order; nothing for us to write back.
+    tabsDirty = false;
+    // Persist the per-browser selection change without rewriting the root doc
+    // (order already matches the document we just read).
+    void get().persist();
   },
   openDashboard() {
     const existing = get().tabs.find((t) => t.id === DASHBOARD_TAB_ID);
@@ -644,6 +786,7 @@ export const useStore = create<State>((set, get) => ({
           s.activeTabId === id ? (tabs.at(-1)?.id ?? null) : s.activeTabId,
       };
     });
+    tabsDirty = true;
     later();
   },
   async reload(id) {
@@ -717,6 +860,10 @@ export const useStore = create<State>((set, get) => ({
           );
         }
       }
+      if (
+        get().tabs.some((t) => t.id === dest || t.id.startsWith(dest + "/"))
+      )
+        tabsDirty = true;
       later();
       return;
     }
@@ -800,6 +947,8 @@ export const useStore = create<State>((set, get) => ({
       expanded: s.expanded.map(replace),
       recentFiles: s.recentFiles.map((f) => ({ ...f, path: replace(f.path) })),
     }));
+    if (get().tabs.some((t) => t.id === dest || t.id.startsWith(dest + "/")))
+      tabsDirty = true;
     await get().refresh();
     later();
   },
@@ -834,20 +983,30 @@ export const useStore = create<State>((set, get) => ({
   async persist() {
     const s = get();
     if (!s.workspace || !s.ready) return;
-    const session: Session = {
-      tabs: s.tabs.filter((t) => !isVirtualTabId(t.id)).map((t) => t.id),
-      activeTabId:
-        s.activeTabId && !isVirtualTabId(s.activeTabId) ? s.activeTabId : null,
+    const fileTabs = s.tabs.filter((t) => !isVirtualTabId(t.id)).map((t) => t.id);
+    const activeFileTab =
+      s.activeTabId && !isVirtualTabId(s.activeTabId) ? s.activeTabId : null;
+    const ui: UiState = {
+      activeTabId: activeFileTab,
       scrollPositions: s.scrollPositions,
       expanded: s.expanded,
       theme: s.theme,
       sidebarWidth: s.sidebarWidth,
     };
     try {
-      await Promise.all([
-        api("/api/workspace/tabs", "PUT", session, s.workspace),
+      const writes: Promise<unknown>[] = [
+        api("/api/workspace/ui-state", "PUT", ui, s.workspace),
         api("/api/workspace/recent-files", "PUT", s.recentFiles, s.workspace),
-      ]);
+      ];
+      // Only rewrite the shared root document when this browser changed the
+      // open-tab list. UI-only autosaves must never touch it, so an idle
+      // browser cannot clobber an external edit and the watcher does not loop.
+      if (tabsDirty) {
+        const rootTabs: RootTabs = { tabs: fileTabs, activeTabId: activeFileTab };
+        writes.push(api("/api/workspace/tabs", "PUT", rootTabs, s.workspace));
+        tabsDirty = false;
+      }
+      await Promise.all(writes);
     } catch (e) {
       set({ error: "Session could not be saved: " + String(e) });
     }
