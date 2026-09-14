@@ -20,53 +20,6 @@ body,
 .notice button {
   @apply underline shrink-0;
 }
-.workspace-tab-bar {
-  position: relative;
-}
-.workspace-tab-bar::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 0;
-  height: 1px;
-  background: var(--color-border-light);
-  content: "";
-}
-.workspace-tab-strip {
-  position: relative;
-  z-index: 1;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.workspace-tab-strip::-webkit-scrollbar {
-  display: none;
-}
-.workspace-tab {
-  margin-bottom: 1px;
-}
-.workspace-tab.is-active {
-  height: 35px;
-  margin-bottom: 0;
-}
-.workspace-tab.is-active::after {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  background: var(--color-paper-white);
-  content: "";
-}
-.workspace-tab.is-inactive + .workspace-tab.is-inactive::before {
-  position: absolute;
-  bottom: 5px;
-  left: 0;
-  width: 1px;
-  height: 18px;
-  background: var(--color-border-subtle);
-  content: "";
-}
 .artifact-toolbar {
   @apply min-h-9 shrink-0 flex items-center gap-1 border-b border-border-gray px-3 text-xs text-muted-text;
 }

@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  X,
 } from "lucide-react";
 import { FolderSelector } from "./components/FolderSelector";
 import {
@@ -26,6 +27,7 @@ import { cn } from "../../lib/utils";
 import { collectDropFiles } from "./importDrop";
 import { useFolderAppearance } from "./stores/folderAppearanceStore";
 import { FolderCustomizeSubmenu } from "./components/FolderCustomizeSubmenu";
+import { isTabDirty } from "../editor/utils/frontmatter";
 
 interface Props {
   onSearch: () => void;
@@ -34,10 +36,24 @@ interface Props {
   onQuit: () => void;
 }
 export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
-  const { nodes, workspace, restoring, expanded, workspaces } = useStore();
+  const {
+    nodes,
+    workspace,
+    restoring,
+    expanded,
+    workspaces,
+    tabs,
+    activeTabId,
+  } = useStore();
   const container = useRef<HTMLDivElement>(null),
     tree = useRef<TreeApi<FileNode>>(null);
+  const draggedTab = useRef<string | null>(null);
   const [height, setHeight] = useState(400);
+  const [openNotesMenu, setOpenNotesMenu] = useState<{
+    x: number;
+    y: number;
+    id: string;
+  } | null>(null);
   const { appearances, load } = useFolderAppearance();
   const [customizeFolder, setCustomizeFolder] = useState<string | null>(null);
 
@@ -295,6 +311,86 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           <RefreshCw size={16} />
         </button>
       </div>
+      {tabs.length > 0 && (
+        <div className="shrink-0 flex flex-col max-h-[40%] min-h-0 border-b border-default">
+          <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-text shrink-0">
+            Open Notes
+          </div>
+          <div className="overflow-y-auto px-1 pb-1">
+            {tabs.map((t) => (
+              <div
+                key={t.id}
+                role="tab"
+                aria-selected={t.id === activeTabId}
+                data-tab-id={t.id}
+                tabIndex={0}
+                draggable
+                onDragStart={() => {
+                  draggedTab.current = t.id;
+                }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const from = draggedTab.current;
+                  if (!from || from === t.id) return;
+                  const items = [...tabs];
+                  const moving = items.find((x) => x.id === from)!;
+                  items.splice(items.indexOf(moving), 1);
+                  items.splice(
+                    items.findIndex((x) => x.id === t.id),
+                    0,
+                    moving,
+                  );
+                  useStore.setState({ tabs: items });
+                  schedulePersistence();
+                }}
+                onClick={() => useStore.getState().setActiveTab(t.id)}
+                onAuxClick={(e) => {
+                  if (e.button === 1) void useStore.getState().closeTab(t.id);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setOpenNotesMenu({ x: e.clientX, y: e.clientY, id: t.id });
+                }}
+                className={cn(
+                  "group flex items-center gap-1.5 h-7 px-2 rounded-md cursor-pointer select-none text-sm transition-colors",
+                  t.id === activeTabId
+                    ? "bg-maek-red/10 text-maek-red"
+                    : "text-neutral-ink hover:bg-surface-overlay",
+                )}
+              >
+                <FileText className="w-4 h-4 shrink-0" />
+                <span className="truncate flex-1 min-w-0">
+                  {t.name.replace(/\.md$/i, "")}
+                </span>
+                {tabs.some(
+                  (other) => other.id !== t.id && other.name === t.name,
+                ) && (
+                  <span className="text-[10px] text-muted-text shrink-0">
+                    {t.parentName}
+                  </span>
+                )}
+                {isTabDirty(t) ? (
+                  <span
+                    className="w-2 h-2 rounded-full bg-maek-red shrink-0 group-hover:hidden"
+                    aria-label="Unsaved"
+                  />
+                ) : null}
+                <button
+                  aria-label={"Close " + t.name}
+                  className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-surface-overlay-strong shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void useStore.getState().closeTab(t.id);
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div
         className="flex-1 min-h-0 px-2"
         ref={container}
@@ -452,6 +548,16 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
               />
               {menu.node.isDir && (
                 <MenuItem
+                  label="Open as Kanban"
+                  onClick={() => {
+                    const folder = menu.node!.id;
+                    setMenu(null);
+                    useStore.getState().openKanban(folder);
+                  }}
+                />
+              )}
+              {menu.node.isDir && (
+                <MenuItem
                   label="Change icon"
                   onClick={() => {
                     setCustomizeFolder(menu.node!.id);
@@ -511,6 +617,38 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
             onClick={() => {
               createHoverMenu.close();
               void run(() => create("dir"));
+            }}
+          />
+        </FloatingMenu>
+      )}
+      {openNotesMenu && (
+        <FloatingMenu
+          isOpen
+          position={openNotesMenu}
+          onClose={() => setOpenNotesMenu(null)}
+        >
+          <MenuItem
+            label="Close"
+            onClick={() => {
+              void useStore.getState().closeTab(openNotesMenu.id);
+              setOpenNotesMenu(null);
+            }}
+          />
+          <MenuItem
+            label="Close others"
+            onClick={() => {
+              for (const t of useStore.getState().tabs)
+                if (t.id !== openNotesMenu.id)
+                  void useStore.getState().closeTab(t.id);
+              setOpenNotesMenu(null);
+            }}
+          />
+          <MenuItem
+            label="Close all"
+            onClick={() => {
+              for (const t of useStore.getState().tabs)
+                void useStore.getState().closeTab(t.id);
+              setOpenNotesMenu(null);
             }}
           />
         </FloatingMenu>

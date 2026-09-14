@@ -26,6 +26,7 @@ export type TabViewKind =
   | "database"
   | "meeting"
   | "workspace-settings"
+  | "kanban"
   | "unsupported";
 export type LineEnding = "\n" | "\r\n";
 
@@ -82,6 +83,8 @@ export interface TabItem {
   diskFileContent: string;
   /** Absolute note.md path for folder-backed meeting tabs. */
   meetingNotePath?: string;
+  /** Workspace-relative folder path for kanban tabs. */
+  kanbanFolderPath?: string;
   /**
    * Body content after Tiptap parse → re-serialize round-trip, captured at mount or after
    * a disk-side change is applied. Empty string when not yet computed.

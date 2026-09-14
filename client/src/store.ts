@@ -41,6 +41,9 @@ interface State {
   reconnectWorkspace: () => Promise<void>;
   refresh: () => Promise<void>;
   openFile: (id: string) => Promise<void>;
+  openDashboard: () => void;
+  openKanban: (folderPath: string) => void;
+  clearRecentFiles: () => void;
   save: (id: string) => Promise<boolean>;
   saveAll: () => Promise<boolean>;
   closeTab: (id: string) => Promise<void>;
@@ -133,6 +136,62 @@ function connectEvents(
     set({ connectionStatus: "ready", connectionError: "" });
   };
 }
+/**
+ * Virtual tabs (dashboard, kanban) are not backed by a file on disk. They live
+ * only in client memory and are excluded from persistence — the session schema
+ * stores real file paths only. Their ids are namespaced so they never collide
+ * with a workspace-relative file path.
+ */
+export const DASHBOARD_TAB_ID = "maek:virtual:dashboard";
+export const kanbanTabId = (folderPath: string) =>
+  `maek:virtual:kanban:${folderPath}`;
+export function isVirtualTabId(id: string): boolean {
+  return id.startsWith("maek:virtual:");
+}
+
+const VIRTUAL_FILE: FileContent = {
+  content: "",
+  kind: "unsupported",
+  hash: "",
+  mtimeMs: 0,
+  size: 0,
+};
+
+function makeVirtualTab(
+  id: string,
+  name: string,
+  viewKind: "workspace-settings" | "kanban",
+  kanbanFolderPath?: string,
+): Tab {
+  return {
+    id,
+    name,
+    parentName: "",
+    bodyContent: "",
+    savedBodyContent: "",
+    frontmatter: {
+      hasFrontmatter: false,
+      raw: null,
+      savedRaw: null,
+      expanded: false,
+      validationError: null,
+      lineEnding: "\n",
+      viewMode: "properties",
+    },
+    diskNormalizedBody: "",
+    diskFileContent: "",
+    viewKind,
+    previewFormat: null,
+    previewNonce: 0,
+    isEphemeral: false,
+    kanbanFolderPath,
+    file: VIRTUAL_FILE,
+    initialContent: "",
+    status: "idle",
+    generation: 0,
+  };
+}
+
 function makeTab(id: string, file: FileContent): Tab {
   const payload = splitFrontmatter(file.content ?? "");
   return {
@@ -400,11 +459,13 @@ export const useStore = create<State>((set, get) => ({
           ? `Cannot read: ${tree.warnings.join(", ")}`
           : "",
       });
-      for (const t of get().tabs)
+      for (const t of get().tabs) {
+        if (isVirtualTabId(t.id)) continue;
         await get().change({
           type: tree.nodes.some((n) => n.id === t.id) ? "change" : "unlink",
           path: t.id,
         });
+      }
     } catch (e) {
       set({ error: String(e) });
     }
@@ -440,6 +501,41 @@ export const useStore = create<State>((set, get) => ({
     const previous = get().activeTabId;
     if (previous && previous !== id) void get().save(previous);
     set({ activeTabId: id });
+    later();
+  },
+  openDashboard() {
+    const existing = get().tabs.find((t) => t.id === DASHBOARD_TAB_ID);
+    if (existing) {
+      get().setActiveTab(DASHBOARD_TAB_ID);
+      return;
+    }
+    set((s) => ({
+      tabs: [
+        ...s.tabs,
+        makeVirtualTab(DASHBOARD_TAB_ID, "Dashboard", "workspace-settings"),
+      ],
+      activeTabId: DASHBOARD_TAB_ID,
+    }));
+    later();
+  },
+  openKanban(folderPath) {
+    const id = kanbanTabId(folderPath);
+    if (get().tabs.some((t) => t.id === id)) {
+      get().setActiveTab(id);
+      return;
+    }
+    const name = folderPath ? (folderPath.split("/").pop() ?? "") : "Workspace";
+    set((s) => ({
+      tabs: [
+        ...s.tabs,
+        makeVirtualTab(id, `${name} Kanban`, "kanban", folderPath),
+      ],
+      activeTabId: id,
+    }));
+    later();
+  },
+  clearRecentFiles() {
+    set({ recentFiles: [] });
     later();
   },
   updateBody(id, body) {
@@ -739,8 +835,9 @@ export const useStore = create<State>((set, get) => ({
     const s = get();
     if (!s.workspace || !s.ready) return;
     const session: Session = {
-      tabs: s.tabs.map((t) => t.id),
-      activeTabId: s.activeTabId,
+      tabs: s.tabs.filter((t) => !isVirtualTabId(t.id)).map((t) => t.id),
+      activeTabId:
+        s.activeTabId && !isVirtualTabId(s.activeTabId) ? s.activeTabId : null,
       scrollPositions: s.scrollPositions,
       expanded: s.expanded,
       theme: s.theme,

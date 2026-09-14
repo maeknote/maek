@@ -5,7 +5,6 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   FileText,
   FolderOpen,
-  Plus,
   X,
   Moon,
   Sun,
@@ -19,6 +18,8 @@ import { Explorer } from "./features/explorer/Explorer";
 import { MarkdownEditor } from "./features/editor/MarkdownEditor";
 import { TitleBar } from "./features/editor/components/TitleBar";
 import { FrontmatterPanel } from "./features/editor/components/FrontmatterPanel";
+import { WorkspaceDashboard } from "./features/editor/components/WorkspaceDashboard";
+import { FolderKanbanView } from "./features/database/kanban/FolderKanbanView";
 import {
   isTabDirty,
   getTabFileContent,
@@ -27,12 +28,8 @@ import {
   ToastProvider,
   ToastContainer,
   Button,
-  FloatingMenu,
-  MenuItem,
   PanelIcon,
 } from "./shared/components";
-import { useHoverMenu } from "./shared/hooks";
-import { cn } from "./lib/utils";
 import type { FileNode } from "@shared/workspace";
 
 function Modal({
@@ -159,15 +156,7 @@ function AppContent() {
     [path, setPath] = useState(""),
     [collapsed, setCollapsed] = useState(false),
     [shuttingDown, setShuttingDown] = useState(false);
-  const [tabMenu, setTabMenu] = useState<{
-    x: number;
-    y: number;
-    id: string;
-  } | null>(null);
-  const tabHoverMenu = useHoverMenu();
-  const tabPlusRef = useRef<HTMLButtonElement>(null);
-  const started = useRef(false),
-    dragged = useRef<string | null>(null);
+  const started = useRef(false);
   const tab = state.tabs.find((t) => t.id === state.activeTabId);
   useEffect(() => {
     if (started.current) return;
@@ -183,7 +172,10 @@ function AppContent() {
   async function newNote() {
     try {
       const n = await api<FileNode>("/api/files", "POST", {
-        dir: tab?.id.split("/").slice(0, -1).join("/") ?? "",
+        dir:
+          tab && !tab.id.startsWith("maek:virtual:")
+            ? tab.id.split("/").slice(0, -1).join("/")
+            : "",
         name: "Untitled.md",
         kind: "file",
       });
@@ -368,109 +360,6 @@ function AppContent() {
             </>
           )}
           <main className="flex-1 min-w-0 h-full flex flex-col bg-surface overflow-hidden">
-            <div className="workspace-tab-bar h-[38px] flex items-end shrink-0 px-2">
-              {collapsed && (
-                <button
-                  aria-label="Open sidebar"
-                  className="icon-button self-center"
-                  onClick={() => setCollapsed(false)}
-                >
-                  <PanelIcon side="left" isExpanded={false} size={16} />
-                </button>
-              )}
-              <div
-                className="workspace-tab-strip flex-1 min-w-0 flex overflow-x-auto items-end"
-                role="tablist"
-              >
-                {state.tabs.map((t) => (
-                  <div
-                    key={t.id}
-                    role="tab"
-                    aria-selected={t.id === tab?.id}
-                    data-tab-id={t.id}
-                    tabIndex={0}
-                    draggable
-                    onDragStart={() => {
-                      dragged.current = t.id;
-                    }}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const from = dragged.current;
-                      if (!from || from === t.id) return;
-                      const items = [...state.tabs];
-                      const moving = items.find((x) => x.id === from)!;
-                      items.splice(items.indexOf(moving), 1);
-                      items.splice(
-                        items.findIndex((x) => x.id === t.id),
-                        0,
-                        moving,
-                      );
-                      useStore.setState({ tabs: items });
-                      schedulePersistence();
-                    }}
-                    onClick={() => state.setActiveTab(t.id)}
-                    onAuxClick={(e) => {
-                      if (e.button === 1) void state.closeTab(t.id);
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setTabMenu({ x: e.clientX, y: e.clientY, id: t.id });
-                    }}
-                    className={cn(
-                      "workspace-tab group relative flex items-center gap-1.5 px-3 h-[34px] cursor-default select-none shrink-0 transition-colors duration-150 focus:outline-none",
-                      t.id === tab?.id
-                        ? "is-active bg-surface rounded-t-md border-t border-x border-border-gray text-text-main z-10"
-                        : "is-inactive text-muted-text hover:text-text-main hover:bg-surface-overlay rounded-t-sm",
-                    )}
-                  >
-                    <span className="text-xs font-medium whitespace-nowrap">
-                      {t.name.replace(/\.md$/i, "")}
-                    </span>
-                    {state.tabs.some(
-                      (other) => other.id !== t.id && other.name === t.name,
-                    ) && (
-                      <span className="text-[10px] text-muted-text">
-                        {t.parentName}
-                      </span>
-                    )}
-                    {isTabDirty(t) && (
-                      <span className="text-muted-text" aria-label="Unsaved">
-                        •
-                      </span>
-                    )}
-                    <button
-                      aria-label={"Close " + t.name}
-                      className="w-4 h-4 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-surface-overlay-strong"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void state.closeTab(t.id);
-                      }}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-                <button
-                  ref={tabPlusRef}
-                  aria-label="New note"
-                  className="icon-button self-center shrink-0 ml-0.5"
-                  onClick={() => {
-                    tabHoverMenu.close();
-                    void newNote();
-                  }}
-                  onMouseEnter={(e) => {
-                    const r = e.currentTarget.getBoundingClientRect();
-                    tabHoverMenu.open({ x: r.left, y: r.bottom });
-                  }}
-                  onMouseLeave={() => {
-                    tabHoverMenu.startCloseTimer();
-                  }}
-                >
-                  <Plus size={16} />
-                </button>
-              </div>
-            </div>
             {(state.connectionError || state.error) && (
               <div role="alert" className="notice">
                 <span>{state.connectionError || state.error}</span>
@@ -482,9 +371,37 @@ function AppContent() {
                 </button>
               </div>
             )}
+            {collapsed &&
+              (!tab ||
+                tab.viewKind === "workspace-settings" ||
+                tab.viewKind === "kanban") && (
+                <div className="px-3 pt-3 shrink-0">
+                  <button
+                    aria-label="Open sidebar"
+                    className="icon-button"
+                    onClick={() => setCollapsed(false)}
+                  >
+                    <PanelIcon side="left" isExpanded={false} size={16} />
+                  </button>
+                </div>
+              )}
             {tab ? (
-              <>
+              tab.viewKind === "workspace-settings" ? (
+                <WorkspaceDashboard />
+              ) : tab.viewKind === "kanban" ? (
+                <FolderKanbanView folderPath={tab.kanbanFolderPath ?? ""} />
+              ) : (
+                <>
                 <div className="px-8 pt-3 flex items-center gap-1 text-xs text-muted-text">
+                  {collapsed && (
+                    <button
+                      aria-label="Open sidebar"
+                      className="icon-button -ml-1 mr-1"
+                      onClick={() => setCollapsed(false)}
+                    >
+                      <PanelIcon side="left" isExpanded={false} size={16} />
+                    </button>
+                  )}
                   {tab.id.split("/").map((part, i, parts) => (
                     <span key={i} className="inline-flex items-center gap-1">
                       {i > 0 && <span>/</span>}
@@ -573,6 +490,7 @@ function AppContent() {
                   <Preview tab={tab} />
                 )}
               </>
+              )
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-muted-text gap-3">
                 <FileText size={36} strokeWidth={1} />
@@ -601,6 +519,16 @@ function AppContent() {
         </p>
         <Button variant="outline" onClick={() => void state.openWorkspace()}>
           Open another folder
+        </Button>
+        <Button
+          className="ml-2"
+          variant="ghost"
+          onClick={() => {
+            state.openDashboard();
+            setSettings(false);
+          }}
+        >
+          Open dashboard
         </Button>
         <div className="flex items-center gap-3 mt-5 text-sm">
           <span>Appearance</span>
@@ -649,65 +577,6 @@ function AppContent() {
           </div>
         </div>
       </Modal>
-      {tabMenu && (
-        <FloatingMenu
-          isOpen
-          position={tabMenu}
-          onClose={() => setTabMenu(null)}
-        >
-          <MenuItem
-            label="Close tab"
-            onClick={() => {
-              void state.closeTab(tabMenu.id);
-              setTabMenu(null);
-            }}
-          />
-          <MenuItem
-            label="Close other tabs"
-            onClick={() => {
-              for (const t of state.tabs)
-                if (t.id !== tabMenu.id) void state.closeTab(t.id);
-              setTabMenu(null);
-            }}
-          />
-          <MenuItem
-            label="Close all tabs"
-            onClick={() => {
-              for (const t of state.tabs) void state.closeTab(t.id);
-              setTabMenu(null);
-            }}
-          />
-        </FloatingMenu>
-      )}
-      {tabHoverMenu.isOpen && (
-        <FloatingMenu
-          isOpen
-          position={tabHoverMenu.position}
-          anchorRef={tabPlusRef}
-          onClose={() => tabHoverMenu.close()}
-          onMouseEnter={tabHoverMenu.cancelCloseTimer}
-          onMouseLeave={tabHoverMenu.startCloseTimer}
-        >
-          <MenuItem
-            icon={<FileText size={16} />}
-            label="New note"
-            shortcut="⌘N"
-            onClick={() => {
-              tabHoverMenu.close();
-              void newNote();
-            }}
-          />
-          <MenuItem
-            icon={<FolderOpen size={16} />}
-            label="Open existing note"
-            shortcut="⌘P"
-            onClick={() => {
-              tabHoverMenu.close();
-              setSearch(true);
-            }}
-          />
-        </FloatingMenu>
-      )}
       <ToastContainer />
     </>
   );
