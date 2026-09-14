@@ -18,16 +18,11 @@ cd "$project_root"
 # A running production server is reused, so clicking the icon also brings its
 # browser window back without starting a second process.
 if ! curl --silent --fail --max-time 1 "$url/" >/dev/null 2>&1; then
-  nohup npm start > "$project_root/.maek-server.log" 2>&1 &
-  server_pid=$!
+  osascript -e "do shell script \"cd '$project_root' && export PATH='$PATH' && export NVM_DIR='$NVM_DIR' && [ -s '$NVM_DIR/nvm.sh' ] && . '$NVM_DIR/nvm.sh'; nohup npm start > '$project_root/.maek-server.log' 2>&1 &\""
   for _ in {1..60}; do
     if curl --silent --fail --max-time 1 "$url/" >/dev/null 2>&1; then
       open "$url"
       exit 0
-    fi
-    if ! kill -0 "$server_pid" 2>/dev/null; then
-      osascript -e 'display alert "Maek could not start" message "Open .maek-server.log in the project folder for details."'
-      exit 1
     fi
     sleep 0.5
   done
