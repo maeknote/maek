@@ -82,6 +82,51 @@ describe("real workspace host", () => {
       ).json(),
     ).toMatchObject({ kind: "editor", content: "# 기존 노트" });
   });
+  it("shares folder icons with the desktop app through folder-appearance.json", async () => {
+    await mkdir(path.join(root, ".maek"), { recursive: true });
+    const desktopAppearances = {
+      version: 1,
+      folders: {
+        Folder: { icon: "rocket", iconColor: "blue" },
+        "Folder/Nested": { icon: "book", iconColor: "accent" },
+      },
+    };
+    await writeFile(
+      path.join(root, ".maek/folder-appearance.json"),
+      JSON.stringify(desktopAppearances),
+    );
+
+    expect(
+      (await request("GET", "/api/workspace/folder-appearance")).json(),
+    ).toEqual(desktopAppearances);
+
+    const updatedAppearances = {
+      version: 1,
+      folders: { Folder: { icon: "star", iconColor: "green" } },
+    };
+    expect(
+      (
+        await request(
+          "PUT",
+          "/api/workspace/folder-appearance",
+          updatedAppearances,
+        )
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      JSON.parse(
+        await readFile(
+          path.join(root, ".maek/folder-appearance.json"),
+          "utf8",
+        ),
+      ),
+    ).toEqual(updatedAppearances);
+    expect(
+      await stat(path.join(root, ".maek/folderAppearance.json")).catch(
+        () => null,
+      ),
+    ).toBeNull();
+  });
   it("saves actual paths atomically and rejects stale or concurrent baselines", async () => {
     await writeFile(
       path.join(root, "note.md"),

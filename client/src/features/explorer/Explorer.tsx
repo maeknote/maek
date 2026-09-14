@@ -71,7 +71,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     id: string;
   } | null>(null);
   const { appearances, load } = useFolderAppearance();
-  const [customizeFolder, setCustomizeFolder] = useState<string | null>(null);
+
 
   const updateDropIndex = useCallback((index: number | null) => {
     dropIndexRef.current = index;
@@ -360,7 +360,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         </div>
       );
     },
-    [],
+    [appearances],
   );
   return (
     <div
@@ -762,23 +762,12 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                   })
                 }
               />
+
               {menu.node.isDir && (
-                <MenuItem
-                  label="Open as Kanban"
-                  onClick={() => {
-                    const folder = menu.node!.id;
-                    setMenu(null);
-                    useStore.getState().openKanban(folder);
-                  }}
-                />
-              )}
-              {menu.node.isDir && (
-                <MenuItem
-                  label="Change icon"
-                  onClick={() => {
-                    setCustomizeFolder(menu.node!.id);
-                    setMenu(null);
-                  }}
+                <FolderCustomizeSubmenu
+                  folderPath={menu.node.id}
+                  folderName={menu.node.name}
+                  onClose={() => setMenu(null)}
                 />
               )}
             </>
@@ -881,13 +870,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           />
         </FloatingMenu>
       )}
-      {customizeFolder && (
-        <FolderCustomizeSubmenu
-          folderPath={customizeFolder}
-          isOpen={true}
-          onClose={() => setCustomizeFolder(null)}
-        />
-      )}
+
     </div>
   );
 }

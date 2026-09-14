@@ -124,6 +124,23 @@ test("Show in folder reveals a deeply nested note with mounted and unmounted col
   await expect(target.locator("xpath=ancestor::*[@role='treeitem']")).toHaveAttribute("aria-selected", "true");
 });
 
+test("shows folder icons stored by the desktop app", async ({ page }) => {
+  mkdirSync(path.join(root, ".maek"), { recursive: true });
+  writeFileSync(
+    path.join(root, ".maek/folder-appearance.json"),
+    JSON.stringify({
+      version: 1,
+      folders: { Folder: { icon: "rocket", iconColor: "blue" } },
+    }),
+  );
+
+  await open(page);
+
+  await expect(
+    page.locator('[data-path="Folder"] svg.lucide-rocket'),
+  ).toBeVisible();
+});
+
 test("opens existing nested notes, edits with Tiptap, restores session and theme", async ({
   page,
 }) => {
