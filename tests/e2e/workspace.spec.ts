@@ -68,6 +68,62 @@ async function editNote(page: Page) {
   await page.locator('[data-path="Folder/기존 노트.md"]').click();
   await expect(page.locator(".tiptap")).toBeVisible();
 }
+test("save dots stay visible beside Open Tabs and the hovered note until save completes", async ({ page }) => {
+  await open(page);
+  await editNote(page);
+  let releaseSave!: () => void;
+  const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
+  await page.route("**/api/files/content", async (route) => {
+    if (route.request().method() === "PUT") await saveGate;
+    await route.continue();
+  });
+  try {
+    await page.locator(".tiptap").click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type(" Save indicator regression");
+    const row = page.locator('[data-tab-id="Folder/기존 노트.md"]');
+    const summary = page.getByTestId("open-tabs-save-status");
+    await expect(summary).toBeVisible();
+    await row.hover();
+    await expect(row.getByLabel("Saving", { exact: true })).toBeVisible();
+    await expect(summary).toHaveAttribute("aria-label", "Saving");
+    await expect(summary).toHaveCSS("background-color", "rgb(192, 78, 62)");
+    await expect(row.getByLabel("Saving", { exact: true })).toHaveCSS("background-color", "rgb(192, 78, 62)");
+    await page.getByText("Open Tabs", { exact: true }).click();
+    await expect(summary).toBeVisible();
+    releaseSave();
+    await expect(summary).toHaveCount(0);
+    await page.getByText("Open Tabs", { exact: true }).click();
+    await expect(row.locator('[aria-label="Saving"], [aria-label="Unsaved"]')).toHaveCount(0);
+  } finally {
+    releaseSave();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
+
+test("Show in folder reveals a deeply nested note with mounted and unmounted collapsed trees", async ({ page }) => {
+  mkdirSync(path.join(root, "Folder", "Deep", "Nested"), { recursive: true });
+  for (let i = 0; i < 70; i++) writeFileSync(path.join(root, "Folder", `aaa-${i}.md`), "# Filler");
+  writeFileSync(path.join(root, "Folder", "Deep", "Nested", "target.md"), "# Target");
+  await open(page);
+  await page.getByRole("button", { name: "Search files", exact: true }).click();
+  await page.getByRole("textbox", { name: "Search files", exact: true }).fill("target");
+  await page.getByRole("option").filter({ hasText: "target" }).click();
+  const row = page.locator('[data-tab-id="Folder/Deep/Nested/target.md"]');
+  const target = page.locator('[data-path="Folder/Deep/Nested/target.md"]');
+  await row.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Show in folder", exact: true }).click();
+  await expect(target).toBeInViewport();
+  await expect(target.locator("xpath=ancestor::*[@role='treeitem']")).toHaveAttribute("aria-selected", "true");
+  await page.locator('[data-path="Folder"]').scrollIntoViewIfNeeded();
+  await page.locator('[data-path="Folder"]').click();
+  await page.getByText("Folders", { exact: true }).click();
+  await row.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Show in folder", exact: true }).click();
+  await expect(target).toBeInViewport();
+  await expect(target.locator("xpath=ancestor::*[@role='treeitem']")).toHaveAttribute("aria-selected", "true");
+});
+
 test("opens existing nested notes, edits with Tiptap, restores session and theme", async ({
   page,
 }) => {

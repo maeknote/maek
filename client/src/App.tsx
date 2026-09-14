@@ -391,8 +391,8 @@ function AppContent() {
                 <FolderKanbanView folderPath={tab.kanbanFolderPath ?? ""} />
               ) : (
                 <>
-                <div className="px-8 pt-3 flex items-center gap-1 text-xs text-muted-text">
-                  {collapsed && (
+                {collapsed && (
+                  <div className="px-8 pt-3 flex items-center">
                     <button
                       aria-label="Open sidebar"
                       className="icon-button -ml-1 mr-1"
@@ -400,15 +400,8 @@ function AppContent() {
                     >
                       <PanelIcon side="left" isExpanded={false} size={16} />
                     </button>
-                  )}
-                  <span className="ml-auto" role="status">
-                    {tab.status === "saving"
-                      ? "Saving…"
-                      : tab.status === "saved"
-                        ? "Saved"
-                        : ""}
-                  </span>
-                </div>
+                  </div>
+                )}
                 <TitleBar
                   tab={tab}
                   onRename={(name) =>

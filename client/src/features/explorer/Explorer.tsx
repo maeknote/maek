@@ -60,6 +60,10 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const [height, setHeight] = useState(400);
   const [openNotesExpanded, setOpenNotesExpanded] = useState(true);
   const [foldersExpanded, setFoldersExpanded] = useState(true);
+  const [pendingReveal, setPendingReveal] = useState<{ id: string } | null>(null);
+  const saveStatus = tabs.some((tab) => tab.status === "saving")
+    ? "Saving"
+    : tabs.some(isTabDirty) ? "Unsaved" : null;
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [openNotesMenu, setOpenNotesMenu] = useState<{
     x: number;
@@ -150,6 +154,38 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     }
     return roots;
   }, [nodes]);
+
+  const revealInFolderTree = useCallback(
+    (id: string) => {
+      if (!nodes.some((node) => node.id === id)) {
+        useStore.getState().setError("This file is no longer in the folder tree.");
+        return;
+      }
+      setFoldersExpanded(true);
+      setPendingReveal({ id });
+    },
+    [nodes],
+  );
+  useEffect(() => {
+    const api = tree.current;
+    if (!pendingReveal || !foldersExpanded || !api) return;
+    let cancelled = false;
+    const { id } = pendingReveal;
+    // get(id) only sees expanded nodes. scrollTo opens ancestors using the
+    // complete tree, then waits for the visible-node index to be rebuilt.
+    void (async () => {
+      await api.scrollTo(id, "center");
+      if (cancelled) return;
+      if (api.get(id)) {
+        api.select(id, { align: "center" });
+        container.current?.querySelector<HTMLElement>('[role="tree"]')?.focus();
+      } else {
+        useStore.getState().setError("Could not reveal this file in the folder tree.");
+      }
+      setPendingReveal(null);
+    })();
+    return () => { cancelled = true; };
+  }, [pendingReveal, foldersExpanded, workspace?.wsId]);
   useEffect(() => {
     if (!container.current) return;
     const observer = new ResizeObserver(([entry]) => {
@@ -326,27 +362,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     },
     [],
   );
-  useEffect(() => {
-    const focus = (event: Event) => {
-      const id = (event as CustomEvent<string>).detail;
-      setFoldersExpanded(true);
-      const reveal = () => {
-        const node = tree.current?.get(id);
-        if (node) {
-          node.openParents();
-          node.open();
-          node.select();
-          void tree.current?.scrollTo(id);
-        }
-      };
-      // Tree may be remounting if the Folders section was collapsed; retry
-      // on the next frame so the ref is populated before we reveal.
-      if (tree.current?.get(id)) reveal();
-      else requestAnimationFrame(reveal);
-    };
-    window.addEventListener("focus-folder", focus);
-    return () => window.removeEventListener("focus-folder", focus);
-  }, []);
   return (
     <div
       className="h-full flex flex-col"
@@ -443,7 +458,21 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
             className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-text flex items-center justify-between cursor-pointer shrink-0 hover:text-neutral-ink transition-colors"
             onClick={() => setOpenNotesExpanded((p) => !p)}
           >
-            <span>Open Tabs</span>
+            <span className="flex items-center gap-2">
+              Open Tabs
+              {saveStatus && (
+                <span
+                  data-testid="open-tabs-save-status"
+                  role="status"
+                  aria-label={saveStatus}
+                  title={saveStatus}
+                  className={cn(
+                    "block w-2 h-2 rounded-full bg-[var(--color-maek-red)] shrink-0",
+                    saveStatus === "Saving" && "motion-safe:animate-pulse",
+                  )}
+                />
+              )}
+            </span>
             <ChevronRight
               className={cn(
                 "w-3 h-3 transition-transform",
@@ -515,10 +544,14 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                         {t.parentName}
                       </span>
                     )}
-                    {isTabDirty(t) ? (
+                    {isTabDirty(t) || t.status === "saving" ? (
                       <span
-                        className="w-2 h-2 rounded-full bg-maek-red shrink-0 group-hover:hidden"
-                        aria-label="Unsaved"
+                        className={cn(
+                          "w-2 h-2 rounded-full bg-[var(--color-maek-red)] shrink-0",
+                          t.status === "saving" && "motion-safe:animate-pulse",
+                        )}
+                        aria-label={t.status === "saving" ? "Saving" : "Unsaved"}
+                        title={t.status === "saving" ? "Saving" : "Unsaved"}
                       />
                     ) : null}
                     <button
@@ -810,16 +843,18 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           position={openNotesMenu}
           onClose={() => setOpenNotesMenu(null)}
         >
-          <MenuItem
-            label="Reveal in folder tree"
-            onClick={() => {
-              window.dispatchEvent(
-                new CustomEvent("focus-folder", { detail: openNotesMenu.id }),
-              );
-              setOpenNotesMenu(null);
-            }}
-          />
-          <MenuSeparator />
+          {!openNotesMenu.id.startsWith("maek:virtual:") && (
+            <>
+              <MenuItem
+                label="Show in folder"
+                onClick={() => {
+                  revealInFolderTree(openNotesMenu.id);
+                  setOpenNotesMenu(null);
+                }}
+              />
+              <MenuSeparator />
+            </>
+          )}
           <MenuItem
             label="Close"
             onClick={() => {
