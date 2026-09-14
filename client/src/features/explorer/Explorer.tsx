@@ -24,6 +24,8 @@ import { api, toBase64 } from "../../host";
 import type { FileNode } from "@shared/workspace";
 import { cn } from "../../lib/utils";
 import { collectDropFiles } from "./importDrop";
+import { useFolderAppearance } from "./stores/folderAppearanceStore";
+import { FolderCustomizeSubmenu } from "./components/FolderCustomizeSubmenu";
 
 interface Props {
   onSearch: () => void;
@@ -36,6 +38,15 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const container = useRef<HTMLDivElement>(null),
     tree = useRef<TreeApi<FileNode>>(null);
   const [height, setHeight] = useState(400);
+  const { appearances, load } = useFolderAppearance();
+  const [customizeFolder, setCustomizeFolder] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (workspace?.wsId) {
+      void load();
+    }
+  }, [workspace?.wsId, load]);
+
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
@@ -153,9 +164,13 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
             />
           )}
         </span>
-        {!node.isInternal && !/\.md$/i.test(node.data.name) && (
+        {node.isInternal ? (
+          appearances[node.data.id] ? (
+            <span className="mr-2 text-base leading-none">{appearances[node.data.id]}</span>
+          ) : null
+        ) : !/\.md$/i.test(node.data.name) ? (
           <File className="w-4 h-4 mr-2 shrink-0" />
-        )}
+        ) : null}
         {node.isEditing ? (
           <input
             autoFocus
@@ -435,6 +450,15 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                   })
                 }
               />
+              {menu.node.isDir && (
+                <MenuItem
+                  label="Change icon"
+                  onClick={() => {
+                    setCustomizeFolder(menu.node!.id);
+                    setMenu(null);
+                  }}
+                />
+              )}
             </>
           )}
           <MenuItem
@@ -490,6 +514,13 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
             }}
           />
         </FloatingMenu>
+      )}
+      {customizeFolder && (
+        <FolderCustomizeSubmenu
+          folderPath={customizeFolder}
+          isOpen={true}
+          onClose={() => setCustomizeFolder(null)}
+        />
       )}
     </div>
   );

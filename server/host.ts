@@ -426,6 +426,7 @@ export function createHost(options: HostOptions = {}) {
   const recents = z
     .array(z.object({ path: filePath, lastOpened: z.number() }))
     .max(200);
+  const appearance = z.record(z.string(), z.string());
   for (const [route, name, schema, fallback] of [
     [
       "tabs",
@@ -441,6 +442,7 @@ export function createHost(options: HostOptions = {}) {
       },
     ],
     ["recent-files", "recentFiles.json", recents, []],
+    ["folder-appearance", "folderAppearance.json", appearance, {}],
   ] as const) {
     app.get("/api/workspace/" + route, async (req) => {
       const ws = wsFor(req);
@@ -480,6 +482,7 @@ export function createHost(options: HostOptions = {}) {
               .filter((f) => !f.path.startsWith(".."))
               .slice(0, 200),
           );
+        if (route === "folder-appearance") return appearance.parse(stored);
         return schema.parse(stored);
       } catch {
         // Legacy desktop metadata is migration input only. The browser never
@@ -519,6 +522,7 @@ export function createHost(options: HostOptions = {}) {
                 .slice(0, 200),
             );
           }
+          if (route === "folder-appearance") return appearance.parse(stored);
         } catch {
           // A missing or corrupt legacy file is equivalent to an empty session.
         }
@@ -551,7 +555,7 @@ export function createHost(options: HostOptions = {}) {
                     : "preview",
             })),
           };
-        } else {
+        } else if (route === "recent-files") {
           stored = {
             version: 1,
             entries: Object.fromEntries(
@@ -563,6 +567,8 @@ export function createHost(options: HostOptions = {}) {
                 ]),
             ),
           };
+        } else if (route === "folder-appearance") {
+          stored = appearance.parse(data);
         }
         await metadata.writeJson(
           ws,
