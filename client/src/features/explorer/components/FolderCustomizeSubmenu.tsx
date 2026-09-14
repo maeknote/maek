@@ -2,7 +2,7 @@ import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useFolderAppearance } from "../stores/folderAppearanceStore";
-import { useStore } from "../../store";
+import { useStore } from "../../../store";
 
 export function FolderCustomizeSubmenu({ folderPath, isOpen, onClose }: { folderPath: string; isOpen: boolean; onClose: () => void }) {
   const { setAppearance } = useFolderAppearance();
