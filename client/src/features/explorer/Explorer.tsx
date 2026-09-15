@@ -9,6 +9,7 @@ import {
   Power,
   RefreshCw,
   Search,
+  House,
   Settings,
   X,
 } from "lucide-react";
@@ -32,11 +33,12 @@ import { isTabDirty } from "../editor/utils/frontmatter";
 
 interface Props {
   onSearch: () => void;
+  onHome: () => void;
   onSettings: () => void;
   onCollapse: () => void;
   onQuit: () => void;
 }
-export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
+export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: Props) {
   const {
     nodes,
     workspace,
@@ -405,6 +407,9 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
             isLoading={restoring}
           />
         </div>
+        <button className="sidebar-toggle-button" aria-label="Home" onClick={onHome}>
+          <House size={15} />
+        </button>
         <button
           className="sidebar-toggle-button"
           aria-label="Close sidebar"
@@ -558,7 +563,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         <span className="flex items-center gap-1">
           <button
             className="icon-button w-6 h-6"
-            aria-label="Search files"
+            aria-label="Search content"
             onClick={(e) => {
               e.stopPropagation();
               onSearch();
@@ -842,7 +847,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           {!openNotesMenu.id.startsWith("maek:virtual:") && (
             <>
               <MenuItem
-                label="Show in folder"
+                label="Show in file tree"
                 onClick={() => {
                   revealInFolderTree(openNotesMenu.id);
                   setOpenNotesMenu(null);

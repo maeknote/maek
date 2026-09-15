@@ -5,6 +5,7 @@ import {
   useRef,
   type KeyboardEvent,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { Check, Copy } from "lucide-react";
 import { getDisplayName, toFileName } from "../utils/displayName";
@@ -15,9 +16,10 @@ import { getTabFileContent, isEditableMarkdownTab } from "../utils/frontmatter";
 interface TitleBarProps {
   tab: TabItem;
   onRename: (newFileName: string) => Promise<void>;
+  actions?: ReactNode;
 }
 
-export function TitleBar({ tab, onRename }: TitleBarProps): ReactElement {
+export function TitleBar({ tab, onRename, actions }: TitleBarProps): ReactElement {
   const displayName = getDisplayName(tab.name);
   // Markdown editor tabs and database table tabs are both renamable from here.
   const isEditableTitle =
@@ -93,7 +95,7 @@ export function TitleBar({ tab, onRename }: TitleBarProps): ReactElement {
   }, [tab, showToast]);
 
   return (
-    <div className="px-8 pt-6 shrink-0">
+    <div className="px-8 pt-6 pb-3 shrink-0">
       <div className="flex items-center gap-3">
         <input
           ref={inputRef}
@@ -123,6 +125,7 @@ export function TitleBar({ tab, onRename }: TitleBarProps): ReactElement {
             )}
           </button>
         )}
+        {actions}
       </div>
     </div>
   );

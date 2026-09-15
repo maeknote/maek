@@ -101,7 +101,7 @@ test("save dots stay visible beside Open Tabs and the hovered note until save co
   }
 });
 
-test("Show in folder reveals a deeply nested note with mounted and unmounted collapsed trees", async ({ page }) => {
+test("Show in file tree reveals a deeply nested note with mounted and unmounted collapsed trees", async ({ page }) => {
   mkdirSync(path.join(root, "Folder", "Deep", "Nested"), { recursive: true });
   for (let i = 0; i < 70; i++) writeFileSync(path.join(root, "Folder", `aaa-${i}.md`), "# Filler");
   writeFileSync(path.join(root, "Folder", "Deep", "Nested", "target.md"), "# Target");
@@ -112,14 +112,14 @@ test("Show in folder reveals a deeply nested note with mounted and unmounted col
   const row = page.locator('[data-tab-id="Folder/Deep/Nested/target.md"]');
   const target = page.locator('[data-path="Folder/Deep/Nested/target.md"]');
   await row.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Show in folder", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Show in file tree", exact: true }).click();
   await expect(target).toBeInViewport();
   await expect(target.locator("xpath=ancestor::*[@role='treeitem']")).toHaveAttribute("aria-selected", "true");
   await page.locator('[data-path="Folder"]').scrollIntoViewIfNeeded();
   await page.locator('[data-path="Folder"]').click();
   await page.getByText("Folders", { exact: true }).click();
   await row.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Show in folder", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Show in file tree", exact: true }).click();
   await expect(target).toBeInViewport();
   await expect(target.locator("xpath=ancestor::*[@role='treeitem']")).toHaveAttribute("aria-selected", "true");
 });

@@ -19,6 +19,8 @@ import { MarkdownEditor } from "./features/editor/MarkdownEditor";
 import { TitleBar } from "./features/editor/components/TitleBar";
 import { WorkspaceDashboard } from "./features/editor/components/WorkspaceDashboard";
 import { FolderKanbanView } from "./features/database/kanban/FolderKanbanView";
+import { ContentSearch } from "./features/search/ContentSearch";
+import { navigate, parseRoute, pathForWorkspaceKey, workspaceKeyFor, type Route } from "./lib/routes";
 import {
   isTabDirty,
   getTabFileContent,
@@ -29,7 +31,7 @@ import {
   Button,
   PanelIcon,
 } from "./shared/components";
-import type { FileNode } from "@shared/workspace";
+import type { FileNode, FileContent } from "@shared/workspace";
 
 function Modal({
   title,
@@ -66,30 +68,11 @@ function Modal({
     </Dialog.Root>
   );
 }
-function HtmlArtifactPreview({ tab }: { tab: Tab }) {
+function HtmlArtifactPreview({ tab, nonce }: { tab: Tab; nonce: number }) {
   const fileUrl = artifactUrl(tab.id);
-  const [nonce, setNonce] = useState(0);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <div className="artifact-toolbar">
-        <span className="artifact-status">HTML artifact</span>
-        <button
-          type="button"
-          onClick={() => setNonce((value) => value + 1)}
-          aria-label="Reload HTML artifact"
-        >
-          <RefreshCw size={14} />
-          Reload
-        </button>
-        <button
-          type="button"
-          onClick={() => window.open(fileUrl, "_blank", "noopener,noreferrer")}
-        >
-          <ExternalLink size={14} />
-          Open in browser
-        </button>
-      </div>
       <iframe
         key={`${fileUrl}:${tab.generation}:${nonce}`}
         title={tab.name}
@@ -101,7 +84,13 @@ function HtmlArtifactPreview({ tab }: { tab: Tab }) {
   );
 }
 
-function Preview({ tab }: { tab: Tab }) {
+function Preview({
+  tab,
+  htmlPreviewNonce = 0,
+}: {
+  tab: Tab;
+  htmlPreviewNonce?: number;
+}) {
   if (tab.file.kind === "image")
     return (
       <div className="flex-1 min-h-0 overflow-auto p-8 flex items-center justify-center">
@@ -127,7 +116,7 @@ function Preview({ tab }: { tab: Tab }) {
       </pre>
     );
   if (tab.file.kind === "html")
-    return <HtmlArtifactPreview key={tab.id} tab={tab} />;
+    return <HtmlArtifactPreview key={tab.id} tab={tab} nonce={htmlPreviewNonce} />;
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-text">
       <FileText size={40} />
@@ -147,6 +136,17 @@ function Preview({ tab }: { tab: Tab }) {
     </div>
   );
 }
+function ReferencePreview({ path }: { path: string }) {
+  const [file, setFile] = useState<FileContent | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => { let current = true; setFile(null); setError(""); void api<FileContent>("/api/files/content?path=" + encodeURIComponent(path)).then((value) => { if (current) setFile(value); }).catch((value) => { if (current) setError(String(value)); }); return () => { current = false; }; }, [path]);
+  if (error) return <div role="alert" className="p-5 text-sm text-maek-red">{error}</div>;
+  if (!file) return <div className="p-5 text-sm text-muted-text">Loading reference</div>;
+  if (file.kind === "image") return <img src={rawUrl(path)} alt={path} className="max-w-full max-h-full object-contain m-auto"/>;
+  if (file.kind === "pdf") return <iframe title={path} src={rawUrl(path)} className="w-full h-full border-0"/>;
+  if (file.kind === "html") return <iframe title={path} src={artifactUrl(path)} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" className="w-full h-full border-0 bg-white"/>;
+  return <pre className="p-5 whitespace-pre-wrap text-sm overflow-auto">{file.content}</pre>;
+}
 function AppContent() {
   const state = useStore();
   const [search, setSearch] = useState(false),
@@ -155,19 +155,43 @@ function AppContent() {
     [path, setPath] = useState(""),
     [collapsed, setCollapsed] = useState(false),
     [shuttingDown, setShuttingDown] = useState(false);
+  const [htmlPreviewNonce, setHtmlPreviewNonce] = useState(0);
+  const [route, setRoute] = useState<Route | null>(() => parseRoute());
   const started = useRef(false);
   const tab = state.tabs.find((t) => t.id === state.activeTabId);
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    const last =
-      localStorage.getItem("maek:workspace") ??
-      localStorage.getItem("oh-my-maek:workspace");
-    if (last) void state.openWorkspace(last);
+    const updateRoute = () => setRoute(parseRoute());
+    window.addEventListener("popstate", updateRoute);
+    return () => window.removeEventListener("popstate", updateRoute);
   }, []);
   useEffect(() => {
-    document.documentElement.dataset.theme = state.theme;
-  }, [state.theme]);
+    if (started.current) return;
+    started.current = true;
+    const target = route ? pathForWorkspaceKey(route.workspaceKey) : null;
+    const last = target ?? localStorage.getItem("maek:workspace") ?? localStorage.getItem("oh-my-maek:workspace");
+    if (last) void state.openWorkspace(last);
+  }, []);
+  useEffect(() => { document.documentElement.dataset.theme = state.theme; }, [state.theme]);
+  useEffect(() => {
+    if (!state.workspace || !state.ready) return;
+    const key = workspaceKeyFor(state.workspace.root);
+    if (!route || route.workspaceKey !== key) { navigate({ kind: "home", workspaceKey: key }, true); return; }
+    if (route.kind === "note" && route.path) void state.openFile(route.path);
+    if (route.kind === "folder" && route.view === "board") state.openKanban(route.path);
+    if (route.kind === "folder" && route.view === "list") {
+      const expanded = route.path.split("/").filter(Boolean).map((_, index, parts) => parts.slice(0, index + 1).join("/"));
+      useStore.setState((current) => ({ expanded: [...new Set([...current.expanded, ...expanded])]}));
+      state.openDashboard();
+    }
+    if (route.kind === "home") state.openDashboard();
+  }, [state.workspace?.root, state.ready, route?.kind, route?.workspaceKey, route && "path" in route ? route.path : ""]);
+  useEffect(() => {
+    if (!state.workspace || !state.ready || !route) return;
+    const tab = state.tabs.find((item) => item.id === state.activeTabId);
+    const key = workspaceKeyFor(state.workspace.root);
+    if (tab && !tab.id.startsWith("maek:virtual:")) { document.title = `${tab.name} · ${state.workspace.name} · Maek`; if (route.kind !== "note" || route.path !== tab.id) navigate({ kind: "note", workspaceKey: key, path: tab.id }, true); }
+    else if (route.kind === "home") document.title = `${state.workspace.name} · Maek`;
+  }, [state.activeTabId, state.workspace?.root, state.ready]);
   async function newNote() {
     try {
       const n = await api<FileNode>("/api/files", "POST", {
@@ -331,7 +355,8 @@ function AppContent() {
                 style={{ width: state.sidebarWidth }}
               >
                 <Explorer
-                  onSearch={() => setSearch(true)}
+                  onSearch={() => { if (state.workspace) navigate({ kind: "search", workspaceKey: workspaceKeyFor(state.workspace.root), query: "", folder: "", fileKind: "" }); }}
+                  onHome={() => { if (state.workspace) navigate({ kind: "home", workspaceKey: workspaceKeyFor(state.workspace.root) }); }}
                   onSettings={() => setSettings(true)}
                   onCollapse={() => setCollapsed(true)}
                   onQuit={() => setShowQuitConfirm(true)}
@@ -387,7 +412,11 @@ function AppContent() {
                 </button>
               </div>
             )}
-            {tab ? (
+            {route?.kind === "search" ? (
+              <ContentSearch route={route} onClose={() => {
+                if (state.workspace) navigate({ kind: "home", workspaceKey: workspaceKeyFor(state.workspace.root) });
+              }} />
+            ) : tab ? (
               tab.viewKind === "workspace-settings" ? (
                 <WorkspaceDashboard />
               ) : tab.viewKind === "kanban" ? (
@@ -401,6 +430,39 @@ function AppContent() {
                       tab.id,
                       [...tab.id.split("/").slice(0, -1), name].join("/"),
                     )
+                  }
+                  actions={
+                    tab.viewKind === "editor" ? (
+                      <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-text hover:bg-surface-overlay hover:text-neutral-ink" onClick={() => { const reference = window.prompt("Reference file path (PDF, HTML, image, or text)", route?.kind === "note" ? route.compare ?? "" : ""); if (reference && state.workspace) navigate({ kind: "note", workspaceKey: workspaceKeyFor(state.workspace.root), path: tab.id, compare: reference }); }}>Compare reference</button>
+                    ) : tab.file.kind === "html" ? (
+                      <div className="flex items-center gap-1 shrink-0 text-sm">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setHtmlPreviewNonce((value) => value + 1)
+                          }
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-text hover:bg-surface-overlay hover:text-neutral-ink"
+                          aria-label="Reload HTML preview"
+                        >
+                          <RefreshCw size={14} />
+                          Reload
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.open(
+                              artifactUrl(tab.id),
+                              "_blank",
+                              "noopener,noreferrer",
+                            )
+                          }
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-text hover:bg-surface-overlay hover:text-neutral-ink"
+                        >
+                          <ExternalLink size={14} />
+                          Open in browser
+                        </button>
+                      </div>
+                    ) : undefined
                   }
                 />
                 {tab.status === "conflict" || tab.status === "error" ? (
@@ -440,12 +502,14 @@ function AppContent() {
                   </div>
                 ) : null}
                 {tab.viewKind === "editor" ? (
-                  <MarkdownEditor
-                    key={tab.id + ":" + tab.generation}
-                    tab={tab}
-                  />
+                  route?.kind === "note" && route.compare ? (
+                    <div className="flex-1 min-h-0 flex overflow-hidden">
+                      <div className="flex-1 min-w-0 border-r border-default"><MarkdownEditor key={tab.id + ":" + tab.generation} tab={tab} /></div>
+                      <aside className="flex-1 min-w-0 overflow-auto bg-warm-vellum/30"><div className="px-4 py-2 text-xs text-muted-text border-b border-default">Reference: {route.compare}</div><ReferencePreview path={route.compare} /></aside>
+                    </div>
+                  ) : <MarkdownEditor key={tab.id + ":" + tab.generation} tab={tab} />
                 ) : (
-                  <Preview tab={tab} />
+                  <Preview tab={tab} htmlPreviewNonce={htmlPreviewNonce} />
                 )}
               </>
               )
