@@ -358,6 +358,23 @@ function AppContent() {
               />
             </>
           )}
+          {collapsed && (
+            <aside
+              className="h-full w-10 shrink-0 bg-surface"
+              aria-label="Collapsed sidebar"
+            >
+              <div className="h-[52px] pt-2 pb-1 flex items-center justify-center">
+                <button
+                  aria-label="Open sidebar"
+                  title="Open sidebar"
+                  className="sidebar-toggle-button"
+                  onClick={() => setCollapsed(false)}
+                >
+                  <PanelIcon side="left" isExpanded={false} size={15} />
+                </button>
+              </div>
+            </aside>
+          )}
           <main className="flex-1 min-w-0 h-full flex flex-col bg-surface overflow-hidden">
             {(state.connectionError || state.error) && (
               <div role="alert" className="notice">
@@ -370,20 +387,6 @@ function AppContent() {
                 </button>
               </div>
             )}
-            {collapsed &&
-              (!tab ||
-                tab.viewKind === "workspace-settings" ||
-                tab.viewKind === "kanban") && (
-                <div className="px-3 pt-3 shrink-0">
-                  <button
-                    aria-label="Open sidebar"
-                    className="icon-button"
-                    onClick={() => setCollapsed(false)}
-                  >
-                    <PanelIcon side="left" isExpanded={false} size={16} />
-                  </button>
-                </div>
-              )}
             {tab ? (
               tab.viewKind === "workspace-settings" ? (
                 <WorkspaceDashboard />
@@ -391,17 +394,6 @@ function AppContent() {
                 <FolderKanbanView folderPath={tab.kanbanFolderPath ?? ""} />
               ) : (
                 <>
-                {collapsed && (
-                  <div className="px-8 pt-3 flex items-center">
-                    <button
-                      aria-label="Open sidebar"
-                      className="icon-button -ml-1 mr-1"
-                      onClick={() => setCollapsed(false)}
-                    >
-                      <PanelIcon side="left" isExpanded={false} size={16} />
-                    </button>
-                  </div>
-                )}
                 <TitleBar
                   tab={tab}
                   onRename={(name) =>

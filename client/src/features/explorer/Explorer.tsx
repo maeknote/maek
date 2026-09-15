@@ -392,23 +392,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         }
       }}
     >
-      <div className="h-[38px] px-3 flex items-center justify-end shrink-0">
-        <button
-          className="icon-button"
-          aria-label="Search files"
-          onClick={onSearch}
-        >
-          <Search size={16} />
-        </button>
-        <button
-          className="icon-button"
-          aria-label="Close sidebar"
-          onClick={onCollapse}
-        >
-          <PanelIcon side="left" isExpanded={true} size={16} />
-        </button>
-      </div>
-      <div className="px-3 py-2 shrink-0 flex items-center gap-1">
+      <div className="h-[52px] px-3 pt-2 pb-1 flex items-center gap-1 shrink-0">
         <div className="flex-1 min-w-0">
           <FolderSelector
             currentFolderName={workspace?.name ?? null}
@@ -422,29 +406,11 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           />
         </div>
         <button
-          ref={createButtonRef}
-          className="icon-button"
-          aria-label="Create"
-          onClick={() => {
-            createHoverMenu.close();
-            void run(() => create("file"));
-          }}
-          onMouseEnter={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            createHoverMenu.open({ x: r.left, y: r.bottom });
-          }}
-          onMouseLeave={() => {
-            createHoverMenu.startCloseTimer();
-          }}
+          className="sidebar-toggle-button"
+          aria-label="Close sidebar"
+          onClick={onCollapse}
         >
-          <Plus size={16} />
-        </button>
-        <button
-          className="icon-button"
-          aria-label="Refresh folder tree"
-          onClick={() => void useStore.getState().refresh()}
-        >
-          <RefreshCw size={16} />
+          <PanelIcon side="left" isExpanded={true} size={16} />
         </button>
       </div>
       {tabs.length > 0 && (
@@ -588,13 +554,54 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-text flex items-center justify-between cursor-pointer shrink-0 hover:text-neutral-ink transition-colors"
         onClick={() => setFoldersExpanded((p) => !p)}
       >
-        <span>Folders</span>
-        <ChevronRight
-          className={cn(
-            "w-3 h-3 transition-transform",
-            foldersExpanded && "rotate-90",
-          )}
-        />
+        <span>Files</span>
+        <span className="flex items-center gap-1">
+          <button
+            className="icon-button w-6 h-6"
+            aria-label="Search files"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSearch();
+            }}
+          >
+            <Search size={14} />
+          </button>
+          <button
+            ref={createButtonRef}
+            className="icon-button w-6 h-6"
+            aria-label="Create"
+            onClick={(e) => {
+              e.stopPropagation();
+              createHoverMenu.close();
+              void run(() => create("file"));
+            }}
+            onMouseEnter={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              createHoverMenu.open({ x: r.left, y: r.bottom });
+            }}
+            onMouseLeave={() => {
+              createHoverMenu.startCloseTimer();
+            }}
+          >
+            <Plus size={14} />
+          </button>
+          <button
+            className="icon-button w-6 h-6"
+            aria-label="Refresh folder tree"
+            onClick={(e) => {
+              e.stopPropagation();
+              void useStore.getState().refresh();
+            }}
+          >
+            <RefreshCw size={14} />
+          </button>
+          <ChevronRight
+            className={cn(
+              "w-3 h-3 transition-transform",
+              foldersExpanded && "rotate-90",
+            )}
+          />
+        </span>
       </div>
       {foldersExpanded && (
         <div
@@ -705,7 +712,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         )}
       </div>
       )}
-      <div className="px-3 py-2 shrink-0 border-t border-default flex items-center justify-between">
+      <div className="mt-auto px-3 py-2 shrink-0 border-t border-default flex items-center justify-between">
         <button
           className="icon-button"
           aria-label="Open settings"

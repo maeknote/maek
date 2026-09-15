@@ -7,6 +7,9 @@ body,
 .icon-button {
   @apply flex items-center justify-center w-7 h-7 rounded-md text-muted-text hover:text-neutral-ink hover:bg-surface-overlay transition-colors shrink-0;
 }
+.sidebar-toggle-button {
+  @apply flex items-center justify-center w-8 h-7 rounded-full text-muted-text hover:text-neutral-ink hover:bg-surface-overlay transition-colors shrink-0;
+}
 .workspace-input {
   @apply w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-neutral-ink outline-none focus:border-maek-red;
 }

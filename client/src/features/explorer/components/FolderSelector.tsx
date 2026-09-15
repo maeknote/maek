@@ -70,7 +70,7 @@ export function FolderSelector({
         onClick={() => setIsOpen(!isOpen)}
         disabled={isLoading}
         className={cn(
-          "flex items-center gap-2 px-3 py-2 w-full min-w-0",
+          "flex items-center gap-2 px-2 py-1.5 w-full min-w-0",
           "text-sm rounded-lg transition-colors",
           "focus:outline-none focus:ring-2 focus:ring-maek-red/20",
           isLoading
