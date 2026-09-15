@@ -50,6 +50,8 @@ function isWebManaged(root: string, entry: RootTabEntry): boolean {
 const webViewKind = (relativePath: string) =>
   kindFor(relativePath) === "editor"
     ? "editor"
+    : kindFor(relativePath) === "sheet"
+      ? "spreadsheet"
     : kindFor(relativePath) === "unsupported"
       ? "unsupported"
       : "preview";

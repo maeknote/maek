@@ -61,7 +61,9 @@ export async function readFile(req: ReadFileRequest): Promise<ReadFileResult> {
 
   let content: string
   try {
-    content = new TextDecoder('utf-8', { fatal: true }).decode(buf)
+    // Keep an UTF-8 BOM in the returned string so CSV can round-trip it.
+    // `ignoreBOM: true` means “do not interpret/remove the BOM”.
+    content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buf)
   } catch {
     return { viewKind: 'unsupported', size, mtimeMs, hash }
   }

@@ -75,15 +75,21 @@ Reload, Save a copy, Close를 제공합니다. 저장되지 않은 편집본이 
 - 외부 파일 변경과 이름 변경 실시간 반영, 미저장 충돌 보호
 - 이미지·PDF·텍스트 읽기 전용 미리보기, 주변 JS·CSS·JSON을 함께 읽는 sandboxed HTML 아티팩트, 미지원 형식의 기본 앱 열기
 - HTML 아티팩트 새로고침과 브라우저 열기
+- CSV 스프레드시트 편집: 가상화 표, 셀·행·열 편집, 범위 선택, Excel/Google Sheets 호환 복사·붙여넣기, undo/redo, 정렬·필터·찾기·선택 통계
+- 앱과 공유하는 폴더 데이터베이스: 표·칸반·캘린더·타임라인 뷰, 이름 있는 뷰, 열 형식·집계, 다중 정렬·필터, 행·열·카드·기간 드래그 이동
 
-DB, 회의, AI와 터미널은 미지원입니다. Markdown은 1 MiB 초과 시
-읽기 전용, 텍스트는 32 MiB 초과 시 미지원으로 처리합니다. 심볼릭 링크와
+CSV는 문자열 값만 저장하며 색상·셀 서식·수식 계산·다중 시트는 지원하지 않습니다.
+UTF-8(BOM 포함) CSV를 최대 5 MiB, 50,000행, 200열, 500,000필드까지 편집합니다.
+그보다 큰 CSV는 원문 보호를 위해 읽기 전용으로 엽니다. 데이터베이스는 앱과 동일하게
+폴더의 `.maek-database.json`, Markdown frontmatter, 워크스페이스의 `.maek/database.sqlite`를 사용합니다.
+회의, AI와 터미널은 미지원입니다. Markdown은 1 MiB 초과 시 읽기 전용, 텍스트는 32 MiB 초과 시 미지원으로 처리합니다. 심볼릭 링크와
 원본의 의존성·빌드 캐시 폴더는 탐색 대상에서 제외됩니다.
 
 ## 단축키와 검증
 
 Cmd+P/O 검색, Cmd+N 새 노트, Cmd+S 저장, Cmd+W 탭 닫기, Cmd+, 설정.
 트리에서 Cmd+C/V 복사·붙여넣기, Cmd+D 복제, Cmd+Backspace 휴지통.
+CSV 표에서는 Cmd+C/X/V 범위 복사·잘라내기·붙여넣기, Cmd+Z/Shift+Cmd+Z undo/redo를 사용합니다.
 
 ```sh
 npm run typecheck

@@ -24,6 +24,7 @@ import { resolveInWorkspace } from "./fs/guard";
 import { pickDirectory } from "./fs/pickDirectory";
 import { readFile as readContent } from "./fs/readFile";
 import { writeFile as saveContent } from "./fs/writeFile";
+import { CSV_EDIT_LIMITS, validateCsvForEditing } from "./fs/validateCsv";
 import { RpcHttpError, badRequest, fsError, conflict } from "./errors";
 import { RelPath, WriteFileRequest } from "../shared/contract";
 import type {
@@ -48,6 +49,17 @@ import {
   mergeRootTabs,
   type RootTabsDocument,
 } from "./workspace/root-tabs";
+import {
+  addRow as addDatabaseRow,
+  createDatabase,
+  listDatabases,
+  reorderRows as reorderDatabaseRows,
+  renameRow as renameDatabaseRow,
+  rows as databaseRows,
+  updateCell as updateDatabaseCell,
+  updateManifest,
+} from "./database";
+import type { DatabaseManifest, DatabaseMeta, DatabaseViewType } from "../shared/database";
 
 const run = promisify(execFile);
 const filePath = RelPath.refine(
@@ -168,6 +180,58 @@ export function createHost(options: HostOptions = {}) {
   app.get("/api/tree", async (req) =>
     runtimes.get(wsFor(req)).files.snapshot(),
   );
+  app.get("/api/databases", async (req) => listDatabases(wsFor(req)));
+  app.post("/api/databases", async (req) => {
+    const ws = wsFor(req);
+    const data = z.object({
+      parent: filePath.default(""),
+      name: nameSchema,
+      viewType: z.enum(["table", "kanban", "calendar", "timeline"]),
+    }).parse(req.body);
+    await target(ws, data.parent);
+    return serial(ws.root, () => createDatabase(ws, data.parent, data.name, data.viewType as DatabaseViewType));
+  });
+  app.put("/api/databases/manifest", async (req) => {
+    const ws = wsFor(req);
+    const data = z.object({ folderPath: userPath, manifest: z.unknown() }).parse(req.body);
+    await target(ws, data.folderPath);
+    return serial(ws.root, () => updateManifest(ws, data.folderPath, data.manifest as DatabaseManifest));
+  });
+  app.get("/api/databases/rows", async (req) => {
+    const ws = wsFor(req);
+    const { folderPath } = z.object({ folderPath: userPath }).parse(req.query);
+    await target(ws, folderPath);
+    const meta = (await listDatabases(ws)).find((d) => d.folderPath === folderPath);
+    if (!meta) throw badRequest("Database not found");
+    return databaseRows(ws, meta);
+  });
+  app.post("/api/databases/rows", async (req) => {
+    const ws = wsFor(req);
+    const data = z.object({ folderPath: userPath, values: z.record(z.string(), z.unknown()).default({}) }).parse(req.body);
+    const meta = (await listDatabases(ws)).find((d) => d.folderPath === data.folderPath);
+    if (!meta) throw badRequest("Database not found");
+    return serial(ws.root, () => addDatabaseRow(ws, meta, data.values));
+  });
+  app.patch("/api/databases/cell", async (req) => {
+    const ws = wsFor(req);
+    const data = z.object({ folderPath: userPath, rowId: z.string(), key: z.string().min(1), value: z.unknown().optional() }).parse(req.body);
+    const meta = (await listDatabases(ws)).find((d) => d.folderPath === data.folderPath);
+    if (!meta) throw badRequest("Database not found");
+    return serial(ws.root, () => updateDatabaseCell(ws, meta, data.rowId, data.key, data.value));
+  });
+  app.post("/api/databases/reorder", async (req) => {
+    const ws = wsFor(req);
+    const data = z.object({ folderPath: userPath, rowIds: z.array(z.string()).max(10000) }).parse(req.body);
+    const meta = (await listDatabases(ws)).find((d) => d.folderPath === data.folderPath);
+    if (!meta) throw badRequest("Database not found");
+    await serial(ws.root, async () => reorderDatabaseRows(ws, meta as DatabaseMeta, data.rowIds));
+    return { ok: true };
+  });
+  app.patch("/api/databases/row", async (req) => {
+    const ws=wsFor(req);const data=z.object({folderPath:userPath,rowId:z.string(),name:nameSchema}).parse(req.body);
+    const meta=(await listDatabases(ws)).find(d=>d.folderPath===data.folderPath);if(!meta)throw badRequest("Database not found");
+    return {fileName:await serial(ws.root,()=>renameDatabaseRow(ws,meta,data.rowId,data.name))};
+  });
   app.get("/api/files/content", async (req) => {
     const ws = wsFor(req);
     const { path: p } = z.object({ path: filePath }).parse(req.query);
@@ -185,7 +249,9 @@ export function createHost(options: HostOptions = {}) {
       } satisfies FileContent;
     const result = await readContent({ wsId: ws.wsId, path: p });
     if (result.viewKind === "unsupported") kind = "unsupported";
-    else if (result.viewKind === "readonly") kind = "text";
+    else if (result.viewKind === "readonly") {
+      if (kind !== "sheet" || result.size > CSV_EDIT_LIMITS.bytes) kind = "text";
+    }
     return { ...result, kind } satisfies FileContent;
   });
   app.put("/api/files/content", async (req) => {
@@ -193,10 +259,15 @@ export function createHost(options: HostOptions = {}) {
     const data = WriteFileRequest.omit({ wsId: true, force: true })
       .extend({ path: userPath })
       .parse(req.body);
-    if (kindFor(data.path) !== "editor")
-      throw badRequest("Only Markdown is editable");
+    const kind = kindFor(data.path);
+    if (kind !== "editor" && kind !== "sheet")
+      throw badRequest("Only Markdown and CSV are editable");
+    if (kind === "sheet") {
+      const validationError = validateCsvForEditing(data.content);
+      if (validationError) throw badRequest(validationError);
+    }
     await target(ws, data.path);
-    return serial(ws.wsId, () => saveContent({ ...data, wsId: ws.wsId }));
+    return serial(ws.root, () => saveContent({ ...data, wsId: ws.wsId }));
   });
   app.get("/api/files/raw", async (req, reply) => {
     const { workspace, path: p } = z
@@ -251,12 +322,13 @@ export function createHost(options: HostOptions = {}) {
       })
       .parse(req.body);
     if (dir.split("/").includes(".maek")) throw badRequest("Managed path");
-    return serial(ws.wsId, async () => {
+    return serial(ws.root, async () => {
       const p = await unique(ws, dir, name);
       const abs = await target(ws, p);
       if (kind === "dir") await mkdir(abs);
       else {
-        if (kindFor(p) !== "editor") throw badRequest("New notes must use .md");
+        if (!["editor", "sheet"].includes(kindFor(p)))
+          throw badRequest("New editable files must use .md or .csv");
         await writeFile(abs, "", { flag: "wx" });
       }
       return nodeFor(p, kind === "dir");
@@ -267,7 +339,7 @@ export function createHost(options: HostOptions = {}) {
     const { source, dest } = z
       .object({ source: userPath, dest: userPath })
       .parse(req.body);
-    return serial(ws.wsId, async () => {
+    return serial(ws.root, async () => {
       const from = await target(ws, source);
       const to = await target(ws, dest);
       if (source === dest) return { source, dest };
@@ -285,7 +357,7 @@ export function createHost(options: HostOptions = {}) {
       .object({ paths: z.array(userPath).min(1).max(1000), dir: filePath })
       .parse(req.body);
     if (dir.split("/").includes(".maek")) throw badRequest("Managed path");
-    return serial(ws.wsId, async () => {
+    return serial(ws.root, async () => {
       const created: FileNode[] = [];
       for (const source of paths) {
         if (dir === source || dir.startsWith(source + "/"))
@@ -317,7 +389,7 @@ export function createHost(options: HostOptions = {}) {
       })
       .parse(req.body);
     if (dir.split("/").includes(".maek")) throw badRequest("Managed path");
-    return serial(ws.wsId, async () => {
+    return serial(ws.root, async () => {
       const out: FileNode[] = [];
       for (const f of files) {
         const nested = path.posix.join(dir, path.posix.dirname(f.name));
@@ -337,7 +409,7 @@ export function createHost(options: HostOptions = {}) {
       .object({ name: nameSchema, data: z.string().max(32 * 1024 * 1024) })
       .parse(req.body);
     if (kindFor(name) !== "image") throw badRequest("Not an image");
-    return serial(ws.wsId, async () => {
+    return serial(ws.root, async () => {
       await mkdir(await target(ws, ".maek/assets"), { recursive: true });
       const p = await unique(ws, ".maek/assets", name);
       await writeFile(await target(ws, p), Buffer.from(data, "base64"), {
@@ -351,7 +423,7 @@ export function createHost(options: HostOptions = {}) {
     const { paths } = z
       .object({ paths: z.array(userPath).min(1).max(1000) })
       .parse(req.body);
-    return serial(ws.wsId, async () => {
+    return serial(ws.root, async () => {
       for (const p of paths.filter(
         (p) => !paths.some((other) => p !== other && p.startsWith(other + "/")),
       )) {

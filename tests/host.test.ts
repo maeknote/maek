@@ -154,6 +154,42 @@ describe("real workspace host", () => {
     );
     expect((await readdir(root)).some((n) => n.endsWith(".tmp"))).toBe(false);
   });
+  it("creates, reads and saves CSV files through the editable sheet path", async () => {
+    const created = await request("POST", "/api/files", {
+      dir: "",
+      name: "Data.csv",
+      kind: "file",
+    });
+    expect(created.statusCode).toBe(200);
+    const before = (await request("GET", "/api/files/content?path=Data.csv")).json();
+    expect(before).toMatchObject({ kind: "sheet", content: "" });
+    const saved = await request("PUT", "/api/files/content", {
+      path: "Data.csv",
+      content: "name,value\nalpha,1",
+      baseHash: before.hash,
+      baseMtimeMs: before.mtimeMs,
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(await readFile(path.join(root, "Data.csv"), "utf8")).toBe("name,value\nalpha,1");
+  });
+  it("preserves an UTF-8 BOM when reading CSV", async () => {
+    await writeFile(path.join(root, "bom.csv"), Buffer.from("\uFEFFa,b\r\n1,2", "utf8"));
+    const file = (await request("GET", "/api/files/content?path=bom.csv")).json();
+    expect(file.kind).toBe("sheet");
+    expect(file.content.startsWith("\uFEFF")).toBe(true);
+  });
+  it("rejects CSV writes that exceed the sheet shape limits", async () => {
+    await writeFile(path.join(root, "wide.csv"), "a");
+    const before = (await request("GET", "/api/files/content?path=wide.csv")).json();
+    const response = await request("PUT", "/api/files/content", {
+      path: "wide.csv",
+      content: Array.from({ length: 201 }, (_, index) => `c${index}`).join(","),
+      baseHash: before.hash,
+      baseMtimeMs: before.mtimeMs,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().message).toMatch(/200 columns/);
+  });
   it("rejects external modifications and missing files without resurrecting them", async () => {
     await writeFile(path.join(root, "note.md"), "Original");
     const base = (
@@ -565,8 +601,50 @@ describe("real workspace host", () => {
     expect(opened).toEqual([path.join(root, "a.md")]);
     expect(trashed).toEqual([path.join(root, "a.md")]);
   });
-  it("has no legacy library, notes or database routes", async () => {
-    for (const url of ["/api/library", "/api/notes", "/api/databases"])
+  it("has no legacy library or notes routes", async () => {
+    for (const url of ["/api/library", "/api/notes"])
       expect((await request("GET", url)).statusCode).toBe(404);
+  });
+
+  it("lists database manifests", async () => {
+    const response = await request("GET", "/api/databases");
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([]);
+  });
+
+  it("creates and edits an app-compatible database without changing the note body", async () => {
+    const created = await request("POST", "/api/databases", {
+      parent: "",
+      name: "Project Board",
+      viewType: "kanban",
+    });
+    expect(created.statusCode).toBe(200);
+    const meta = created.json();
+    expect(meta.folderPath).toBe("Project Board");
+    expect(meta.views[0].type).toBe("kanban");
+    expect(meta.schema.map((column: { name: string }) => column.name)).toContain("Status");
+    expect(JSON.parse(await readFile(path.join(root, "Project Board/.maek-database.json"), "utf8"))).toMatchObject({ version: 1, type: "database", id: meta.id });
+
+    await writeFile(path.join(root, "Project Board/task.md"), "---\ntitle: Task # keep\nStatus: To Do\n---\n\n# Body\n");
+    const rows = (await request("GET", "/api/databases/rows?folderPath=Project%20Board")).json();
+    expect(rows).toHaveLength(1);
+    expect((await request("PATCH", "/api/databases/cell", {
+      folderPath: "Project Board",
+      rowId: rows[0].id,
+      key: "Status",
+      value: "Done",
+    })).statusCode).toBe(200);
+    const content = await readFile(path.join(root, "Project Board/task.md"), "utf8");
+    expect(content).toContain("title: Task # keep");
+    expect(content).toContain("Status: Done");
+    expect(content).toContain("# Body");
+
+    const manifestPath = path.join(root, "Project Board/.maek-database.json");
+    const beforeInvalidUpdate = await readFile(manifestPath, "utf8");
+    expect((await request("PUT", "/api/databases/manifest", {
+      folderPath: "Project Board",
+      manifest: { ...meta, activeViewId: "missing-view" },
+    })).statusCode).toBe(400);
+    expect(await readFile(manifestPath, "utf8")).toBe(beforeInvalidUpdate);
   });
 });

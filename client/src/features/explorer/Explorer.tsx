@@ -10,7 +10,9 @@ import {
   RefreshCw,
   Search,
   House,
+  LayoutGrid,
   Settings,
+  Table2,
   X,
 } from "lucide-react";
 import { FolderSelector } from "./components/FolderSelector";
@@ -24,6 +26,7 @@ import { useHoverMenu } from "../../shared/hooks";
 import { useStore, schedulePersistence } from "../../store";
 import { api, toBase64 } from "../../host";
 import type { FileNode } from "@shared/workspace";
+import type { DatabaseMeta, DatabaseViewType } from "@shared/database";
 import { cn } from "../../lib/utils";
 import { collectDropFiles } from "./importDrop";
 import { useFolderAppearance } from "./stores/folderAppearanceStore";
@@ -142,6 +145,11 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
   const [clipboard, setClipboard] = useState<string[]>([]);
   const [selection, setSelection] = useState<FileNode[]>([]);
   const [pendingEdit, setPendingEdit] = useState<string | null>(null);
+  const [databases, setDatabases] = useState<DatabaseMeta[]>([]);
+  useEffect(() => {
+    if (!workspace) { setDatabases([]); return; }
+    void api<DatabaseMeta[]>("/api/databases").then(setDatabases).catch(() => setDatabases([]));
+  }, [workspace?.wsId]);
   const data = useMemo(() => {
     const map = new Map(
       nodes.map((n) => [
@@ -214,10 +222,18 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
   };
   const currentDir = (n = menu?.node ?? selection[0]) =>
     n ? (n.isDir ? n.id : (n.parent ?? "")) : "";
-  async function create(kind: "file" | "dir", dir = currentDir()) {
+  async function createDatabase(viewType: DatabaseViewType, dir = currentDir()) {
+    const name = window.prompt("Database name", "New Database")?.trim();
+    if (!name) return;
+    const database = await api<DatabaseMeta>("/api/databases", "POST", { parent: dir, name, viewType });
+    await useStore.getState().refresh();
+    setDatabases(await api<DatabaseMeta[]>("/api/databases"));
+    useStore.getState().openDatabase(database.folderPath, database.name);
+  }
+  async function create(kind: "file" | "dir", dir = currentDir(), name?: string) {
     const node = await api<FileNode>("/api/files", "POST", {
       dir,
-      name: kind === "file" ? "Untitled.md" : "New Folder",
+      name: name ?? (kind === "file" ? "Untitled.md" : "New Folder"),
       kind,
     });
     await useStore.getState().refresh();
@@ -272,7 +288,11 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
           )}
           onClick={(e) => {
             node.handleClick(e);
-            if (node.data.isDir) node.toggle();
+            if (node.data.isDir) {
+              const database = databases.find((d) => d.folderPath === node.data.id);
+              if (database) useStore.getState().openDatabase(database.folderPath, database.name);
+              else node.toggle();
+            }
           }}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -323,7 +343,9 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
             )}
           </span>
           {node.isInternal ? (
-            appearances[node.data.id] ? (
+            databases.some((database) => database.folderPath === node.data.id) ? (
+              <LayoutGrid className="w-4 h-4 mr-2 shrink-0 text-maek-red" />
+            ) : appearances[node.data.id] ? (
               <span className="mr-2 flex items-center justify-center">
                 {(() => {
                   const app = appearances[node.data.id]!;
@@ -335,6 +357,8 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
                 })()}
               </span>
             ) : null
+          ) : /\.csv$/i.test(node.data.name) ? (
+            <Table2 className="w-4 h-4 mr-2 shrink-0" />
           ) : !/\.md$/i.test(node.data.name) ? (
             <File className="w-4 h-4 mr-2 shrink-0" />
           ) : null}
@@ -356,13 +380,13 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
             <span className={cn("truncate", !node.isInternal && !appearances[node.data.id] && !/\.md$/i.test(node.data.name) ? "" : "ml-1")}>
               {node.isInternal
                 ? node.data.name
-                : node.data.name.replace(/\.md$/i, "")}
+                : node.data.name.replace(/\.(md|csv)$/i, "")}
             </span>
           )}
         </div>
       );
     },
-    [appearances],
+    [appearances, databases],
   );
   return (
     <div
@@ -504,9 +528,9 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
                         : "text-neutral-ink hover:bg-surface-overlay",
                     )}
                   >
-                    <FileText className="w-4 h-4 shrink-0" />
+                    {t.viewKind === "spreadsheet" ? <Table2 className="w-4 h-4 shrink-0" /> : <FileText className="w-4 h-4 shrink-0" />}
                     <span className="truncate flex-1 min-w-0">
-                      {t.name.replace(/\.md$/i, "")}
+                      {t.name.replace(/\.(md|csv)$/i, "")}
                     </span>
                     {tabs.some(
                       (other) => other.id !== t.id && other.name === t.name,
@@ -741,8 +765,28 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
             onClick={() => void run(() => create("file"))}
           />
           <MenuItem
+            label="New CSV"
+            onClick={() => void run(() => create("file", currentDir(), "Untitled.csv"))}
+          />
+          <MenuItem
             label="New folder"
             onClick={() => void run(() => create("dir"))}
+          />
+          <MenuItem
+            label="New database (Table)"
+            onClick={() => void run(() => createDatabase("table"))}
+          />
+          <MenuItem
+            label="New database (Board)"
+            onClick={() => void run(() => createDatabase("kanban"))}
+          />
+          <MenuItem
+            label="New database (Calendar)"
+            onClick={() => void run(() => createDatabase("calendar"))}
+          />
+          <MenuItem
+            label="New database (Timeline)"
+            onClick={() => void run(() => createDatabase("timeline"))}
           />
           <MenuSeparator />
           {menu.node && (
@@ -826,6 +870,14 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
             onClick={() => {
               createHoverMenu.close();
               void run(() => create("file"));
+            }}
+          />
+          <MenuItem
+            icon={<Table2 size={16} />}
+            label="New CSV"
+            onClick={() => {
+              createHoverMenu.close();
+              void run(() => create("file", currentDir(), "Untitled.csv"));
             }}
           />
           <MenuItem

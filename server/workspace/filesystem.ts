@@ -93,6 +93,7 @@ export async function scanWorkspace(workspace: Workspace) {
     });
     for (const entry of entries) {
       const relativePath = path.posix.join(directory, entry.name);
+      if (entry.name === ".maek-database.json") continue;
       if (
         isIgnored(relativePath) ||
         !isWorkspaceEntry(entry)

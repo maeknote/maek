@@ -13,7 +13,9 @@ export class WorkspaceRuntime {
     this.unsubscribe = this.watcher.subscribe((event) => {
       if (event.event === "rescan") this.files.invalidate();
       if (event.event === "change") {
-        this.files.apply(event.data as import("../../shared/workspace").Change);
+        const change = event.data as import("../../shared/workspace").Change;
+        if (!change.path.endsWith("/.maek-database.json") && change.path !== ".maek-database.json")
+          this.files.apply(change);
       }
     });
   }

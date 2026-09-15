@@ -1,4 +1,4 @@
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml'
 
 /**
  * Frontmatter split/compose — the single implementation (4A).
@@ -128,6 +128,17 @@ export function parseYamlData(frontmatterRaw: string | null): Record<string, unk
 export function serializeYamlData(data: Record<string, unknown>): string {
   // Strip trailing newline so composeMarkdownFile adds fences cleanly.
   return stringifyYaml(data).replace(/\n$/, '')
+}
+
+/** Patch one top-level property while retaining YAML comments, key order and unrelated nodes. */
+export function patchYamlField(frontmatterRaw: string | null, key: string, value: unknown): string | null {
+  if (frontmatterRaw === null && (value === undefined || value === null || value === '')) return null
+  const document = parseDocument(frontmatterRaw ?? '', { uniqueKeys: true, strict: true })
+  if (document.errors.length) throw new Error(document.errors.map((error) => error.message).join('; '))
+  if (value === undefined || value === null || value === '') document.delete(key)
+  else document.set(key, value)
+  if (!document.contents || (document.contents && 'items' in document.contents && document.contents.items.length === 0)) return null
+  return document.toString({ lineWidth: 0 }).replace(/\n$/, '')
 }
 
 /**

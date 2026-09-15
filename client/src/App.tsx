@@ -1,6 +1,6 @@
 import { FilePicker } from "./features/editor/components/FilePicker";
 import { NotePicker } from "./features/editor/components/note-picker/NotePicker";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   FileText,
@@ -19,6 +19,7 @@ import { MarkdownEditor } from "./features/editor/MarkdownEditor";
 import { TitleBar } from "./features/editor/components/TitleBar";
 import { WorkspaceDashboard } from "./features/editor/components/WorkspaceDashboard";
 import { FolderKanbanView } from "./features/database/kanban/FolderKanbanView";
+import { DatabaseView } from "./features/database/DatabaseView";
 import { ContentSearch } from "./features/search/ContentSearch";
 import { navigate, parseRoute, pathForWorkspaceKey, workspaceKeyFor, type Route } from "./lib/routes";
 import {
@@ -32,6 +33,10 @@ import {
   PanelIcon,
 } from "./shared/components";
 import type { FileNode, FileContent } from "@shared/workspace";
+
+const SpreadsheetEditor = lazy(
+  () => import("./features/spreadsheet/SpreadsheetEditor"),
+);
 
 function Modal({
   title,
@@ -177,7 +182,13 @@ function AppContent() {
     const key = workspaceKeyFor(state.workspace.root);
     if (!route || route.workspaceKey !== key) { navigate({ kind: "home", workspaceKey: key }, true); return; }
     if (route.kind === "note" && route.path) void state.openFile(route.path);
-    if (route.kind === "folder" && route.view === "board") state.openKanban(route.path);
+    if (route.kind === "folder" && route.view !== "list") {
+      void api<import("@shared/database").DatabaseMeta[]>("/api/databases").then((databases) => {
+        const database = databases.find((item) => item.folderPath === route.path);
+        if (database) state.openDatabase(database.folderPath, database.name);
+        else state.openKanban(route.path);
+      });
+    }
     if (route.kind === "folder" && route.view === "list") {
       const expanded = route.path.split("/").filter(Boolean).map((_, index, parts) => parts.slice(0, index + 1).join("/"));
       useStore.setState((current) => ({ expanded: [...new Set([...current.expanded, ...expanded])]}));
@@ -252,7 +263,7 @@ function AppContent() {
     try {
       const copy = await api<FileNode>("/api/files", "POST", {
         dir: t.id.split("/").slice(0, -1).join("/"),
-        name: t.name.replace(/\.md$/i, " copy.md"),
+        name: t.name.replace(/(\.md|\.csv)$/i, " copy$1"),
         kind: "file",
       });
       const base = await api<{ hash: string; mtimeMs: number }>(
@@ -421,6 +432,8 @@ function AppContent() {
                 <WorkspaceDashboard />
               ) : tab.viewKind === "kanban" ? (
                 <FolderKanbanView folderPath={tab.kanbanFolderPath ?? ""} />
+              ) : tab.viewKind === "database" ? (
+                <DatabaseView folderPath={tab.databaseFolderPath ?? ""} />
               ) : (
                 <>
                 <TitleBar
@@ -508,6 +521,10 @@ function AppContent() {
                       <aside className="flex-1 min-w-0 overflow-auto bg-warm-vellum/30"><div className="px-4 py-2 text-xs text-muted-text border-b border-default">Reference: {route.compare}</div><ReferencePreview path={route.compare} /></aside>
                     </div>
                   ) : <MarkdownEditor key={tab.id + ":" + tab.generation} tab={tab} />
+                ) : tab.viewKind === "spreadsheet" ? (
+                  <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-text">Loading spreadsheet…</div>}>
+                    <SpreadsheetEditor key={tab.id + ":" + tab.generation} tab={tab} />
+                  </Suspense>
                 ) : (
                   <Preview tab={tab} htmlPreviewNonce={htmlPreviewNonce} />
                 )}

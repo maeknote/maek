@@ -101,6 +101,34 @@ test("save dots stay visible beside Open Tabs and the hovered note until save co
   }
 });
 
+test("opens an app database and switches across all four web views", async ({ page }) => {
+  const now = Date.now();
+  const schema = [
+    { id: "status", name: "Status", type: "select", order: 0, options: ["To Do", "Done"] },
+    { id: "date", name: "Date", type: "date", order: 1 },
+    { id: "period", name: "Period", type: "date-range", order: 2 },
+  ];
+  const views = [
+    { id: "table", name: "Table", type: "table", config: { sort: [], filter: { combinator: "and", conditions: [] } }, createdAt: now, updatedAt: now },
+    { id: "board", name: "Board", type: "kanban", config: { groupColumnId: "status", sort: [], filter: { combinator: "and", conditions: [] } }, createdAt: now, updatedAt: now },
+    { id: "calendar", name: "Calendar", type: "calendar", config: { dateColumnId: "date", sort: [], filter: { combinator: "and", conditions: [] } }, createdAt: now, updatedAt: now },
+    { id: "timeline", name: "Timeline", type: "timeline", config: { dateColumnId: "period", zoom: "week", sort: [], filter: { combinator: "and", conditions: [] } }, createdAt: now, updatedAt: now },
+  ];
+  mkdirSync(path.join(root, "Tasks"));
+  writeFileSync(path.join(root, "Tasks/.maek-database.json"), JSON.stringify({ version: 1, type: "database", id: "tasks", name: "Tasks", schema, views, activeViewId: "table", createdAt: now, updatedAt: now }));
+  writeFileSync(path.join(root, "Tasks/First.md"), "---\nStatus: To Do\nDate: 2026-09-15\nPeriod:\n  start: 2026-09-15\n  end: 2026-09-17\n---\n\n# First\n");
+  await open(page);
+  await page.locator('[data-path="Tasks"]').click();
+  await expect(page.getByText("Tasks", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Status" })).toBeVisible();
+  await page.getByRole("button", { name: "Board · Board" }).click();
+  await expect(page.getByText("To Do", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Calendar · Calendar" }).click();
+  await expect(page.getByText("September 2026")).toBeVisible();
+  await page.getByRole("button", { name: "Timeline · Timeline" }).click();
+  await expect(page.locator(".db-timeline").getByText("Timeline", { exact: true })).toBeVisible();
+});
+
 test("Show in file tree reveals a deeply nested note with mounted and unmounted collapsed trees", async ({ page }) => {
   mkdirSync(path.join(root, "Folder", "Deep", "Nested"), { recursive: true });
   for (let i = 0; i < 70; i++) writeFileSync(path.join(root, "Folder", `aaa-${i}.md`), "# Filler");
@@ -240,6 +268,33 @@ test("search, read-only preview, unsupported file and native picker cancel", asy
   await expect(
     page.getByText("Unsupported file format", { exact: true }),
   ).toBeVisible();
+});
+
+test("creates and edits a CSV spreadsheet with undo and autosave", async ({ page }) => {
+  await open(page);
+  await page.locator('[data-path="Folder"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "New CSV", exact: true }).click();
+  await expect(page.getByRole("grid", { name: "Untitled.csv" })).toBeVisible();
+
+  const firstCell = page.locator('.rdg-cell[role="gridcell"]:not(.csv-row-number)').first();
+  await firstCell.dblclick();
+  const editor = page.locator(".csv-cell-editor");
+  await editor.fill("한국어 데이터");
+  await editor.press("Enter");
+  await expect(firstCell).toContainText("한국어 데이터");
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(firstCell).not.toContainText("한국어 데이터");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(firstCell).toContainText("한국어 데이터");
+
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await firstCell.click();
+  await page.evaluate(() => navigator.clipboard.writeText("이름\t점수\n윤철\t100"));
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(page.getByRole("gridcell").filter({ hasText: "점수" })).toBeVisible();
+
+  await expect.poll(() => readFileSync(path.join(root, "Folder/Untitled.csv"), "utf8")).toBe("이름,점수\n윤철,100");
 });
 
 test("rename, duplicate, move and delete use the tree and real paths", async ({

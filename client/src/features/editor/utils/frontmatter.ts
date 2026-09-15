@@ -83,6 +83,9 @@ export function createEmptyTabOpenPayload(): TabOpenPayload {
 }
 
 export function isTabDirty(tab: TabItem): boolean {
+  if (tab.viewKind === "spreadsheet") {
+    return tab.bodyContent !== tab.savedBodyContent;
+  }
   if (!isEditableMarkdownTab(tab)) return false;
   return (
     tab.bodyContent !== tab.savedBodyContent ||
@@ -101,6 +104,7 @@ export function getTabSavePath(tab: TabItem): string {
 }
 
 export function getTabFileContent(tab: TabItem): string {
+  if (tab.viewKind === "spreadsheet") return tab.bodyContent;
   const disk = splitFrontmatterFile(tab.diskFileContent);
   return composeSharedMarkdownFile(
     tab.frontmatter.raw,

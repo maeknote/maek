@@ -22,6 +22,7 @@ export type PreviewFormat =
   "pdf" | "docx" | "csv" | "xlsx" | "pptx" | "image" | "text" | "code" | "html";
 export type TabViewKind =
   | "editor"
+  | "spreadsheet"
   | "preview"
   | "database"
   | "meeting"
@@ -85,6 +86,8 @@ export interface TabItem {
   meetingNotePath?: string;
   /** Workspace-relative folder path for kanban tabs. */
   kanbanFolderPath?: string;
+  /** Workspace-relative folder path for database tabs. */
+  databaseFolderPath?: string;
   /**
    * Body content after Tiptap parse → re-serialize round-trip, captured at mount or after
    * a disk-side change is applied. Empty string when not yet computed.

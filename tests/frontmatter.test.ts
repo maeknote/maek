@@ -3,6 +3,7 @@ import {
   composeMarkdownFile,
   detectLineEnding,
   parseYamlData,
+  patchYamlField,
   recomposeSplitFile,
   replaceScalarField,
   splitFrontmatterFile
@@ -81,6 +82,21 @@ describe('splitFrontmatterFile / composeMarkdownFile — unmodified round-trip',
     const split = splitFrontmatterFile(raw)
     const next = recomposeSplitFile(split, '새 본문\n')
     expect(next).toBe('---\ntitle: a   # 주석\nkeys:\n  - x\n---\n\n새 본문\n')
+  })
+})
+
+describe('patchYamlField', () => {
+  it('preserves comments and unrelated nodes for typed database edits', () => {
+    const raw = 'title: original # keep\ntags: [a, b]\nstatus: Todo'
+    expect(patchYamlField(raw, 'status', 'Done')).toContain('title: original # keep')
+    expect(parseYamlData(patchYamlField(raw, 'status', 'Done'))).toEqual({ title: 'original', tags: ['a', 'b'], status: 'Done' })
+  })
+  it('adds and removes top-level values', () => {
+    expect(parseYamlData(patchYamlField('title: a', 'checked', true))).toEqual({ title: 'a', checked: true })
+    expect(patchYamlField('status: Todo', 'status', null)).toBeNull()
+  })
+  it('rejects invalid YAML instead of replacing it', () => {
+    expect(() => patchYamlField('key: [unclosed', 'status', 'Done')).toThrow()
   })
 })
 

@@ -1,7 +1,9 @@
-/** Display .md files without extension, keep others as-is */
+/** Display files without extension */
 export function getDisplayName(fileName: string): string {
-  if (fileName.toLowerCase().endsWith(".md") && fileName.length > 3) {
-    return fileName.slice(0, -3);
+  const lastDotIndex = fileName.lastIndexOf(".");
+  // Only strip extension if it's a valid extension (e.g. not a dotfile without other dots)
+  if (lastDotIndex > 0 && lastDotIndex < fileName.length - 1) {
+    return fileName.slice(0, lastDotIndex);
   }
   return fileName;
 }
@@ -11,11 +13,12 @@ export function toFileName(
   displayName: string,
   originalFileName: string,
 ): string {
-  if (
-    originalFileName.toLowerCase().endsWith(".md") &&
-    originalFileName.length > 3
-  ) {
-    return displayName + ".md";
+  const lastDotIndex = originalFileName.lastIndexOf(".");
+  if (lastDotIndex > 0 && lastDotIndex < originalFileName.length - 1) {
+    const ext = originalFileName.slice(lastDotIndex);
+    if (!displayName.toLowerCase().endsWith(ext.toLowerCase())) {
+      return displayName + ext;
+    }
   }
   return displayName;
 }

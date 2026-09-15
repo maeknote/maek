@@ -35,6 +35,7 @@ export const artifactMime: Record<string, string> = {
 export function kindFor(relativePath: string): PreviewKind {
   const extension = path.extname(relativePath).toLowerCase();
   if (extension === ".md" || extension === ".markdown") return "editor";
+  if (extension === ".csv") return "sheet";
   if (extension === ".pdf") return "pdf";
   if (extension === ".html" || extension === ".htm") return "html";
   if (previewMime[extension]?.startsWith("image/")) return "image";
@@ -44,7 +45,6 @@ export function kindFor(relativePath: string): PreviewKind {
       ".json",
       ".yaml",
       ".yml",
-      ".csv",
       ".log",
       ".css",
       ".js",

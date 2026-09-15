@@ -21,9 +21,8 @@ interface TitleBarProps {
 
 export function TitleBar({ tab, onRename, actions }: TitleBarProps): ReactElement {
   const displayName = getDisplayName(tab.name);
-  // Markdown editor tabs and database table tabs are both renamable from here.
-  const isEditableTitle =
-    isEditableMarkdownTab(tab) || tab.viewKind === "database";
+  // All file tabs that use TitleBar can be renamed.
+  const isEditableTitle = true;
   const [title, setTitle] = useState(displayName);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -94,22 +93,44 @@ export function TitleBar({ tab, onRename, actions }: TitleBarProps): ReactElemen
     }
   }, [tab, showToast]);
 
+  const lastDotIndex = tab.name.lastIndexOf(".");
+  const ext = lastDotIndex > 0 && lastDotIndex < tab.name.length - 1 ? tab.name.slice(lastDotIndex) : "";
+  const showExtension = ext && ext.toLowerCase() !== ".md";
+
   return (
     <div className="px-8 pt-6 pb-3 shrink-0">
       <div className="flex items-center gap-3">
-        <input
-          ref={inputRef}
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={handleSubmit}
-          onKeyDown={handleKeyDown}
-          disabled={isSubmitting || !isEditableTitle}
-          spellCheck={false}
-          className="flex-1 min-w-0 text-3xl font-bold text-neutral-ink bg-transparent placeholder:text-muted-text disabled:opacity-50 caret-neutral-ink"
-          style={{ outline: "none", boxShadow: "none" }}
-          placeholder="Untitled"
-        />
+        <div className="flex-1 min-w-0 flex items-center">
+          <div className="relative flex max-w-full min-w-0">
+            <span
+              className="invisible whitespace-pre text-3xl font-bold overflow-hidden pointer-events-none px-0"
+              aria-hidden="true"
+            >
+              {title || "Untitled"}
+            </span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={handleSubmit}
+              onKeyDown={handleKeyDown}
+              disabled={isSubmitting || !isEditableTitle}
+              spellCheck={false}
+              className="absolute inset-0 w-full h-full p-0 m-0 border-none text-3xl font-bold text-neutral-ink bg-transparent placeholder:text-muted-text disabled:opacity-50 caret-neutral-ink"
+              style={{ outline: "none", boxShadow: "none" }}
+              placeholder="Untitled"
+            />
+          </div>
+          {showExtension && (
+            <span
+              className="text-3xl font-bold text-muted-text select-none cursor-default shrink-0"
+              title={`File extension: ${ext}`}
+            >
+              {ext}
+            </span>
+          )}
+        </div>
         {isEditableMarkdownTab(tab) && (
           <button
             type="button"

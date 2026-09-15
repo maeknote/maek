@@ -14,6 +14,7 @@ export interface MaekWorkspace {
 }
 export type PreviewKind =
   | "editor"
+  | "sheet"
   | "image"
   | "pdf"
   | "text"

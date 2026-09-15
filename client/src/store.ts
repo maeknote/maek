@@ -49,6 +49,7 @@ interface State {
   openFile: (id: string) => Promise<void>;
   openDashboard: () => void;
   openKanban: (folderPath: string) => void;
+  openDatabase: (folderPath: string, name?: string) => void;
   clearRecentFiles: () => void;
   save: (id: string) => Promise<boolean>;
   saveAll: () => Promise<boolean>;
@@ -167,6 +168,8 @@ function connectEvents(
 export const DASHBOARD_TAB_ID = "maek:virtual:dashboard";
 export const kanbanTabId = (folderPath: string) =>
   `maek:virtual:kanban:${folderPath}`;
+export const databaseTabId = (folderPath: string) =>
+  `maek:virtual:database:${folderPath}`;
 export function isVirtualTabId(id: string): boolean {
   return id.startsWith("maek:virtual:");
 }
@@ -182,7 +185,7 @@ const VIRTUAL_FILE: FileContent = {
 function makeVirtualTab(
   id: string,
   name: string,
-  viewKind: "workspace-settings" | "kanban",
+  viewKind: "workspace-settings" | "kanban" | "database",
   kanbanFolderPath?: string,
 ): Tab {
   return {
@@ -207,6 +210,7 @@ function makeVirtualTab(
     previewNonce: 0,
     isEphemeral: false,
     kanbanFolderPath,
+    databaseFolderPath: viewKind === "database" ? kanbanFolderPath : undefined,
     file: VIRTUAL_FILE,
     initialContent: "",
     status: "idle",
@@ -215,6 +219,28 @@ function makeVirtualTab(
 }
 
 function makeTab(id: string, file: FileContent): Tab {
+  if (file.kind === "sheet") {
+    const content = file.content ?? "";
+    const frontmatter = splitFrontmatter("").frontmatter;
+    return {
+      id,
+      name: id.split("/").pop()!,
+      parentName: id.split("/").slice(-2, -1).join(""),
+      bodyContent: content,
+      savedBodyContent: content,
+      frontmatter,
+      diskNormalizedBody: content,
+      diskFileContent: content,
+      initialContent: content,
+      viewKind: "spreadsheet",
+      previewFormat: null,
+      previewNonce: 0,
+      isEphemeral: false,
+      file,
+      status: "idle",
+      generation: 0,
+    };
+  }
   const payload = splitFrontmatter(file.content ?? "");
   return {
     ...payload,
@@ -676,6 +702,19 @@ export const useStore = create<State>((set, get) => ({
     }));
     later();
   },
+  openDatabase(folderPath, displayName) {
+    const id = databaseTabId(folderPath);
+    if (get().tabs.some((t) => t.id === id)) {
+      get().setActiveTab(id);
+      return;
+    }
+    const name = displayName ?? folderPath.split("/").pop() ?? "Database";
+    set((s) => ({
+      tabs: [...s.tabs, makeVirtualTab(id, name, "database", folderPath)],
+      activeTabId: id,
+    }));
+    later();
+  },
   clearRecentFiles() {
     set({ recentFiles: [] });
     later();
@@ -709,7 +748,7 @@ export const useStore = create<State>((set, get) => ({
     const tab = get().tabs.find((t) => t.id === id);
     if (!tab || !isTabDirty(tab)) return true;
     if (tab.status === "conflict") return false;
-    if (tab.frontmatter.validationError) {
+    if (tab.viewKind !== "spreadsheet" && tab.frontmatter.validationError) {
       patchTab(id, (t) => ({
         ...t,
         status: "error",
@@ -806,6 +845,8 @@ export const useStore = create<State>((set, get) => ({
     }
   },
   async change(event) {
+    window.dispatchEvent(new CustomEvent("maek:workspace-change", { detail: event }));
+    if (event.path.endsWith("/.maek-database.json") || event.path === ".maek-database.json") return;
     const epoch = sessionEpoch;
     if (event.type === "rename" && event.source) {
       const source = event.source,
