@@ -461,6 +461,37 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           <PanelIcon side="left" isExpanded={true} size={16} />
         </button>
       </div>
+      <div className="px-3 pb-2 shrink-0 space-y-1">
+        <button
+          className="w-full h-8 px-2 rounded-md flex items-center gap-2 text-sm text-muted-text hover:text-neutral-ink hover:bg-surface-overlay transition-colors"
+          aria-label="Search content"
+          onClick={onSearch}
+        >
+          <Search size={15} />
+          <span>Search</span>
+          <kbd className="ml-auto text-[11px] text-muted-text font-sans">⌘P</kbd>
+        </button>
+        <button
+          ref={createButtonRef}
+          className="w-full h-8 px-2 rounded-md flex items-center gap-2 text-sm text-muted-text hover:text-neutral-ink hover:bg-surface-overlay transition-colors"
+          aria-label="Add new"
+          onClick={() => {
+            createHoverMenu.close();
+            void run(() => create("file"));
+          }}
+          onMouseEnter={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            createHoverMenu.open({ x: r.right, y: r.bottom });
+          }}
+          onMouseLeave={() => {
+            createHoverMenu.startCloseTimer();
+          }}
+        >
+          <Plus size={15} />
+          <span>Add new</span>
+          <kbd className="ml-auto text-[11px] text-muted-text font-sans">⌘N</kbd>
+        </button>
+      </div>
       {tabs.length > 0 && (
         <div
           className={cn(
@@ -604,35 +635,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       >
         <span>Files</span>
         <span className="flex items-center gap-1">
-          <button
-            className="icon-button w-6 h-6"
-            aria-label="Search content"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSearch();
-            }}
-          >
-            <Search size={14} />
-          </button>
-          <button
-            ref={createButtonRef}
-            className="icon-button w-6 h-6"
-            aria-label="Create"
-            onClick={(e) => {
-              e.stopPropagation();
-              createHoverMenu.close();
-              void run(() => create("file"));
-            }}
-            onMouseEnter={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              createHoverMenu.open({ x: r.left, y: r.bottom });
-            }}
-            onMouseLeave={() => {
-              createHoverMenu.startCloseTimer();
-            }}
-          >
-            <Plus size={14} />
-          </button>
           <button
             className="icon-button w-6 h-6"
             aria-label="Refresh folder tree"
@@ -897,11 +899,11 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
             }}
           />
           <MenuItem
-            icon={<Table2 size={16} />}
-            label="New CSV"
+            icon={<Table size={16} />}
+            label="New database"
             onClick={() => {
               createHoverMenu.close();
-              void run(() => create("file", currentDir(), "Untitled.csv"));
+              void run(() => createDatabase("table"));
             }}
           />
           <MenuItem

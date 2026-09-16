@@ -21,7 +21,6 @@ import { TitleBar } from "./features/editor/components/TitleBar";
 import { WorkspaceDashboard } from "./features/editor/components/WorkspaceDashboard";
 import { FolderKanbanView } from "./features/database/kanban/FolderKanbanView";
 import { DatabaseView } from "./features/database/DatabaseView";
-import { ContentSearch } from "./features/search/ContentSearch";
 import { navigate, parseRoute, pathForWorkspaceKey, workspaceKeyFor, type Route } from "./lib/routes";
 import {
   isTabDirty,
@@ -368,7 +367,7 @@ function AppContent() {
                 style={{ width: state.sidebarWidth }}
               >
                 <Explorer
-                  onSearch={() => { if (state.workspace) navigate({ kind: "search", workspaceKey: workspaceKeyFor(state.workspace.root), query: "", folder: "", fileKind: "" }); }}
+                  onSearch={() => setSearch(true)}
                   onSettings={() => setSettings(true)}
                   onCollapse={() => setCollapsed(true)}
                   onQuit={() => setShowQuitConfirm(true)}
@@ -424,11 +423,7 @@ function AppContent() {
                 </button>
               </div>
             )}
-            {route?.kind === "search" ? (
-              <ContentSearch route={route} onClose={() => {
-                if (state.workspace) navigate({ kind: "home", workspaceKey: workspaceKeyFor(state.workspace.root) });
-              }} />
-            ) : tab ? (
+            {tab ? (
               tab.viewKind === "workspace-settings" ? (
                 <WorkspaceDashboard
                   onNewNote={() => void newNote()}
