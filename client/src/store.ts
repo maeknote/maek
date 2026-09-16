@@ -41,12 +41,17 @@ interface State {
   expanded: string[];
   theme: "light" | "dark";
   sidebarWidth: number;
-  recentFiles: { path: string; lastOpened: number }[];
+  split: { left: string | null; right: string | null; active: "left" | "right"; ratio: number };
+  recentFiles: { path: string; lastOpened: number; openCount?: number }[];
   openWorkspace: (path?: string) => Promise<void>;
   cancelWorkspaceOpen: () => void;
   reconnectWorkspace: () => Promise<void>;
   refresh: () => Promise<void>;
   openFile: (id: string) => Promise<void>;
+  openFileToSide: (id: string) => Promise<void>;
+  setSplitActive: (pane: "left" | "right") => void;
+  setSplitRatio: (ratio: number) => void;
+  singlePane: (pane: "left" | "right") => void;
   openDashboard: () => void;
   openKanban: (folderPath: string) => void;
   openDatabase: (folderPath: string, name?: string) => void;
@@ -170,6 +175,15 @@ export const kanbanTabId = (folderPath: string) =>
   `maek:virtual:kanban:${folderPath}`;
 export const databaseTabId = (folderPath: string) =>
   `maek:virtual:database:${folderPath}`;
+function restoreVirtualTab(id:string):Tab|null {
+  if(id===DASHBOARD_TAB_ID)return makeVirtualTab(id,'Home','workspace-settings');
+  if(id.startsWith('maek:virtual:database:')) {
+    const folder=id.slice('maek:virtual:database:'.length);
+    return makeVirtualTab(id,folder.split('/').pop()??'Database','database',folder);
+  }
+  return null;
+}
+function isSharedTab(tab:Tab) {return !tab.isPopup && tab.viewKind!=='kanban';}
 export function isVirtualTabId(id: string): boolean {
   return id.startsWith("maek:virtual:");
 }
@@ -218,7 +232,69 @@ function makeVirtualTab(
   };
 }
 
-function makeTab(id: string, file: FileContent): Tab {
+function remapWorkspacePath(path: string, source: string, dest: string): string {
+  if (path === source) return dest;
+  return path.startsWith(source + "/") ? dest + path.slice(source.length) : path;
+}
+
+/** Keep virtual tab identities and labels separate from file-path remapping. */
+function remapTabForRename(tab: Tab, source: string, dest: string): Tab {
+  if (tab.viewKind === "workspace-settings") return tab;
+
+  if (tab.viewKind === "database") {
+    const folderPath = remapWorkspacePath(
+      tab.databaseFolderPath ?? tab.id.slice("maek:virtual:database:".length),
+      source,
+      dest,
+    );
+    return {
+      ...tab,
+      id: databaseTabId(folderPath),
+      databaseFolderPath: folderPath,
+      name: folderPath.split("/").pop() ?? "Database",
+      parentName: "",
+    };
+  }
+
+  if (tab.viewKind === "kanban") {
+    const folderPath = remapWorkspacePath(
+      tab.kanbanFolderPath ?? tab.id.slice("maek:virtual:kanban:".length),
+      source,
+      dest,
+    );
+    const name = folderPath ? (folderPath.split("/").pop() ?? "") : "Workspace";
+    return {
+      ...tab,
+      id: kanbanTabId(folderPath),
+      kanbanFolderPath: folderPath,
+      name: `${name} Kanban`,
+      parentName: "",
+    };
+  }
+
+  const id = remapWorkspacePath(tab.id, source, dest);
+  return {
+    ...tab,
+    id,
+    name: id.split("/").pop()!,
+    parentName: id.split("/").slice(-2, -1).join(""),
+  };
+}
+
+function remapTabIdForRename(id: string, source: string, dest: string): string {
+  if (id === DASHBOARD_TAB_ID) return id;
+  if (id.startsWith("maek:virtual:database:"))
+    return databaseTabId(
+      remapWorkspacePath(id.slice("maek:virtual:database:".length), source, dest),
+    );
+  if (id.startsWith("maek:virtual:kanban:"))
+    return kanbanTabId(
+      remapWorkspacePath(id.slice("maek:virtual:kanban:".length), source, dest),
+    );
+  return remapWorkspacePath(id, source, dest);
+}
+
+export function makeTab(id: string, file: FileContent): Tab {
   if (file.kind === "sheet") {
     const content = file.content ?? "";
     const frontmatter = splitFrontmatter("").frontmatter;
@@ -296,6 +372,7 @@ export const useStore = create<State>((set, get) => ({
   nodes: [],
   tabs: [],
   activeTabId: null,
+  split: { left: null, right: null, active: "left", ratio: 0.5 },
   error: "",
   connectionError: "",
   ready: false,
@@ -405,6 +482,7 @@ export const useStore = create<State>((set, get) => ({
       set({ openingPhase: "restoring-tabs" });
       const tabs: Tab[] = [];
       for (const id of rootTabs.tabs) {
+        const virtual=restoreVirtualTab(id);if(virtual){tabs.push(virtual);continue}
         try {
           const file = await fileQuery(ws, id, controller.signal);
           if (!isCurrent()) return;
@@ -444,6 +522,9 @@ export const useStore = create<State>((set, get) => ({
         expanded: ui.expanded,
         theme: ui.theme,
         sidebarWidth: ui.sidebarWidth,
+        split: ui.split && tabs.some((t) => t.id === ui.split!.left) && tabs.some((t) => t.id === ui.split!.right)
+          ? ui.split
+          : { left: preferredActive, right: null, active: "left", ratio: 0.5 },
         recentFiles: recents,
         ready: true,
         openingWorkspace: null,
@@ -534,6 +615,7 @@ export const useStore = create<State>((set, get) => ({
     }
   },
   async openFile(id) {
+    void recordRecent(id);
     if (get().tabs.some((t) => t.id === id)) {
       get().setActiveTab(id);
       return;
@@ -549,6 +631,7 @@ export const useStore = create<State>((set, get) => ({
           ? s.tabs
           : [...s.tabs, makeTab(id, file)],
         activeTabId: id,
+        split: { ...s.split, [s.split.active]: id, left: s.split.left ?? id },
         recentFiles: [
           { path: id, lastOpened: Date.now() },
           ...s.recentFiles.filter((f) => f.path !== id),
@@ -561,10 +644,34 @@ export const useStore = create<State>((set, get) => ({
       set({ error: String(e) });
     }
   },
+  async openFileToSide(id) {
+    const existingPane = get().split.left === id ? "left" : get().split.right === id ? "right" : null;
+    if (existingPane) {
+      get().setSplitActive(existingPane);
+      return;
+    }
+    const target = get().split.active === "left" ? "right" : "left";
+    await get().openFile(id);
+    set((s) => ({
+      split: { ...s.split, left: s.split.left ?? s.activeTabId, [target]: id, active: target },
+      activeTabId: id,
+    }));
+    later();
+  },
+  setSplitActive(pane) {
+    const id = get().split[pane];
+    if (!id) return;
+    const previous = get().activeTabId;
+    if (previous && previous !== id) void get().save(previous);
+    set((s) => ({ split: { ...s.split, active: pane }, activeTabId: id }));
+    later();
+  },
+  setSplitRatio(ratio) { set((s) => ({ split: { ...s.split, ratio: Math.min(.75, Math.max(.25, ratio)) } })); later(); },
+  singlePane(pane) { set((s) => ({ split: { ...s.split, left: s.split[pane], right: null, active: "left" }, activeTabId: s.split[pane] })); later(); },
   setActiveTab(id) {
     const previous = get().activeTabId;
     if (previous && previous !== id) void get().save(previous);
-    set({ activeTabId: id });
+    set((s) => ({ activeTabId: id, split: { ...s.split, [s.split.active]: id, left: s.split.left ?? id } }));
     later();
   },
   reorderTabs(fromIndex, insertionIndex) {
@@ -602,7 +709,7 @@ export const useStore = create<State>((set, get) => ({
     }
     if (epoch !== sessionEpoch) return;
     const current = get().tabs;
-    const currentFileIds = current.filter((t) => !isVirtualTabId(t.id)).map((t) => t.id);
+    const currentFileIds = current.filter(isSharedTab).map((t) => t.id);
     // Loop guard: our own write echoes back through the watcher. When the file
     // tab order already matches the document there is nothing to do.
     const sameOrder =
@@ -634,6 +741,7 @@ export const useStore = create<State>((set, get) => ({
     // objects; load any newly opened file tabs.
     const nextFileTabs: Tab[] = [];
     for (const id of snapshot.tabs) {
+      const virtual=restoreVirtualTab(id);if(virtual){nextFileTabs.push(byId.get(id)??virtual);continue}
       const existing = byId.get(id);
       if (existing) {
         nextFileTabs.push(existing);
@@ -653,7 +761,7 @@ export const useStore = create<State>((set, get) => ({
       if (tab && !nextFileTabs.some((t) => t.id === id)) nextFileTabs.push(tab);
     }
     // Virtual tabs (dashboard/kanban) are client-only; keep them at the end.
-    const virtualTabs = current.filter((t) => isVirtualTabId(t.id));
+    const virtualTabs = current.filter(t=>!isSharedTab(t));
     const nextTabs = [...nextFileTabs, ...virtualTabs];
     const previousActive = get().activeTabId;
     const activeStillOpen =
@@ -680,10 +788,11 @@ export const useStore = create<State>((set, get) => ({
     set((s) => ({
       tabs: [
         ...s.tabs,
-        makeVirtualTab(DASHBOARD_TAB_ID, "Dashboard", "workspace-settings"),
+        makeVirtualTab(DASHBOARD_TAB_ID, "Home", "workspace-settings"),
       ],
       activeTabId: DASHBOARD_TAB_ID,
     }));
+    tabsDirty=true;
     later();
   },
   openKanban(folderPath) {
@@ -713,10 +822,11 @@ export const useStore = create<State>((set, get) => ({
       tabs: [...s.tabs, makeVirtualTab(id, name, "database", folderPath)],
       activeTabId: id,
     }));
+    tabsDirty=true;
     later();
   },
   clearRecentFiles() {
-    set({ recentFiles: [] });
+    void api<State["recentFiles"]>("/api/workspace/recent-files", "POST", {action:"clear"}).then(recentFiles=>set({recentFiles})).catch(e=>set({error:String(e)}));
     later();
   },
   updateBody(id, body) {
@@ -823,6 +933,12 @@ export const useStore = create<State>((set, get) => ({
         tabs,
         activeTabId:
           s.activeTabId === id ? (tabs.at(-1)?.id ?? null) : s.activeTabId,
+        split: {
+          ...s.split,
+          left: s.split.left === id ? (s.split.right === id ? null : s.split.right) : s.split.left,
+          right: s.split.right === id ? null : s.split.right,
+          active: s.split.active === "right" && s.split.right === id ? "left" : s.split.active,
+        },
       };
     });
     tabsDirty = true;
@@ -847,16 +963,17 @@ export const useStore = create<State>((set, get) => ({
   async change(event) {
     window.dispatchEvent(new CustomEvent("maek:workspace-change", { detail: event }));
     if (event.path.endsWith("/.maek-database.json") || event.path === ".maek-database.json") return;
+    if(event.path.startsWith('.maek/')) {
+      if(event.path==='.maek/recentFiles.json') {
+        const recentFiles=await api<State['recentFiles']>('/api/workspace/recent-files');set({recentFiles});
+      }
+      return;
+    }
     const epoch = sessionEpoch;
     if (event.type === "rename" && event.source) {
       const source = event.source,
         dest = event.path;
-      const replace = (p: string) =>
-        p === source
-          ? dest
-          : p.startsWith(source + "/")
-            ? dest + p.slice(source.length)
-            : p;
+      const replace = (p: string): string => remapTabIdForRename(p, source, dest);
       set((s) => ({
         nodes: [
           ...new Map(
@@ -874,12 +991,7 @@ export const useStore = create<State>((set, get) => ({
             }),
           ).values(),
         ],
-        tabs: s.tabs.map((t) => ({
-          ...t,
-          id: replace(t.id),
-          name: replace(t.id).split("/").pop()!,
-          parentName: replace(t.id).split("/").slice(-2, -1).join(""),
-        })),
+        tabs: s.tabs.map((t) => remapTabForRename(t, source, dest)),
         activeTabId: s.activeTabId ? replace(s.activeTabId) : null,
         scrollPositions: Object.fromEntries(
           Object.entries(s.scrollPositions).map(([p, v]) => [replace(p), v]),
@@ -968,19 +1080,9 @@ export const useStore = create<State>((set, get) => ({
   async move(source, dest) {
     if (!(await get().saveAll())) return;
     await api("/api/files/path", "PATCH", { source, dest });
-    const replace = (p: string) =>
-      p === source
-        ? dest
-        : p.startsWith(source + "/")
-          ? dest + p.slice(source.length)
-          : p;
+    const replace = (p: string): string => remapTabIdForRename(p, source, dest);
     set((s) => ({
-      tabs: s.tabs.map((t) => ({
-        ...t,
-        id: replace(t.id),
-        name: replace(t.id).split("/").pop()!,
-        parentName: replace(t.id).split("/").slice(-2, -1).join(""),
-      })),
+      tabs: s.tabs.map((t) => remapTabForRename(t, source, dest)),
       activeTabId: s.activeTabId ? replace(s.activeTabId) : null,
       scrollPositions: Object.fromEntries(
         Object.entries(s.scrollPositions).map(([p, v]) => [replace(p), v]),
@@ -1024,20 +1126,21 @@ export const useStore = create<State>((set, get) => ({
   async persist() {
     const s = get();
     if (!s.workspace || !s.ready) return;
-    const fileTabs = s.tabs.filter((t) => !isVirtualTabId(t.id)).map((t) => t.id);
+    const fileTabs = s.tabs.filter(isSharedTab).map((t) => t.id);
     const activeFileTab =
-      s.activeTabId && !isVirtualTabId(s.activeTabId) ? s.activeTabId : null;
+      s.activeTabId && fileTabs.includes(s.activeTabId) ? s.activeTabId : null;
     const ui: UiState = {
       activeTabId: activeFileTab,
       scrollPositions: s.scrollPositions,
       expanded: s.expanded,
       theme: s.theme,
       sidebarWidth: s.sidebarWidth,
+      split: s.split,
     };
     try {
       const writes: Promise<unknown>[] = [
         api("/api/workspace/ui-state", "PUT", ui, s.workspace),
-        api("/api/workspace/recent-files", "PUT", s.recentFiles, s.workspace),
+
       ];
       // Only rewrite the shared root document when this browser changed the
       // open-tab list. UI-only autosaves must never touch it, so an idle
@@ -1068,3 +1171,20 @@ window.addEventListener("beforeunload", (e) => {
     e.returnValue = "";
   }
 });
+
+async function recordRecent(id: string) {
+  const workspace=useStore.getState().workspace;
+  if(!workspace)return;
+  try {
+    const recentFiles=await api<State['recentFiles']>('/api/workspace/recent-files','POST',{action:'open',path:id},workspace);
+    if(useStore.getState().workspace?.wsId===workspace.wsId)useStore.setState({recentFiles});
+  } catch(e){useStore.getState().setError(String(e))}
+}
+export async function clearSharedTabs() {
+  if(!await useStore.getState().saveAll())throw new Error('Save unsaved notes before clearing tabs');
+  clearTimeout(persistenceTimer);
+  await useStore.getState().persist();
+  tabsDirty=false;
+  await api('/api/workspace/reset','POST',{action:'tabs'});
+  useStore.setState(s=>({tabs:s.tabs.filter(t=>t.viewKind==='workspace-settings'),activeTabId:s.tabs.find(t=>t.viewKind==='workspace-settings')?.id??null}));
+}

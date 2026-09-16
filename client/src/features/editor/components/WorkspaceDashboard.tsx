@@ -1,154 +1,168 @@
-import { useMemo } from "react";
-import {
-  Clock,
-  FileText,
-  FolderOpen,
-  LayoutDashboard,
-  Moon,
-  Sun,
-  Trash2,
-} from "lucide-react";
-import { useStore, schedulePersistence } from "../../../store";
-import { Button } from "../../../shared/components";
+import { FileText, FolderOpen, Plus } from "lucide-react";
+import { useMemo, type ReactElement } from "react";
+import { useStore } from "../../../store";
+import { getDisplayName } from "../utils/displayName";
 
-/**
- * Workspace dashboard — the web version's counterpart to the desktop
- * WorkspaceSettingsView. The web app has no SQLite database and no local
- * `.claude` settings, so this surface only manages workspace-level metadata
- * that the browser session already owns: the current folder, appearance, the
- * open tabs and the recent-files list.
- */
-export function WorkspaceDashboard() {
-  const workspace = useStore((s) => s.workspace);
-  const theme = useStore((s) => s.theme);
-  const recentFiles = useStore((s) => s.recentFiles);
-  const tabs = useStore((s) => s.tabs);
-  const openFile = useStore((s) => s.openFile);
-  const clearRecentFiles = useStore((s) => s.clearRecentFiles);
+interface WorkspaceDashboardProps {
+  onNewNote: () => void;
+  onOpenNote: () => void;
+}
 
-  const openWorkspace = () => void useStore.getState().openWorkspace();
+function formatLastOpened(timestamp: number): string {
+  const elapsed = Date.now() - timestamp;
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
 
-  const fileTabCount = useMemo(
-    () => tabs.filter((t) => !t.id.startsWith("maek:virtual:")).length,
-    [tabs],
-  );
+  if (elapsed < minute) return "Just now";
+  if (elapsed < hour) return `${Math.floor(elapsed / minute)}m ago`;
+  if (elapsed < day) return `${Math.floor(elapsed / hour)}h ago`;
+  if (elapsed < 7 * day) return `${Math.floor(elapsed / day)}d ago`;
 
-  const recent = useMemo(
-    () => [...recentFiles].sort((a, b) => b.lastOpened - a.lastOpened).slice(0, 12),
-    [recentFiles],
-  );
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year:
+      new Date(timestamp).getFullYear() === new Date().getFullYear()
+        ? undefined
+        : "numeric",
+  }).format(timestamp);
+}
 
-  const toggleTheme = () => {
-    useStore.setState({ theme: theme === "dark" ? "light" : "dark" });
-    document.documentElement.dataset.theme = theme === "dark" ? "light" : "dark";
-    schedulePersistence();
-  };
+export function WorkspaceDashboard({
+  onNewNote,
+  onOpenNote,
+}: WorkspaceDashboardProps): ReactElement {
+  const workspace = useStore((state) => state.workspace);
+  const nodes = useStore((state) => state.nodes);
+  const recentFiles = useStore((state) => state.recentFiles);
+  const openFile = useStore((state) => state.openFile);
+
+  const recentNotes = useMemo(() => {
+    const notesById = new Map(
+      nodes
+        .filter((node) => !node.isDir && /\.md$/i.test(node.name))
+        .map((node) => [node.id, node]),
+    );
+
+    return recentFiles
+      .map((recent) => ({ recent, node: notesById.get(recent.path) }))
+      .filter(
+        (item): item is typeof item & { node: NonNullable<typeof item.node> } =>
+          Boolean(item.node),
+      )
+      .sort((a, b) => b.recent.lastOpened - a.recent.lastOpened)
+      .slice(0, 8);
+  }, [nodes, recentFiles]);
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto px-10 py-8">
-      <div className="mx-auto w-full max-w-3xl flex flex-col gap-6">
-        <header className="flex items-center gap-3">
-          <LayoutDashboard className="w-7 h-7 text-maek-red" strokeWidth={1.5} />
-          <div>
-            <h1 className="text-xl font-semibold text-neutral-ink">
-              Workspace dashboard
-            </h1>
-            <p className="text-sm text-muted-text break-all">
-              {workspace?.root ?? "No workspace open"}
-            </p>
-          </div>
+    <article className="h-full overflow-auto bg-surface">
+      <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-8 pb-16 pt-[clamp(5rem,14vh,9rem)]">
+        <header>
+          <p className="text-sm text-muted-text">{workspace?.name}</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-neutral-ink">
+            Start writing
+          </h1>
         </header>
 
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <StatCard
-            icon={<FileText size={16} />}
-            label="Open tabs"
-            value={fileTabCount}
-          />
-          <StatCard
-            icon={<Clock size={16} />}
-            label="Recent files"
-            value={recentFiles.length}
-          />
-          <StatCard
-            icon={theme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
-            label="Appearance"
-            value={theme === "dark" ? "Dark" : "Light"}
-          />
-        </section>
+        <div className="mt-8 grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={onNewNote}
+            className="group flex min-h-24 items-center gap-4 rounded-xl border border-border-subtle bg-surface px-5 text-left transition-colors hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-maek-red/40"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-maek-red text-white">
+              <Plus size={20} strokeWidth={1.8} />
+            </span>
+            <span>
+              <span className="block text-sm font-medium text-neutral-ink">
+                New note
+              </span>
+              <span className="mt-1 block text-xs text-muted-text">
+                Create a blank Markdown note
+              </span>
+            </span>
+          </button>
 
-        <section className="glass-panel rounded-xl border border-default p-5">
-          <h2 className="text-sm font-semibold text-neutral-ink mb-3">
-            Workspace
-          </h2>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button variant="outline" onClick={openWorkspace}>
-              <FolderOpen size={16} />
-              Open another folder
-            </Button>
-            <Button variant="ghost" onClick={toggleTheme}>
-              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-              {theme === "dark" ? "Switch to light" : "Switch to dark"}
-            </Button>
-          </div>
-        </section>
+          <button
+            type="button"
+            onClick={onOpenNote}
+            className="group flex min-h-24 items-center gap-4 rounded-xl border border-border-subtle bg-surface px-5 text-left transition-colors hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-maek-red/40"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-overlay text-neutral-ink">
+              <FolderOpen size={19} strokeWidth={1.7} />
+            </span>
+            <span>
+              <span className="block text-sm font-medium text-neutral-ink">
+                Open note
+              </span>
+              <span className="mt-1 block text-xs text-muted-text">
+                Find a note in this workspace
+              </span>
+            </span>
+          </button>
+        </div>
 
-        <section className="glass-panel rounded-xl border border-default p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-neutral-ink">
-              Recent files
+        <section className="mt-12" aria-labelledby="recent-notes-heading">
+          <div className="flex items-center justify-between border-b border-border-subtle pb-3">
+            <h2
+              id="recent-notes-heading"
+              className="text-xs font-medium uppercase tracking-[0.08em] text-muted-text"
+            >
+              Recent notes
             </h2>
-            {recentFiles.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={clearRecentFiles}>
-                <Trash2 size={14} />
-                Clear
-              </Button>
+            {recentNotes.length > 0 && (
+              <span className="text-xs text-muted-text">
+                {recentNotes.length} {recentNotes.length === 1 ? "note" : "notes"}
+              </span>
             )}
           </div>
-          {recent.length === 0 ? (
-            <p className="text-sm text-muted-text">No recent files yet.</p>
+
+          {recentNotes.length === 0 ? (
+            <div className="flex flex-col items-center py-12 text-center">
+              <FileText size={24} strokeWidth={1.3} className="text-muted-text" />
+              <p className="mt-3 text-sm text-muted-text">No recent notes yet</p>
+              <p className="mt-1 text-xs text-muted-text">
+                Notes you open will appear here.
+              </p>
+            </div>
           ) : (
-            <ul className="flex flex-col gap-1">
-              {recent.map((f) => (
-                <li key={f.path}>
+            <div className="divide-y divide-border-subtle">
+              {recentNotes.map(({ recent, node }) => {
+                const parentPath = node.parent || workspace?.name || "";
+                return (
                   <button
-                    className="w-full text-left px-2 py-1.5 rounded-md hover:bg-surface-overlay flex items-center gap-2 text-sm text-neutral-ink"
-                    onClick={() => void openFile(f.path)}
+                    key={node.id}
+                    type="button"
+                    onClick={() => void openFile(node.id)}
+                    className="group flex w-full items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-maek-red/40"
                   >
                     <FileText
-                      size={14}
-                      className="shrink-0 text-muted-text"
+                      size={17}
+                      strokeWidth={1.6}
+                      className="shrink-0 text-muted-text transition-colors group-hover:text-maek-red"
                     />
-                    <span className="truncate">
-                      {f.path.replace(/\.md$/i, "")}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-neutral-ink">
+                        {getDisplayName(node.name)}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-muted-text">
+                        {parentPath}
+                      </span>
                     </span>
+                    <time
+                      dateTime={new Date(recent.lastOpened).toISOString()}
+                      className="shrink-0 text-xs text-muted-text"
+                    >
+                      {formatLastOpened(recent.lastOpened)}
+                    </time>
                   </button>
-                </li>
-              ))}
-            </ul>
+                );
+              })}
+            </div>
           )}
         </section>
       </div>
-    </div>
-  );
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-}) {
-  return (
-    <div className="glass-panel rounded-xl border border-default p-4">
-      <div className="flex items-center gap-2 text-muted-text mb-1.5">
-        {icon}
-        <span className="text-xs uppercase tracking-wide">{label}</span>
-      </div>
-      <div className="text-2xl font-semibold text-neutral-ink">{value}</div>
-    </div>
+    </article>
   );
 }

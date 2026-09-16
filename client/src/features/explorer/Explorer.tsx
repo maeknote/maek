@@ -3,14 +3,14 @@ import { Tree, type TreeApi, type NodeRendererProps } from "react-arborist";
 import {
   ChevronRight,
   File,
+  FileCode,
   FileText,
   FolderPlus,
   Plus,
   Power,
   RefreshCw,
   Search,
-  House,
-  LayoutGrid,
+  Table,
   Settings,
   Table2,
   X,
@@ -36,12 +36,11 @@ import { isTabDirty } from "../editor/utils/frontmatter";
 
 interface Props {
   onSearch: () => void;
-  onHome: () => void;
   onSettings: () => void;
   onCollapse: () => void;
   onQuit: () => void;
 }
-export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: Props) {
+export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const {
     nodes,
     workspace,
@@ -53,6 +52,8 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
   } = useStore();
   const container = useRef<HTMLDivElement>(null),
     tree = useRef<TreeApi<FileNode>>(null);
+  const dragPreviewRef = useRef<HTMLDivElement>(null);
+  const dragPreviewTextRef = useRef<HTMLSpanElement>(null);
   const dragTab = useRef<{
     id: string;
     pointerId: number;
@@ -92,12 +93,26 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
           return;
         drag.dragging = true;
         suppressTabClick.current = true;
+        
+        const tab = useStore.getState().tabs.find((t) => t.id === drag.id);
+        if (tab && dragPreviewTextRef.current) {
+          dragPreviewTextRef.current.textContent = tab.name;
+        }
       }
+      
+      if (dragPreviewRef.current) {
+        dragPreviewRef.current.style.transform = `translate(${event.clientX + 10}px, ${event.clientY + 10}px)`;
+        dragPreviewRef.current.style.display = "flex";
+      }
+
       event.preventDefault();
       const row = document
         .elementFromPoint(event.clientX, event.clientY)
         ?.closest<HTMLElement>("[data-tab-id]");
-      if (!row) return;
+      if (!row) {
+        // If moved outside tabs area, we can still show preview, but maybe clear drop index
+        return;
+      }
       const currentTabs = useStore.getState().tabs;
       const index = currentTabs.findIndex((tab) => tab.id === row.dataset.tabId);
       if (index < 0) return;
@@ -108,6 +123,9 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
       const drag = dragTab.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
       dragTab.current = null;
+      if (dragPreviewRef.current) {
+        dragPreviewRef.current.style.display = "none";
+      }
       if (drag.dragging && dropIndexRef.current !== null) {
         const from = useStore.getState().tabs.findIndex((tab) => tab.id === drag.id);
         useStore.getState().reorderTabs(from, dropIndexRef.current);
@@ -145,10 +163,14 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
   const [clipboard, setClipboard] = useState<string[]>([]);
   const [selection, setSelection] = useState<FileNode[]>([]);
   const [pendingEdit, setPendingEdit] = useState<string | null>(null);
+  const [browseFolders,setBrowseFolders]=useState<string[]>([]);
   const [databases, setDatabases] = useState<DatabaseMeta[]>([]);
   useEffect(() => {
     if (!workspace) { setDatabases([]); return; }
-    void api<DatabaseMeta[]>("/api/databases").then(setDatabases).catch(() => setDatabases([]));
+    let cancelled=false;
+    const refresh=()=>void api<DatabaseMeta[]>('/api/databases').then(d=>{if(!cancelled)setDatabases(d)}).catch(()=>{});
+    refresh();window.addEventListener('maek:workspace-change',refresh);
+    return()=>{cancelled=true;window.removeEventListener('maek:workspace-change',refresh)};
   }, [workspace?.wsId]);
   const data = useMemo(() => {
     const map = new Map(
@@ -290,7 +312,7 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
             node.handleClick(e);
             if (node.data.isDir) {
               const database = databases.find((d) => d.folderPath === node.data.id);
-              if (database) useStore.getState().openDatabase(database.folderPath, database.name);
+              if (database && !browseFolders.includes(node.data.id)) useStore.getState().openDatabase(database.folderPath, database.name);
               else node.toggle();
             }
           }}
@@ -344,7 +366,7 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
           </span>
           {node.isInternal ? (
             databases.some((database) => database.folderPath === node.data.id) ? (
-              <LayoutGrid className="w-4 h-4 mr-2 shrink-0 text-maek-red" />
+              <Table className="w-4 h-4 mr-2 shrink-0 text-maek-red" />
             ) : appearances[node.data.id] ? (
               <span className="mr-2 flex items-center justify-center">
                 {(() => {
@@ -359,6 +381,8 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
             ) : null
           ) : /\.csv$/i.test(node.data.name) ? (
             <Table2 className="w-4 h-4 mr-2 shrink-0" />
+          ) : /\.html$/i.test(node.data.name) ? (
+            <FileCode className="w-4 h-4 mr-2 shrink-0" />
           ) : !/\.md$/i.test(node.data.name) ? (
             <File className="w-4 h-4 mr-2 shrink-0" />
           ) : null}
@@ -378,15 +402,13 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
             />
           ) : (
             <span className={cn("truncate", !node.isInternal && !appearances[node.data.id] && !/\.md$/i.test(node.data.name) ? "" : "ml-1")}>
-              {node.isInternal
-                ? node.data.name
-                : node.data.name.replace(/\.(md|csv)$/i, "")}
+              {node.data.name}
             </span>
           )}
         </div>
       );
     },
-    [appearances, databases],
+    [appearances, databases, browseFolders],
   );
   return (
     <div
@@ -431,9 +453,6 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
             isLoading={restoring}
           />
         </div>
-        <button className="sidebar-toggle-button" aria-label="Home" onClick={onHome}>
-          <House size={15} />
-        </button>
         <button
           className="sidebar-toggle-button"
           aria-label="Close sidebar"
@@ -479,7 +498,7 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
             <div
               className="overflow-y-auto px-1 pb-1"
             >
-              {tabs.map((t, index) => (
+              {tabs.map((t, index) => t.isPopup ? null : (
                 <div key={t.id}>
                   <div
                     aria-hidden
@@ -528,9 +547,9 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
                         : "text-neutral-ink hover:bg-surface-overlay",
                     )}
                   >
-                    {t.viewKind === "spreadsheet" ? <Table2 className="w-4 h-4 shrink-0" /> : <FileText className="w-4 h-4 shrink-0" />}
+                    {t.viewKind === "database" || t.viewKind === "kanban" ? <Table className="w-4 h-4 shrink-0" /> : t.viewKind === "spreadsheet" ? <Table2 className="w-4 h-4 shrink-0" /> : /\.html$/i.test(t.name) ? <FileCode className="w-4 h-4 shrink-0" /> : <FileText className="w-4 h-4 shrink-0" />}
                     <span className="truncate flex-1 min-w-0">
-                      {t.name.replace(/\.(md|csv)$/i, "")}
+                      {t.name}
                     </span>
                     {tabs.some(
                       (other) => other.id !== t.id && other.name === t.name,
@@ -789,6 +808,11 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
             onClick={() => void run(() => createDatabase("timeline"))}
           />
           <MenuSeparator />
+          {menu.node?.isDir && (databases.some(d=>d.folderPath===menu.node!.id) ? <>
+            <MenuItem label="Open database" onClick={()=>{const db=databases.find(d=>d.folderPath===menu.node!.id)!;setBrowseFolders(s=>s.filter(p=>p!==db.folderPath));useStore.getState().openDatabase(db.folderPath,db.name);setMenu(null)}}/>
+            <MenuItem label="Browse as folder" onClick={()=>{const id=menu.node!.id;setBrowseFolders(s=>[...s,id]);tree.current?.get(id)?.open();setMenu(null)}}/>
+            <MenuItem label="Remove database" onClick={()=>void run(async()=>{const db=databases.find(d=>d.folderPath===menu.node!.id)!;await api('/api/databases/command','POST',{databaseId:db.id,action:'unregister'});setDatabases(await api<DatabaseMeta[]>('/api/databases'));for(const tab of useStore.getState().tabs.filter(t=>t.databaseFolderPath===db.folderPath))await useStore.getState().closeTab(tab.id)})}/>
+          </> : <MenuItem label="Turn into database" onClick={()=>void run(async()=>{const db=await api<DatabaseMeta>('/api/databases/convert','POST',{folderPath:menu.node!.id});setDatabases(await api<DatabaseMeta[]>('/api/databases'));useStore.getState().openDatabase(db.folderPath,db.name)})}/>)}
           {menu.node && (
             <>
               <MenuItem
@@ -899,6 +923,13 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
           {!openNotesMenu.id.startsWith("maek:virtual:") && (
             <>
               <MenuItem
+                label="Open to the Side"
+                onClick={() => {
+                  void useStore.getState().openFileToSide(openNotesMenu.id);
+                  setOpenNotesMenu(null);
+                }}
+              />
+              <MenuItem
                 label="Show in file tree"
                 onClick={() => {
                   revealInFolderTree(openNotesMenu.id);
@@ -934,6 +965,16 @@ export function Explorer({ onSearch, onHome, onSettings, onCollapse, onQuit }: P
           />
         </FloatingMenu>
       )}
+
+      {/* Drag Preview */}
+      <div
+        ref={dragPreviewRef}
+        className="fixed top-0 left-0 pointer-events-none z-50 flex items-center gap-1.5 h-7 px-2 rounded-md bg-surface-overlay text-neutral-ink text-sm shadow border border-border-subtle opacity-60"
+        style={{ display: "none" }}
+      >
+        <FileText className="w-4 h-4 shrink-0" />
+        <span ref={dragPreviewTextRef} className="truncate flex-1 min-w-0" />
+      </div>
 
     </div>
   );

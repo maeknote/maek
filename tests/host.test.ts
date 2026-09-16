@@ -353,7 +353,7 @@ describe("real workspace host", () => {
       }),
     );
     expect((await request("GET", "/api/workspace/tabs")).json()).toEqual({
-      tabs: ["note.md", "preview.pdf"],
+      tabs: ["note.md", "maek:virtual:database:sheet", "preview.pdf"],
       activeTabId: "note.md",
     });
   });
@@ -378,7 +378,7 @@ describe("real workspace host", () => {
     expect(
       (
         await request("PUT", "/api/workspace/tabs", {
-          tabs: ["b.md", "a.md"],
+          tabs: ["maek:virtual:database:sheet", "b.md", "a.md"],
           activeTabId: "b.md",
         })
       ).statusCode,
@@ -391,13 +391,13 @@ describe("real workspace host", () => {
     expect(stored.editorSplit).toEqual(original.editorSplit);
     expect(stored.windowBounds).toEqual(original.windowBounds);
     expect(stored.tabs).toEqual([
-      { id: path.join(root, "sheet"), viewKind: "database", extra: "keep" },
+      expect.objectContaining({ id: path.join(root, "sheet"), viewKind: "database", extra: "keep" }),
       expect.objectContaining({ id: path.join(root, "b.md") }),
       expect.objectContaining({ id: path.join(root, "a.md") }),
     ]);
     // The desktop-only tab stays hidden from the web view, in the new order.
     expect((await request("GET", "/api/workspace/tabs")).json()).toEqual({
-      tabs: ["b.md", "a.md"],
+      tabs: ["maek:virtual:database:sheet", "b.md", "a.md"],
       activeTabId: "b.md",
     });
   });
@@ -621,7 +621,8 @@ describe("real workspace host", () => {
     expect(created.statusCode).toBe(200);
     const meta = created.json();
     expect(meta.folderPath).toBe("Project Board");
-    expect(meta.views[0].type).toBe("kanban");
+    expect(meta.views.find((view: {id:string})=>view.id===meta.activeViewId).type).toBe("kanban");
+    expect(meta.views).toHaveLength(4);
     expect(meta.schema.map((column: { name: string }) => column.name)).toContain("Status");
     expect(JSON.parse(await readFile(path.join(root, "Project Board/.maek-database.json"), "utf8"))).toMatchObject({ version: 1, type: "database", id: meta.id });
 
@@ -640,11 +641,97 @@ describe("real workspace host", () => {
     expect(content).toContain("# Body");
 
     const manifestPath = path.join(root, "Project Board/.maek-database.json");
+    const renamedManifest = {
+      ...meta,
+      schema: meta.schema.map((column: { name: string }) =>
+        column.name === "Status" ? { ...column, name: "Stage" } : column,
+      ),
+    };
+    expect((await request("PUT", "/api/databases/manifest", {
+      folderPath: "Project Board",
+      manifest: renamedManifest,
+    })).statusCode).toBe(200);
+    const renamedContent = await readFile(path.join(root, "Project Board/task.md"), "utf8");
+    expect(renamedContent).toContain("Stage: Done");
+    expect(renamedContent).not.toContain("Status: Done");
+    expect(renamedContent).toContain("# Body");
+
     const beforeInvalidUpdate = await readFile(manifestPath, "utf8");
     expect((await request("PUT", "/api/databases/manifest", {
       folderPath: "Project Board",
       manifest: { ...meta, activeViewId: "missing-view" },
     })).statusCode).toBe(400);
     expect(await readFile(manifestPath, "utf8")).toBe(beforeInvalidUpdate);
+  });
+});
+
+describe('desktop database and workspace parity',()=>{
+  it('applies a kanban drop, removes No Value fields, and preserves hidden rows',async()=>{
+    const db=(await request('POST','/api/databases',{parent:'',name:'Board',viewType:'kanban'})).json();
+    const command=(data:Record<string,unknown>)=>request('POST','/api/databases/command',{databaseId:db.id,...data});
+    const a=(await command({action:'add-row',values:{Status:'To Do'}})).json().row;
+    const b=(await command({action:'add-row',values:{Status:'Done'}})).json().row;
+    const moved=await command({action:'kanban-drop',rowIds:[a.id],rowMove:{rowId:a.id,groupColumnName:'Status',newValue:null}});
+    expect(moved.statusCode).toBe(200);
+    expect(moved.json().rows.map((r:{id:string})=>r.id)).toEqual([a.id,b.id]);
+    expect(moved.json().rows[0].yamlData).not.toHaveProperty('Status');
+    expect(await readFile(path.join(root,a.path),'utf8')).not.toContain('Status');
+    const inserted=(await command({action:'insert-row',referenceRowId:a.id,position:'above'})).json();
+    expect(inserted.rows.map((r:{id:string})=>r.id)).toEqual([inserted.row.id,a.id,b.id]);
+    const renamed=await command({action:'rename-row',rowId:a.id,name:'Renamed'});
+    expect(renamed.json().row).toMatchObject({id:a.id,fileName:'Renamed.md'});
+  });
+  it('rejects stale view updates and preserves independent named-view configurations',async()=>{
+    const db=(await request('POST','/api/databases',{parent:'',name:'Views',viewType:'table'})).json();
+    const command=(data:Record<string,unknown>)=>request('POST','/api/databases/command',{databaseId:db.id,expectedUpdatedAt:db.updatedAt,...data});
+    const changed=await command({action:'update-view',viewId:db.views[0].id,name:'Work'});
+    expect(changed.statusCode).toBe(200);
+    expect((await command({action:'update-view',viewId:db.views[1].id,name:'Stale'})).statusCode).toBe(409);
+    expect(changed.json().database.views[1]).toEqual(db.views[1]);
+    const config=JSON.parse(await readFile(path.join(root,'Views/.maek-database.json'),'utf8'));
+    expect(config.views[0].name).toBe('Work');
+  });
+  it('converts and unregisters a folder without deleting notes and keeps ids through folder rename',async()=>{
+    await mkdir(path.join(root,'Notes'));await writeFile(path.join(root,'Notes/existing.md'),'Keep this body');
+    const db=(await request('POST','/api/databases/convert',{folderPath:'Notes'})).json();
+    expect(db.views).toHaveLength(4);
+    await request('PATCH','/api/files/path',{source:'Notes',dest:'Renamed'});
+    const databases=(await request('GET','/api/databases')).json();
+    expect(databases).toHaveLength(1);expect(databases[0]).toMatchObject({id:db.id,folderPath:'Renamed',name:'Renamed'});
+    expect((await request('POST','/api/databases/command',{databaseId:db.id,action:'unregister'})).statusCode).toBe(200);
+    expect(await readFile(path.join(root,'Renamed/existing.md'),'utf8')).toBe('Keep this body');
+    expect((await request('GET','/api/databases')).json()).toEqual([]);
+  });
+  it('shares recents and preserves open counts without stale browser snapshots',async()=>{
+    await writeFile(path.join(root,'one.md'),'One');
+    await request('POST','/api/workspace/recent-files',{action:'open',path:'one.md'});
+    await request('POST','/api/workspace/recent-files',{action:'open',path:'one.md'});
+    const shared=await app.inject({method:'GET',url:'/api/workspace/recent-files',headers:{...headers,'x-client-session-id':'other'}});
+    expect(shared.json()).toEqual([expect.objectContaining({path:'one.md',openCount:2})]);
+    const stored=JSON.parse(await readFile(path.join(root,'.maek/recentFiles.json'),'utf8'));
+    expect(stored.entries[path.join(root,'one.md')].openCount).toBe(2);
+    await request('POST','/api/workspace/recent-files',{action:'remove',path:'one.md'});
+    expect((await request('GET','/api/workspace/recent-files')).json()).toEqual([]);
+  });
+  it('migrates legacy recents once and does not resurrect cleared records',async()=>{
+    await mkdir(path.join(root,'.maek/sessions/web/old'),{recursive:true});
+    await writeFile(path.join(root,'.maek/sessions/web/old/recentFiles.json'),JSON.stringify({version:1,entries:{[path.join(root,'note.md')]:{lastOpenedAt:42,openCount:8}}}));
+    expect((await request('GET','/api/workspace/recent-files')).json()[0].openCount).toBe(8);
+    await request('POST','/api/workspace/recent-files',{action:'clear'});
+    expect((await request('GET','/api/workspace/recent-files')).json()).toEqual([]);
+  });
+  it('dashboard edits preserve unknown metadata, reject conflicts, and reset shared tabs',async()=>{
+    const configPath=path.join(root,'.maek/config.json');
+    await writeFile(configPath,JSON.stringify({version:1,name:'Original',createdAt:1,custom:{keep:true}}));
+    const state=(await request('GET','/api/workspace/dashboard')).json();
+    const saved=await request('PATCH','/api/workspace/config',{description:'Shared description',rawConfig:state.rawConfig});
+    expect(saved.statusCode).toBe(200);expect(saved.json().config.custom).toEqual({keep:true});
+    expect((await request('PATCH','/api/workspace/config',{description:'Stale',rawConfig:state.rawConfig})).statusCode).toBe(409);
+    await request('PUT','/api/workspace/tabs',{tabs:['maek:virtual:database:Projects','maek:virtual:dashboard'],activeTabId:'maek:virtual:database:Projects'});
+    const tabs=JSON.parse(await readFile(path.join(root,'.maek/tabs.json'),'utf8'));
+    expect(tabs.tabs.map((t:{viewKind:string})=>t.viewKind)).toEqual(['database','workspace-settings']);
+    expect((await request('GET','/api/workspace/tabs')).json().tabs).toEqual(['maek:virtual:database:Projects','maek:virtual:dashboard']);
+    await request('POST','/api/workspace/reset',{action:'tabs'});
+    expect(JSON.parse(await readFile(path.join(root,'.maek/tabs.json'),'utf8')).tabs).toEqual([]);
   });
 });

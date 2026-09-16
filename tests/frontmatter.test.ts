@@ -4,6 +4,7 @@ import {
   detectLineEnding,
   parseYamlData,
   patchYamlField,
+  renameYamlField,
   recomposeSplitFile,
   replaceScalarField,
   splitFrontmatterFile
@@ -97,6 +98,11 @@ describe('patchYamlField', () => {
   })
   it('rejects invalid YAML instead of replacing it', () => {
     expect(() => patchYamlField('key: [unclosed', 'status', 'Done')).toThrow()
+  })
+  it('renames a key without moving its comment or value', () => {
+    expect(renameYamlField('title: Task # keep\nStatus: To Do # lane\nowner: me', 'Status', 'Stage')).toBe(
+      'title: Task # keep\nStage: To Do # lane\nowner: me',
+    )
   })
 })
 

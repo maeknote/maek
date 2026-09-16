@@ -8,7 +8,6 @@ export function getDisplayName(fileName: string): string {
   return fileName;
 }
 
-/** Convert edited display name back to actual file name (based on original) */
 export function toFileName(
   displayName: string,
   originalFileName: string,

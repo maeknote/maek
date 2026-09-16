@@ -141,6 +141,24 @@ export function patchYamlField(frontmatterRaw: string | null, key: string, value
   return document.toString({ lineWidth: 0 }).replace(/\n$/, '')
 }
 
+/** Rename one top-level key in place so its value, comments, and position survive. */
+export function renameYamlField(frontmatterRaw: string | null, from: string, to: string): string | null {
+  if (frontmatterRaw === null || from === to) return frontmatterRaw
+  const document = parseDocument(frontmatterRaw, { uniqueKeys: true, strict: true })
+  if (document.errors.length) throw new Error(document.errors.map((error) => error.message).join('; '))
+  const contents = document.contents as { items?: Array<{ key?: { value?: unknown } | unknown }> } | null
+  const pair = contents?.items?.find((item) => {
+    const key = item.key
+    return typeof key === 'object' && key !== null && 'value' in key
+      ? String((key as { value?: unknown }).value) === from
+      : String(key) === from
+  })
+  if (!pair) return frontmatterRaw
+  if (document.has(to)) throw new Error(`Cannot rename ${from}: ${to} already exists`)
+  pair.key = document.createNode(to)
+  return document.toString({ lineWidth: 0 }).replace(/\n$/, '')
+}
+
 /**
  * Replace exactly one key's line(s) in raw YAML text, leaving every other line
  * byte-identical (4A, goal 2). Full YAML re-serialization would rewrite

@@ -121,12 +121,12 @@ test("opens an app database and switches across all four web views", async ({ pa
   await page.locator('[data-path="Tasks"]').click();
   await expect(page.getByText("Tasks", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Status" })).toBeVisible();
-  await page.getByRole("button", { name: "Board · Board" }).click();
+  await page.getByRole("button", { name: "Board", exact: true }).click();
   await expect(page.getByText("To Do", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Calendar · Calendar" }).click();
+  await page.getByRole("button", { name: "Calendar", exact: true }).click();
   await expect(page.getByText("September 2026")).toBeVisible();
-  await page.getByRole("button", { name: "Timeline · Timeline" }).click();
-  await expect(page.locator(".db-timeline").getByText("Timeline", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Timeline", exact: true }).click();
+  await expect(page.getByText("1 scheduled", {exact:true})).toBeVisible();
 });
 
 test("Show in file tree reveals a deeply nested note with mounted and unmounted collapsed trees", async ({ page }) => {
@@ -134,7 +134,7 @@ test("Show in file tree reveals a deeply nested note with mounted and unmounted 
   for (let i = 0; i < 70; i++) writeFileSync(path.join(root, "Folder", `aaa-${i}.md`), "# Filler");
   writeFileSync(path.join(root, "Folder", "Deep", "Nested", "target.md"), "# Target");
   await open(page);
-  await page.getByRole("button", { name: "Search files", exact: true }).click();
+  await page.keyboard.press("ControlOrMeta+p");
   await page.getByRole("textbox", { name: "Search files", exact: true }).fill("target");
   await page.getByRole("option").filter({ hasText: "target" }).click();
   const row = page.locator('[data-tab-id="Folder/Deep/Nested/target.md"]');
@@ -145,7 +145,7 @@ test("Show in file tree reveals a deeply nested note with mounted and unmounted 
   await expect(target.locator("xpath=ancestor::*[@role='treeitem']")).toHaveAttribute("aria-selected", "true");
   await page.locator('[data-path="Folder"]').scrollIntoViewIfNeeded();
   await page.locator('[data-path="Folder"]').click();
-  await page.getByText("Folders", { exact: true }).click();
+  await page.getByText("Files", { exact: true }).click();
   await row.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Show in file tree", exact: true }).click();
   await expect(target).toBeInViewport();
@@ -479,7 +479,7 @@ test("opens a new tree note while tabs restored from .maek remain open", async (
   await open(page);
   await editNote(page);
   await expect
-    .poll(() => rootTabsDocument()?.tabs.length ?? 0)
+    .poll(() => rootTabsDocument()?.tabs.filter(t=>path.basename(t.id)!==".maek").length ?? 0)
     .toBe(1);
   await page.reload();
   await expect(
@@ -488,14 +488,14 @@ test("opens a new tree note while tabs restored from .maek remain open", async (
   await page.locator('[data-path="second.md"]').click();
   await expect(page.locator('[data-tab-id="second.md"]')).toBeVisible();
   await expect(page.locator(".tiptap")).toContainText("Second note");
-  await expect(page.locator('[role="tab"]')).toHaveCount(2);
+  await expect(page.locator('[role="tab"]')).toHaveCount(3); // Includes the shared dashboard.
 });
 
 /** Basenames of web-managed tabs in root .maek/tabs.json order. */
 function rootTabOrder(): string[] {
   const doc = rootTabsDocument();
   if (!doc) return [];
-  return doc.tabs.map((t) => path.basename(t.id));
+  return doc.tabs.filter(t=>path.basename(t.id)!==".maek").map((t) => path.basename(t.id));
 }
 /**
  * Absolute id in the form the server stores it — the workspace root is
@@ -566,7 +566,7 @@ test("reorders open notes in the sidebar and persists the root document order", 
   // The order survives a reload, restored from the shared document.
   await page.reload();
   await expect(page.locator('[data-tab-id="one.md"]')).toBeVisible();
-  const ids = await page.locator("[data-tab-id]").evaluateAll((nodes) =>
+  const ids = await page.locator('[data-tab-id]:not([data-tab-id="maek:virtual:dashboard"])').evaluateAll((nodes) =>
     nodes.map((n) => n.getAttribute("data-tab-id")),
   );
   expect(ids).toEqual(["two.md", "three.md", "one.md"]);
@@ -598,7 +598,7 @@ test("live-updates the open-note list when the root document changes externally"
   await expect(page.locator('[data-tab-id="four.md"]')).toBeVisible();
   await expect
     .poll(async () =>
-      page.locator("[data-tab-id]").evaluateAll((nodes) =>
+      page.locator('[data-tab-id]:not([data-tab-id="maek:virtual:dashboard"])').evaluateAll((nodes) =>
         nodes.map((n) => n.getAttribute("data-tab-id")),
       ),
     )
@@ -633,7 +633,7 @@ test("selects a neighbour only when the active note is removed externally", asyn
   await expect(page.locator('[data-tab-id="two.md"]')).toHaveCount(0);
   await expect
     .poll(async () =>
-      page.locator("[data-tab-id]").evaluateAll((nodes) =>
+      page.locator('[data-tab-id]:not([data-tab-id="maek:virtual:dashboard"])').evaluateAll((nodes) =>
         nodes.map((n) => n.getAttribute("data-tab-id")),
       ),
     )
@@ -648,7 +648,7 @@ test("selects a neighbour only when the active note is removed externally", asyn
 test("keeps a desktop-only tab in the document but hidden after a web reorder", async ({
   page,
 }) => {
-  // Seed the shared document with a desktop-only database tab plus two notes.
+  // Meeting tabs remain desktop-only; database tabs are now shared.
   writeFileSync(path.join(root, "one.md"), "# One\n");
   writeFileSync(path.join(root, "two.md"), "# Two\n");
   mkdirSync(path.join(root, ".maek"), { recursive: true });
@@ -657,7 +657,7 @@ test("keeps a desktop-only tab in the document but hidden after a web reorder", 
     JSON.stringify({
       version: 4,
       tabs: [
-        { id: noteId("sheet"), viewKind: "database", keep: "yes" },
+        { id: noteId("sheet"), viewKind: "meeting", keep: "yes" },
         { id: noteId("one.md"), viewKind: "editor" },
         { id: noteId("two.md"), viewKind: "editor" },
       ],
@@ -665,7 +665,7 @@ test("keeps a desktop-only tab in the document but hidden after a web reorder", 
     }),
   );
   await open(page);
-  // The database tab never appears in the web sidebar.
+  // The meeting tab never appears in the web sidebar.
   await expect(page.locator('[data-tab-id="one.md"]')).toBeVisible();
   await expect(page.locator('[data-tab-id="two.md"]')).toBeVisible();
   await expect(page.locator('[data-tab-id="sheet"]')).toHaveCount(0);
@@ -682,7 +682,7 @@ test("keeps a desktop-only tab in the document but hidden after a web reorder", 
         ? doc.tabs.find((t) => t.id === noteId("sheet"))
         : undefined;
     })
-    .toMatchObject({ viewKind: "database", keep: "yes" });
+    .toMatchObject({ viewKind: "meeting", keep: "yes" });
 });
 
 test("saves an unsaved note before honouring an external close", async ({

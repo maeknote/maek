@@ -24,6 +24,7 @@ export class WorkspaceWatchHub {
   private revision = 0;
   private history: WorkspaceEvent[] = [];
   private ready = false;
+  private metadataReady: Promise<void> = Promise.resolve();
   private closing: Promise<void> | undefined;
 
   constructor(
@@ -88,7 +89,8 @@ export class WorkspaceWatchHub {
         (stats !== undefined && !isWorkspaceEntry(stats)),
     });
     this.watcher = watcher;
-    watcher.on("ready", () => {
+    watcher.on("ready", async () => {
+      await this.metadataReady;
       this.ready = true;
       this.emit("ready", {});
       this.emit("rescan", {});
@@ -171,27 +173,51 @@ export class WorkspaceWatchHub {
    * `tabs-session-changed` event.
    */
   private startTabsWatcher() {
-    const tabsPath = path.join(this.workspace.root, ".maek", "tabs.json");
-    const tabsWatcher = watch(tabsPath, {
+    const directory = path.join(this.workspace.root, ".maek");
+    const names = new Set([
+      "tabs.json",
+      "config.json",
+      "recentFiles.json",
+      "folder-appearance.json",
+      "database.sqlite",
+      "database.sqlite-wal",
+    ]);
+    const tabsWatcher = watch(directory, {
       ignoreInitial: true,
-      alwaysStat: false,
+      depth: 0,
       followSymlinks: false,
-      // The atomic replace writes a sibling `.tmp` then renames over the
-      // target; only react to the final file itself.
-      ignored: (absolutePath) =>
-        absolutePath !== tabsPath && absolutePath.endsWith(".tmp"),
+      usePolling: true,
+      interval: 200,
     });
     this.tabsWatcher = tabsWatcher;
-    const schedule = () => {
+    this.metadataReady = new Promise((resolve) => {
+      tabsWatcher.once("ready", resolve);
+      tabsWatcher.once("error", () => resolve());
+    });
+    const pending = new Set<string>();
+    tabsWatcher.on("all", (type, absolutePath) => {
+      if (!["add", "change", "unlink"].includes(type)) return;
+      const name = path.basename(absolutePath);
+      if (!names.has(name)) return;
+      pending.add(name);
       clearTimeout(this.tabsDebounce);
       this.tabsDebounce = setTimeout(() => {
-        if (this.ready) this.emit("tabs-session-changed", {});
+        if (this.ready)
+          for (const changed of pending) {
+            if (changed === "tabs.json") this.emit("tabs-session-changed", {});
+            else
+              this.emit("change", {
+                type: "change",
+                path:
+                  ".maek/" +
+                  (changed === "database.sqlite-wal"
+                    ? "database.sqlite"
+                    : changed),
+              });
+          }
+        pending.clear();
       }, 120);
-    };
-    tabsWatcher.on("add", schedule);
-    tabsWatcher.on("change", schedule);
-    tabsWatcher.on("unlink", schedule);
-    tabsWatcher.on("error", () => {});
+    });
   }
 
   async close(): Promise<void> {

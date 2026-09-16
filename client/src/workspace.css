@@ -55,6 +55,8 @@ body,
 .db-column-menu > div { @apply absolute right-0 top-6 z-30 w-56 rounded-lg border bg-surface p-3 shadow-floating flex flex-col gap-2; border-color: var(--color-structure-line); }
 .db-column-menu label { @apply flex flex-col gap-1 text-[10px] text-muted-text; }
 .db-column-menu input, .db-column-menu select { @apply workspace-input py-1 text-xs; }
+.db-options { @apply flex flex-col gap-1 pt-1; }
+.db-options > span { @apply flex cursor-grab items-center gap-1 rounded bg-surface-overlay px-1.5 py-1 text-neutral-ink; }
 .db-board-wrap { @apply h-full min-h-0 flex flex-col; }
 .db-board-settings { @apply min-h-9 shrink-0 flex items-center gap-4 border-b px-5 text-xs; border-color: var(--color-structure-line); }
 .db-board-settings label { @apply flex items-center gap-1; }
@@ -94,5 +96,9 @@ body,
 .db-timeline-head > i { @apply hidden; }
 .db-timeline-track { @apply relative h-10 bg-[repeating-linear-gradient(to_right,transparent_0,transparent_calc(2.38%-1px),var(--color-border-subtle)_2.38%)]; }
 .db-bar { @apply absolute top-2 h-6 rounded bg-maek-red text-white px-2 text-[10px] leading-6 truncate cursor-grab; min-width: 24px; }
+.db-bar-label { @apply pointer-events-none; }
+.db-resize { @apply absolute top-0 h-full w-2 cursor-ew-resize; }
+.db-resize-start { @apply left-0; }
+.db-resize-end { @apply right-0; }
 .db-bar input { width: 0; opacity: 0; }
 .db-bar:hover input, .db-bar:focus-within input { width: 110px; opacity: 1; @apply bg-transparent text-white; }

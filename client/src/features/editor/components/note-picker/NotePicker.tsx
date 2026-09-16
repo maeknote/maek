@@ -7,7 +7,7 @@ import React, {
   useDeferredValue,
 } from "react";
 import { createPortal } from "react-dom";
-import { FileText, Search, Table } from "lucide-react";
+import { Table, FileText, Search } from "lucide-react";
 import { computePosition, offset, flip, shift } from "@floating-ui/dom";
 import { useStore } from "../../../../store";
 import { useNotePickerStore } from "../../stores/notePickerStore";

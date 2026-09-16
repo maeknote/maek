@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LayoutGrid, RefreshCw } from "lucide-react";
+import { Table, RefreshCw } from "lucide-react";
 import {
   splitFrontmatterFile,
   parseYamlData,
@@ -173,7 +173,7 @@ export function FolderKanbanView({ folderPath }: { folderPath: string }) {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="px-8 pt-3 pb-2 flex items-center gap-2 shrink-0">
-        <LayoutGrid size={18} className="text-maek-red" />
+        <Table size={18} className="text-maek-red" />
         <h1 className="text-sm font-semibold text-neutral-ink">
           {folderPath === "" ? "Workspace" : (folderPath.split("/").pop() ?? "")}
         </h1>

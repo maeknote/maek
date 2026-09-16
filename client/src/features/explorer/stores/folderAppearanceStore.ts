@@ -52,3 +52,5 @@ export const useFolderAppearance = create<FolderAppearanceState>((set, get) => (
     }
   },
 }));
+
+window.addEventListener('maek:workspace-change',(event)=>{if((event as CustomEvent<{path:string}>).detail?.path==='.maek/folder-appearance.json')void useFolderAppearance.getState().load()});

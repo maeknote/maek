@@ -56,6 +56,7 @@ export interface UiState {
   expanded: string[];
   theme: "light" | "dark";
   sidebarWidth: number;
+  split?: { left: string | null; right: string | null; active: "left" | "right"; ratio: number };
 }
 export interface Change {
   type: "add" | "change" | "unlink" | "addDir" | "unlinkDir" | "rename";

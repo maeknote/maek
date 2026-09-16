@@ -24,10 +24,10 @@ OS watcher를 공유합니다. 이벤트 재생이 불가능하면 클라이언�
   단일 원본. 모든 브라우저가 공유하며 데스크톱 앱과 함께 사용합니다.
 - `.maek/sessions/web/<browser-session-id>/ui.json`: 브라우저별 테마, 사이드바 폭,
   펼침 상태, 스크롤 위치, 선택 탭
-- `.maek/sessions/web/<browser-session-id>/recentFiles.json`: 브라우저별 최근 파일
+- `.maek/recentFiles.json`: 앱과 웹이 공유하는 최근 파일·열람 횟수
 - `.maek/assets/`: 붙여넣거나 가져온 이미지
 
-웹은 자신이 표시할 수 있는 파일 탭만 루트 `tabs.json`에서 관리하며, 원본 전용 탭과
+웹은 파일·데이터베이스·워크스페이스 설정 탭을 루트 `tabs.json`에서 관리하며, 원본 전용 탭과
 알 수 없는 필드·`tabGroups`·`editorSplit`은 병합 저장으로 보존합니다. 루트 문서가
 없을 때만 해당 브라우저의 구버전 세션 `tabs.json`에서 초기 목록을 만들고, 구버전
 파일은 마이그레이션 입력으로만 읽습니다. 서버는 루트 `tabs.json`을 감시해 외부
@@ -47,3 +47,5 @@ OS watcher를 공유합니다. 이벤트 재생이 불가능하면 클라이언�
 
 변경 후 `npm run typecheck`, `npm test`, `npm run build`, `npm run test:e2e`를 실행합니다.
 Finder 선택 창, 휴지통 이동과 기본 앱 열기는 실제 macOS 환경에서 별도로 확인합니다.
+
+DB 및 대시보드의 공유 저장·호환성·검증은 [원본 이식 문서](database-desktop-parity.md)에 정리합니다.

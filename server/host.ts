@@ -1,3 +1,11 @@
+import {
+  dashboard,
+  saveConfig,
+  resetWorkspaceState,
+  readRecents,
+  recentList,
+  mutateRecents,
+} from "./metadata/settings";
 import Fastify from "fastify";
 import { z } from "zod";
 import path from "node:path";
@@ -58,8 +66,15 @@ import {
   rows as databaseRows,
   updateCell as updateDatabaseCell,
   updateManifest,
+  databaseCommand,
+  convertFolder,
+  databaseFolderMoved,
 } from "./database";
-import type { DatabaseManifest, DatabaseMeta, DatabaseViewType } from "../shared/database";
+import type {
+  DatabaseManifest,
+  DatabaseMeta,
+  DatabaseViewType,
+} from "../shared/database";
 
 const run = promisify(execFile);
 const filePath = RelPath.refine(
@@ -180,57 +195,147 @@ export function createHost(options: HostOptions = {}) {
   app.get("/api/tree", async (req) =>
     runtimes.get(wsFor(req)).files.snapshot(),
   );
-  app.get("/api/databases", async (req) => listDatabases(wsFor(req)));
+  app.post("/api/databases/convert", async (req) => {
+    const ws = wsFor(req),
+      data = z.object({ folderPath: userPath }).parse(req.body);
+    return serial(ws.root, () => convertFolder(ws, data.folderPath));
+  });
+  app.post("/api/databases/command", async (req) => {
+    const ws = wsFor(req);
+    return serial(ws.root, () => databaseCommand(ws, req.body));
+  });
+  app.get("/api/workspace/dashboard", async (req) =>
+    serial(wsFor(req).root, () => dashboard(wsFor(req))),
+  );
+  app.patch("/api/workspace/config", async (req) => {
+    const ws = wsFor(req),
+      data = z
+        .object({ description: z.string(), rawConfig: z.string().nullable() })
+        .parse(req.body);
+    return serial(ws.root, () =>
+      saveConfig(ws, data.description, data.rawConfig),
+    );
+  });
+  app.post("/api/workspace/reset", async (req) => {
+    const ws = wsFor(req),
+      data = z
+        .object({ action: z.enum(["tabs", "appearance"]) })
+        .parse(req.body);
+    return serial(ws.root, () => resetWorkspaceState(ws, data.action));
+  });
+  app.post("/api/workspace/recent-files", async (req) => {
+    const ws = wsFor(req),
+      data = z
+        .object({
+          action: z.enum(["open", "remove", "clear"]),
+          path: filePath.optional(),
+        })
+        .parse(req.body);
+    if (data.path !== undefined) await target(ws, data.path);
+    return serial(ws.root, () => mutateRecents(ws, data.action, data.path));
+  });
+  app.get("/api/databases", async (req) =>
+    serial(wsFor(req).root, () => listDatabases(wsFor(req))),
+  );
   app.post("/api/databases", async (req) => {
     const ws = wsFor(req);
-    const data = z.object({
-      parent: filePath.default(""),
-      name: nameSchema,
-      viewType: z.enum(["table", "kanban", "calendar", "timeline"]),
-    }).parse(req.body);
+    const data = z
+      .object({
+        parent: filePath.default(""),
+        name: nameSchema,
+        viewType: z.enum(["table", "kanban", "calendar", "timeline"]),
+      })
+      .parse(req.body);
     await target(ws, data.parent);
-    return serial(ws.root, () => createDatabase(ws, data.parent, data.name, data.viewType as DatabaseViewType));
+    return serial(ws.root, () =>
+      createDatabase(
+        ws,
+        data.parent,
+        data.name,
+        data.viewType as DatabaseViewType,
+      ),
+    );
   });
   app.put("/api/databases/manifest", async (req) => {
     const ws = wsFor(req);
-    const data = z.object({ folderPath: userPath, manifest: z.unknown() }).parse(req.body);
+    const data = z
+      .object({ folderPath: userPath, manifest: z.unknown() })
+      .parse(req.body);
     await target(ws, data.folderPath);
-    return serial(ws.root, () => updateManifest(ws, data.folderPath, data.manifest as DatabaseManifest));
+    return serial(ws.root, () =>
+      updateManifest(ws, data.folderPath, data.manifest as DatabaseManifest),
+    );
   });
   app.get("/api/databases/rows", async (req) => {
     const ws = wsFor(req);
     const { folderPath } = z.object({ folderPath: userPath }).parse(req.query);
     await target(ws, folderPath);
-    const meta = (await listDatabases(ws)).find((d) => d.folderPath === folderPath);
+    const meta = (await listDatabases(ws)).find(
+      (d) => d.folderPath === folderPath,
+    );
     if (!meta) throw badRequest("Database not found");
     return databaseRows(ws, meta);
   });
   app.post("/api/databases/rows", async (req) => {
     const ws = wsFor(req);
-    const data = z.object({ folderPath: userPath, values: z.record(z.string(), z.unknown()).default({}) }).parse(req.body);
-    const meta = (await listDatabases(ws)).find((d) => d.folderPath === data.folderPath);
+    const data = z
+      .object({
+        folderPath: userPath,
+        values: z.record(z.string(), z.unknown()).default({}),
+      })
+      .parse(req.body);
+    const meta = (await listDatabases(ws)).find(
+      (d) => d.folderPath === data.folderPath,
+    );
     if (!meta) throw badRequest("Database not found");
     return serial(ws.root, () => addDatabaseRow(ws, meta, data.values));
   });
   app.patch("/api/databases/cell", async (req) => {
     const ws = wsFor(req);
-    const data = z.object({ folderPath: userPath, rowId: z.string(), key: z.string().min(1), value: z.unknown().optional() }).parse(req.body);
-    const meta = (await listDatabases(ws)).find((d) => d.folderPath === data.folderPath);
+    const data = z
+      .object({
+        folderPath: userPath,
+        rowId: z.string(),
+        key: z.string().min(1),
+        value: z.unknown().optional(),
+      })
+      .parse(req.body);
+    const meta = (await listDatabases(ws)).find(
+      (d) => d.folderPath === data.folderPath,
+    );
     if (!meta) throw badRequest("Database not found");
-    return serial(ws.root, () => updateDatabaseCell(ws, meta, data.rowId, data.key, data.value));
+    return serial(ws.root, () =>
+      updateDatabaseCell(ws, meta, data.rowId, data.key, data.value),
+    );
   });
   app.post("/api/databases/reorder", async (req) => {
     const ws = wsFor(req);
-    const data = z.object({ folderPath: userPath, rowIds: z.array(z.string()).max(10000) }).parse(req.body);
-    const meta = (await listDatabases(ws)).find((d) => d.folderPath === data.folderPath);
+    const data = z
+      .object({ folderPath: userPath, rowIds: z.array(z.string()).max(10000) })
+      .parse(req.body);
+    const meta = (await listDatabases(ws)).find(
+      (d) => d.folderPath === data.folderPath,
+    );
     if (!meta) throw badRequest("Database not found");
-    await serial(ws.root, async () => reorderDatabaseRows(ws, meta as DatabaseMeta, data.rowIds));
+    await serial(ws.root, async () =>
+      reorderDatabaseRows(ws, meta as DatabaseMeta, data.rowIds),
+    );
     return { ok: true };
   });
   app.patch("/api/databases/row", async (req) => {
-    const ws=wsFor(req);const data=z.object({folderPath:userPath,rowId:z.string(),name:nameSchema}).parse(req.body);
-    const meta=(await listDatabases(ws)).find(d=>d.folderPath===data.folderPath);if(!meta)throw badRequest("Database not found");
-    return {fileName:await serial(ws.root,()=>renameDatabaseRow(ws,meta,data.rowId,data.name))};
+    const ws = wsFor(req);
+    const data = z
+      .object({ folderPath: userPath, rowId: z.string(), name: nameSchema })
+      .parse(req.body);
+    const meta = (await listDatabases(ws)).find(
+      (d) => d.folderPath === data.folderPath,
+    );
+    if (!meta) throw badRequest("Database not found");
+    return {
+      fileName: await serial(ws.root, () =>
+        renameDatabaseRow(ws, meta, data.rowId, data.name),
+      ),
+    };
   });
   app.get("/api/files/content", async (req) => {
     const ws = wsFor(req);
@@ -250,7 +355,8 @@ export function createHost(options: HostOptions = {}) {
     const result = await readContent({ wsId: ws.wsId, path: p });
     if (result.viewKind === "unsupported") kind = "unsupported";
     else if (result.viewKind === "readonly") {
-      if (kind !== "sheet" || result.size > CSV_EDIT_LIMITS.bytes) kind = "text";
+      if (kind !== "sheet" || result.size > CSV_EDIT_LIMITS.bytes)
+        kind = "text";
     }
     return { ...result, kind } satisfies FileContent;
   });
@@ -348,6 +454,8 @@ export function createHost(options: HostOptions = {}) {
       if (await lstat(to).catch(() => null))
         throw conflict("changed", "Destination already exists");
       await rename(from, to);
+      if ((await stat(to)).isDirectory())
+        await databaseFolderMoved(ws, source, dest);
       return { source, dest };
     });
   });
@@ -464,7 +572,11 @@ export function createHost(options: HostOptions = {}) {
   });
   app.post("/api/run", async (req) => {
     const ws = wsFor(req);
-    const { cmd, args, cwd: reqCwd } = z
+    const {
+      cmd,
+      args,
+      cwd: reqCwd,
+    } = z
       .object({
         cmd: z.string().min(1),
         args: z.array(z.string()).default([]),
@@ -502,6 +614,7 @@ export function createHost(options: HostOptions = {}) {
     expanded: z.array(filePath),
     theme: z.enum(["light", "dark"]),
     sidebarWidth: z.number().min(180).max(600),
+    split: z.object({ left: filePath.nullable(), right: filePath.nullable(), active: z.enum(["left", "right"]), ratio: z.number().min(0.25).max(0.75) }).optional(),
   });
   const uiStateFallback = {
     activeTabId: null,
@@ -522,7 +635,7 @@ export function createHost(options: HostOptions = {}) {
       const document = (await readJson(
         await metadata.path(ws, "tabs.json"),
       )) as RootTabsDocument;
-      return readRootTabs(ws.root, document);
+      return readRootTabs(ws.root, document, true);
     } catch {
       // No root document yet: seed the shared list from this browser's own
       // legacy session file so an existing web workspace keeps its tabs. The
@@ -559,7 +672,7 @@ export function createHost(options: HostOptions = {}) {
   app.put("/api/workspace/tabs", async (req) => {
     const ws = wsFor(req);
     const data = rootTabsInput.parse(req.body);
-    return serial(ws.wsId + ":tabs.json", async () => {
+    return serial(ws.root, async () => {
       let existing: RootTabsDocument | null = null;
       try {
         existing = (await readJson(
@@ -573,6 +686,7 @@ export function createHost(options: HostOptions = {}) {
         existing,
         data.tabs,
         data.activeTabId,
+        true,
       );
       await metadata.writeJson(ws, "tabs.json", merged);
       return { ok: true };
@@ -587,7 +701,9 @@ export function createHost(options: HostOptions = {}) {
     const relative = (p: string) =>
       path.isAbsolute(p) ? path.relative(ws.root, p) : p;
     try {
-      return uiState.parse(await readJson(await metadata.path(ws, `${sessionDir}/ui.json`)));
+      return uiState.parse(
+        await readJson(await metadata.path(ws, `${sessionDir}/ui.json`)),
+      );
     } catch {
       // Migrate from this browser's legacy session tabs.json (old Session).
       try {
@@ -636,65 +752,37 @@ export function createHost(options: HostOptions = {}) {
   const recents = z
     .array(z.object({ path: filePath, lastOpened: z.number() }))
     .max(200);
-  const appearance = z.object({ version: z.number().default(1), folders: z.record(z.string(), z.object({ icon: z.string(), iconColor: z.string().default("accent") })) });
-  for (const [route, name, schema, fallback] of [
+  const appearance = z.object({
+    version: z.number().default(1),
+    folders: z.record(
+      z.string(),
+      z.object({ icon: z.string(), iconColor: z.string().default("accent") }),
+    ),
+  });
+  for (const [route, name, schema] of [
     ["recent-files", "recentFiles.json", recents, []],
     ["folder-appearance", "folder-appearance.json", appearance, {}],
   ] as const) {
     app.get("/api/workspace/" + route, async (req) => {
       const ws = wsFor(req);
-      const relativePath = route === "folder-appearance" 
-        ? name 
-        : `sessions/web/${sessionFor(req)}/${name}`;
-      const abs = await metadata.path(ws, relativePath);
+      if (route === "recent-files")
+        return serial(ws.root, async () =>
+          recentList(ws, await readRecents(ws)),
+        );
       try {
-        const stored = JSON.parse(await readFile(abs, "utf8"));
-        const relative = (p: string) =>
-          path.isAbsolute(p) ? path.relative(ws.root, p) : p;
-        if (route === "recent-files" && stored.version === 1)
-          return recents.parse(
-            Object.entries(stored.entries)
-              .map(([p, v]) => ({
-                path: relative(p),
-                lastOpened: (v as { lastOpenedAt: number }).lastOpenedAt,
-              }))
-              .filter((f) => !f.path.startsWith(".."))
-              .slice(0, 200),
-          );
-        if (route === "folder-appearance") return appearance.parse(stored);
-        return schema.parse(stored);
-      } catch {
-        if (route !== "folder-appearance") {
-          // Legacy desktop metadata is migration input only. The browser never
-          // writes these files, so both applications can use the same workspace.
-          try {
-            const stored = JSON.parse(
-              await readFile(await metadata.path(ws, name), "utf8"),
-            );
-            const relative = (p: string) =>
-              path.isAbsolute(p) ? path.relative(ws.root, p) : p;
-            if (route === "recent-files" && stored.version === 1) {
-              return recents.parse(
-                Object.entries(stored.entries)
-                  .map(([p, value]) => ({
-                    path: relative(p),
-                    lastOpened: (value as { lastOpenedAt: number }).lastOpenedAt,
-                  }))
-                  .filter((file) => !file.path.startsWith(".."))
-                  .slice(0, 200),
-              );
-            }
-          } catch {
-            // A missing or corrupt legacy file is equivalent to an empty session.
-          }
-        }
-        return fallback;
+        return appearance.parse(
+          JSON.parse(await readFile(await metadata.path(ws, name), "utf8")),
+        );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+          return { version: 1, folders: {} };
+        throw error;
       }
     });
     app.put("/api/workspace/" + route, async (req) => {
       const ws = wsFor(req);
       const data = schema.parse(req.body);
-      return serial(ws.wsId, async () => {
+      return serial(ws.root, async () => {
         let stored: unknown = data;
         if (route === "recent-files") {
           stored = {
@@ -704,37 +792,64 @@ export function createHost(options: HostOptions = {}) {
                 .parse(data)
                 .map((f) => [
                   path.join(ws.root, f.path),
-                  { lastOpenedAt: f.lastOpened, openCount: 1 },
+                  {
+                    lastOpenedAt: f.lastOpened,
+                    openCount: (f as { openCount?: number }).openCount ?? 1,
+                  },
                 ]),
             ),
           };
         } else if (route === "folder-appearance") {
           stored = appearance.parse(data);
         }
-        const relativePath = route === "folder-appearance" 
-          ? name 
-          : `sessions/web/${sessionFor(req)}/${name}`;
-        await metadata.writeJson(
-          ws,
-          relativePath,
-          stored,
-        );
+        const relativePath =
+          route === "folder-appearance"
+            ? name
+            : `sessions/web/${sessionFor(req)}/${name}`;
+        await metadata.writeJson(ws, relativePath, stored);
         return { ok: true };
       });
     });
   }
   app.get("/api/search", async (req) => {
     const ws = wsFor(req);
-    const query = z.string().trim().min(1).max(256).parse((req.query as Record<string, unknown>).q);
-    const folder = filePath.parse(String((req.query as Record<string, unknown>).folder ?? ""));
-    const requestedKind = z.enum(["", "markdown", "text", "html"]).catch("").parse((req.query as Record<string, unknown>).kind);
+    const query = z
+      .string()
+      .trim()
+      .min(1)
+      .max(256)
+      .parse((req.query as Record<string, unknown>).q);
+    const folder = filePath.parse(
+      String((req.query as Record<string, unknown>).folder ?? ""),
+    );
+    const requestedKind = z
+      .enum(["", "markdown", "text", "html"])
+      .catch("")
+      .parse((req.query as Record<string, unknown>).kind);
     const needle = query.toLocaleLowerCase();
     const snapshot = await runtimes.get(ws).files.snapshot();
-    const candidates = snapshot.nodes.filter((node) => !node.isDir && (!folder || node.id === folder || node.id.startsWith(folder + "/")));
-    const results: { path: string; kind: string; mtimeMs: number; count: number; matches: { text: string; start: number; end: number }[] }[] = [];
+    const candidates = snapshot.nodes.filter(
+      (node) =>
+        !node.isDir &&
+        (!folder || node.id === folder || node.id.startsWith(folder + "/")),
+    );
+    const results: {
+      path: string;
+      kind: string;
+      mtimeMs: number;
+      count: number;
+      matches: { text: string; start: number; end: number }[];
+    }[] = [];
     for (const node of candidates) {
       const fileKind = kindFor(node.id);
-      const category = fileKind === "editor" ? "markdown" : fileKind === "html" ? "html" : fileKind === "text" ? "text" : "";
+      const category =
+        fileKind === "editor"
+          ? "markdown"
+          : fileKind === "html"
+            ? "html"
+            : fileKind === "text"
+              ? "text"
+              : "";
       if (!category || (requestedKind && category !== requestedKind)) continue;
       try {
         const absolute = await target(ws, node.id);
@@ -742,13 +857,45 @@ export function createHost(options: HostOptions = {}) {
         if (!info.isFile() || info.size > 5 * 1024 * 1024) continue;
         let content = await readFile(absolute, "utf8");
         if (content.includes("\0")) continue;
-        if (category === "html") content = content.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/gi, " ");
-        const lower = content.toLocaleLowerCase(); let index = 0; const matches: { text: string; start: number; end: number }[] = []; let count = 0;
-        while ((index = lower.indexOf(needle, index)) !== -1) { count++; if (matches.length < 3) { const from = Math.max(0, index - 72); const to = Math.min(content.length, index + query.length + 120); matches.push({ text: content.slice(from, to).replace(/\s+/g, " "), start: index - from, end: index - from + query.length }); } index += Math.max(needle.length, 1); }
-        if (count) results.push({ path: node.id, kind: category, mtimeMs: Math.floor(info.mtimeMs), count, matches });
-      } catch { /* unreadable files do not abort workspace search */ }
+        if (category === "html")
+          content = content.replace(
+            /<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/gi,
+            " ",
+          );
+        const lower = content.toLocaleLowerCase();
+        let index = 0;
+        const matches: { text: string; start: number; end: number }[] = [];
+        let count = 0;
+        while ((index = lower.indexOf(needle, index)) !== -1) {
+          count++;
+          if (matches.length < 3) {
+            const from = Math.max(0, index - 72);
+            const to = Math.min(content.length, index + query.length + 120);
+            matches.push({
+              text: content.slice(from, to).replace(/\s+/g, " "),
+              start: index - from,
+              end: index - from + query.length,
+            });
+          }
+          index += Math.max(needle.length, 1);
+        }
+        if (count)
+          results.push({
+            path: node.id,
+            kind: category,
+            mtimeMs: Math.floor(info.mtimeMs),
+            count,
+            matches,
+          });
+      } catch {
+        /* unreadable files do not abort workspace search */
+      }
     }
-    return { results: results.sort((a, b) => b.count - a.count || a.path.localeCompare(b.path)).slice(0, 50) };
+    return {
+      results: results
+        .sort((a, b) => b.count - a.count || a.path.localeCompare(b.path))
+        .slice(0, 50),
+    };
   });
   app.get("/api/workspaces/events", async (req, reply) => {
     const { workspace } = z.object({ workspace: z.string() }).parse(req.query);

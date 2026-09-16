@@ -32,7 +32,7 @@ export default {
         'neutral-ink': 'var(--color-neutral-ink)',
         'muted-text': 'var(--color-muted-text)',
         'structure-line': 'var(--color-structure-line)',
-        'maek-red': ({ opacityValue }) => opacityValue === undefined ? 'var(--color-maek-red)' : `color-mix(in srgb, var(--color-maek-red) ${Number(opacityValue) * 100}%, transparent)`,
+        'maek-red': ({ opacityValue }) => opacityValue === undefined ? 'var(--color-maek-red)' : `color-mix(in srgb, var(--color-maek-red) calc(${opacityValue} * 100%), transparent)`,
         'text-main': 'var(--color-neutral-ink)',
         'border-gray': 'var(--color-border-light)',
         // Semantic colors for dark mode support

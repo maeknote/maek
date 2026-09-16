@@ -8,7 +8,7 @@ import {
   type ReactElement,
 } from "react";
 import { createPortal } from "react-dom";
-import { Search, File, X } from "lucide-react";
+import { Search, File, FileCode, X } from "lucide-react";
 import { cn } from "@renderer/lib/utils";
 import { useStore } from "../../../store";
 import { getDisplayName } from "../utils/displayName";
@@ -29,9 +29,10 @@ import type { FileNode } from "@shared/workspace";
 
 interface FilePickerProps {
   onClose: () => void;
+  onSelect?: (file: FileNode) => Promise<void> | void;
 }
 
-export function FilePicker({ onClose }: FilePickerProps): ReactElement {
+export function FilePicker({ onClose, onSelect }: FilePickerProps): ReactElement {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [focusedIndex, setFocusedIndex] = useState(-1);
@@ -101,7 +102,8 @@ export function FilePicker({ onClose }: FilePickerProps): ReactElement {
 
   const handleSelect = useCallback(
     async (file: FileNode) => {
-      await useStore.getState().openFile(file.id);
+      if (onSelect) await onSelect(file);
+      else await useStore.getState().openFile(file.id);
       onClose();
     },
     [onClose],
@@ -203,7 +205,7 @@ export function FilePicker({ onClose }: FilePickerProps): ReactElement {
                 : getDisplayName(file.name);
               const nameIndices = getNameMatchIndices(matches);
               const pathIndices = getPathMatchIndices(matches, relativePath);
-              const Icon = File;
+              const Icon = /\.html$/i.test(file.name) ? FileCode : File;
               return (
                 <button
                   key={file.id}

@@ -1,106 +1,105 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { addDays, addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, startOfMonth, startOfWeek } from "date-fns";
-import { ChevronLeft, ChevronRight, Filter, GripVertical, LayoutGrid, Plus, SortAsc } from "lucide-react";
-import type { CalendarViewConfig, DatabaseColumnSchema, DatabaseFilterCondition, DatabaseMeta, DatabaseRow, DatabaseSortRule, DatabaseViewDefinition, DatabaseViewType, KanbanViewConfig, TimelineViewConfig } from "@shared/database";
-import { api } from "../../host";
+import { useEffect, useState } from "react";
 import { useStore } from "../../store";
+import { api } from "../../host";
+import { databaseApi } from "./api";
+import { DatabaseViewContainer } from "./DatabaseViewContainer";
+import { useWorkspaceStore } from "./workspaceStore";
+import type { DatabaseMeta } from "@shared/database";
 import { navigate, parseRoute, workspaceKeyFor } from "../../lib/routes";
-import { aggregate, matches, sortRows } from "./database-utils";
-
-const label:Record<DatabaseViewType,string>={table:"Table",kanban:"Board",calendar:"Calendar",timeline:"Timeline"};
-function valueForInput(value:unknown){return Array.isArray(value)?value.join(", "):value&&typeof value==="object"?JSON.stringify(value):String(value??"");}
-function Cell({row,column,commit}:{row:DatabaseRow;column:DatabaseColumnSchema;commit:(r:DatabaseRow,c:DatabaseColumnSchema,v:unknown)=>void}){
- const v=row.yamlData[column.name];
- if(column.type==="boolean") return <input aria-label={column.name} type="checkbox" checked={v===true} onChange={e=>commit(row,column,e.target.checked)}/>;
- if(column.type==="select") return <select aria-label={column.name} value={String(v??"")} onChange={e=>commit(row,column,e.target.value)} className="db-input"><option value="">—</option>{(column.options??[]).map(o=><option key={o}>{o}</option>)}</select>;
- if(column.type==="multi-select") return <input className="db-input" aria-label={column.name} defaultValue={valueForInput(v)} onBlur={e=>commit(row,column,e.target.value.split(",").map(x=>x.trim()).filter(Boolean))}/>;
- if(column.type==="date-range"){const x=(v&&typeof v==="object"?v:{}) as {start?:string;end?:string};return <span className="flex gap-1"><input className="db-input" type="date" value={x.start??""} onChange={e=>commit(row,column,{...x,start:e.target.value||null})}/><input className="db-input" type="date" value={x.end??""} onChange={e=>commit(row,column,{...x,end:e.target.value||null})}/></span>}
- return <input className="db-input" aria-label={column.name} type={column.type==="number"?"number":column.type==="date"?"date":"text"} defaultValue={valueForInput(v)} onBlur={e=>{const raw=e.target.value;commit(row,column,column.type==="number"?(raw===""?null:Number(raw)):column.type==="list"?raw.split(",").map(x=>x.trim()).filter(Boolean):raw)}}/>;
-}
-function Toolbar({meta,view,updateView,rows}:{meta:DatabaseMeta;view:DatabaseViewDefinition;updateView:(v:DatabaseViewDefinition)=>void;rows:DatabaseRow[]}) {
-  const config = view.config as { sort?: DatabaseSortRule[]; filter?: { combinator:"and"; conditions:DatabaseFilterCondition[] } };
-  const sort = config.sort ?? [], conditions = config.filter?.conditions ?? [];
-  const patch = (next: Partial<typeof config>) => updateView({ ...view, config: { ...config, ...next } });
-  return <div className="db-toolbar">
-    <span>{rows.length} rows</span>
-    <button onClick={() => { const c=meta.schema[0]; if(c) patch({filter:{combinator:"and",conditions:[...conditions,{columnId:c.id,operator:c.type==="number"?"num-eq":"text-contains",value:""}]}}); }}><Filter size={14}/>Filter</button>
-    <button onClick={() => { const c=meta.schema.find(x=>!sort.some(s=>s.columnId===x.id)); if(c) patch({sort:[...sort,{columnId:c.id,direction:"asc"}]}); }}><SortAsc size={14}/>Sort</button>
-    {conditions.map((condition,index) => <span className="db-chip" key={`${condition.columnId}:${index}`}>
-      <select value={condition.columnId} onChange={event=>{const next=[...conditions];next[index]={...condition,columnId:event.target.value};patch({filter:{combinator:"and",conditions:next}})}}>{meta.schema.map(column=><option value={column.id} key={column.id}>{column.name}</option>)}</select>
-      <select value={condition.operator} onChange={event=>{const next=[...conditions];next[index]={...condition,operator:event.target.value as DatabaseFilterCondition["operator"]};patch({filter:{combinator:"and",conditions:next}})}}>{["is-empty","is-not-empty","text-equals","text-not-equals","text-contains","text-not-contains","text-starts-with","text-ends-with","num-eq","num-neq","num-gt","num-gte","num-lt","num-lte","num-between","bool-checked","bool-unchecked","date-on","date-before","date-after","date-between","date-is-today","date-last-n-days","date-next-n-days","select-is","select-is-not","list-contains","list-not-contains","list-contains-all"].map(operator=><option key={operator}>{operator}</option>)}</select>
-      <input defaultValue={String(condition.value??"")} onBlur={event => { const next=[...conditions]; next[index]={...condition,value:event.target.value}; patch({filter:{combinator:"and",conditions:next}}); }}/>
-      <button onClick={()=>patch({filter:{combinator:"and",conditions:conditions.filter((_,i)=>i!==index)}})}>×</button>
-    </span>)}
-    {sort.map((rule,index) => <span className="db-chip" key={`${rule.columnId}:${index}`}>
-      <select value={rule.columnId} onChange={event => {const next=[...sort]; next[index]={...rule,columnId:event.target.value}; patch({sort:next});}}>{meta.schema.map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select>
-      <button onClick={()=>{const next=[...sort];next[index]={...rule,direction:rule.direction==="asc"?"desc":"asc"};patch({sort:next});}}>{rule.direction}</button>
-      <button disabled={index===0} onClick={()=>{const next=[...sort];[next[index-1],next[index]]=[next[index]!,next[index-1]!];patch({sort:next})}}>↑</button>
-      <button disabled={index===sort.length-1} onClick={()=>{const next=[...sort];[next[index+1],next[index]]=[next[index]!,next[index+1]!];patch({sort:next})}}>↓</button>
-      <button onClick={()=>patch({sort:sort.filter((_,i)=>i!==index)})}>×</button>
-    </span>)}
-  </div>;
-}
-export function DatabaseView({folderPath}:{folderPath:string}){
- const [meta,setMeta]=useState<DatabaseMeta|null>(null),[rows,setRows]=useState<DatabaseRow[]>([]),[loading,setLoading]=useState(true),[month,setMonth]=useState(startOfMonth(new Date()));
- const manifestQueue=useRef<Promise<unknown>>(Promise.resolve());
- const load=useCallback(async(silent=false)=>{if(!silent)setLoading(true);try{const all=await api<DatabaseMeta[]>("/api/databases");const m=all.find(d=>d.folderPath===folderPath)??null;setMeta(m);if(m)setRows(await api<DatabaseRow[]>(`/api/databases/rows?folderPath=${encodeURIComponent(folderPath)}`));}finally{if(!silent)setLoading(false)}},[folderPath]); useEffect(()=>{void load()},[load]);
- useEffect(()=>{const refresh=()=>void load(true);window.addEventListener("focus",refresh);return()=>window.removeEventListener("focus",refresh)},[load]);
- useEffect(()=>{let timer:ReturnType<typeof setTimeout>|undefined;const changed=(event:Event)=>{const p=(event as CustomEvent<{path:string;source?:string}>).detail?.path??"";if(p===folderPath||p.startsWith(folderPath+"/")){clearTimeout(timer);timer=setTimeout(()=>void load(),120)}};window.addEventListener("maek:workspace-change",changed);return()=>{clearTimeout(timer);window.removeEventListener("maek:workspace-change",changed)}},[folderPath,load]);
- const saveMeta=async(next:DatabaseMeta)=>{setMeta(next);const task=manifestQueue.current.catch(()=>{}).then(async()=>{const latest=(await api<DatabaseMeta[]>("/api/databases")).find(database=>database.id===next.id);const candidate={...next,updatedAt:latest?.updatedAt??next.updatedAt};return api<DatabaseMeta>("/api/databases/manifest","PUT",{folderPath,manifest:(({folderPath:_,...m})=>m)(candidate)})});manifestQueue.current=task;try{setMeta(await task)}catch(error){useStore.getState().setError(String(error));await load()}};
- useEffect(()=>{if(!meta)return;const route=parseRoute(),requested=route?.kind==="folder"&&route.path===folderPath?(route.viewId?meta.views.find(v=>v.id===route.viewId):meta.views.find(v=>(route.view==="board"?"kanban":route.view)===v.type)):undefined;if(requested&&requested.id!==meta.activeViewId){void saveMeta({...meta,activeViewId:requested.id});return}const workspace=useStore.getState().workspace,active=meta.views.find(v=>v.id===meta.activeViewId);if(workspace&&active&&(!route||route.kind!=="folder"||route.path!==folderPath)){navigate({kind:"folder",workspaceKey:workspaceKeyFor(workspace.root),path:folderPath,view:active.type==="kanban"?"board":active.type,viewId:active.id},true)}},[meta?.id,meta?.activeViewId,folderPath]);
- if(loading)return <div className="db-empty">Loading database…</div>;if(!meta)return <div className="db-empty">This folder is not a database.</div>;
- const view=meta.views.find(v=>v.id===meta.activeViewId)??meta.views[0]!;
- const updateView=(v:DatabaseViewDefinition)=>void saveMeta({...meta,views:meta.views.map(x=>x.id===v.id?{...v,updatedAt:Date.now()}:x)});
- const config=view.config as any, filtered=sortRows(rows.filter(r=>matches(r,meta.schema,config.filter?.conditions??[])),meta.schema,config.sort??[]);
- const commit=async(r:DatabaseRow,c:DatabaseColumnSchema,value:unknown)=>{const old=rows;setRows(x=>x.map(y=>y.id===r.id?{...y,yamlData:{...y.yamlData,[c.name]:value}}:y));try{await api("/api/databases/cell","PATCH",{folderPath,rowId:r.id,key:c.name,value});await load()}catch(e){setRows(old);useStore.getState().setError(String(e))}};
- const add=async(values:Record<string,unknown>={})=>setRows(await api<DatabaseRow[]>("/api/databases/rows","POST",{folderPath,values}));
- const setActive=(id:string)=>{const target=meta.views.find(view=>view.id===id),workspace=useStore.getState().workspace;if(target&&workspace)navigate({kind:"folder",workspaceKey:workspaceKeyFor(workspace.root),path:folderPath,view:target.type==="kanban"?"board":target.type,viewId:target.id},true);void saveMeta({...meta,activeViewId:id})};
- const addView=(type:DatabaseViewType)=>{const now=Date.now(),id=crypto.randomUUID();let cfg:any={sort:[],filter:{combinator:"and",conditions:[]}};if(type==="kanban")cfg={...cfg,groupColumnId:meta.schema.find(c=>c.type==="select")?.id??null};if(type==="calendar")cfg={...cfg,dateColumnId:meta.schema.find(c=>c.type==="date"||c.type==="date-range")?.id??null};if(type==="timeline")cfg={...cfg,dateColumnId:meta.schema.find(c=>c.type==="date"||c.type==="date-range")?.id??null,zoom:"week"};void saveMeta({...meta,views:[...meta.views,{id,name:label[type],type,config:cfg,createdAt:now,updatedAt:now}],activeViewId:id})};
- return <div className="db-shell"><div className="db-header"><LayoutGrid size={18}/><strong>{meta.name}</strong><div className="db-views">{meta.views.map(v=><button className={v.id===view.id?"active":""} onClick={()=>setActive(v.id)} onDoubleClick={()=>{const name=prompt("View name",v.name)?.trim();if(name)void saveMeta({...meta,views:meta.views.map(x=>x.id===v.id?{...x,name,updatedAt:Date.now()}:x)})}} key={v.id}>{label[v.type]} · {v.name}</button>)}<select aria-label="Add view" value="" onChange={e=>{if(e.target.value)addView(e.target.value as DatabaseViewType)}}><option value="">+ View</option>{Object.keys(label).map(k=><option value={k} key={k}>{label[k as DatabaseViewType]}</option>)}</select>{meta.views.length>1&&<button aria-label="Delete active view" onClick={()=>{if(confirm(`Delete view ${view.name}?`)){const remaining=meta.views.filter(v=>v.id!==view.id);void saveMeta({...meta,views:remaining,activeViewId:remaining[0]!.id})}}}>×</button>}</div><button onClick={()=>void add()}><Plus size={14}/>New</button></div><Toolbar meta={meta} view={view} updateView={updateView} rows={filtered}/><div className="db-content">{view.type==="table"?<Table meta={meta} rows={filtered} commit={commit} saveMeta={saveMeta} reorder={async ids=>{await api("/api/databases/reorder","POST",{folderPath,rowIds:ids});await load()}}/>:view.type==="kanban"?<Kanban meta={meta} rows={filtered} view={view} commit={commit} updateView={updateView} add={add}/>:view.type==="calendar"?<Calendar meta={meta} rows={filtered} view={view} month={month} setMonth={setMonth} commit={commit} updateView={updateView} add={add}/>:<Timeline meta={meta} rows={filtered} view={view} commit={commit} updateView={updateView} add={add}/>}</div></div>;
-}
-function Table({meta,rows,commit,saveMeta,reorder}:{meta:DatabaseMeta;rows:DatabaseRow[];commit:any;saveMeta:any;reorder:(ids:string[])=>void}) {
-  const cols=[...meta.schema].sort((a,b)=>a.order-b.order);
-  const [drag,setDrag]=useState<string|null>(null), [dragColumn,setDragColumn]=useState<string|null>(null);
-  const saveColumns=(columns:DatabaseColumnSchema[])=>void saveMeta({...meta,schema:columns.map((c,index)=>({...c,order:index}))});
-  const insert=async(index:number)=>{const next=await api<DatabaseRow[]>("/api/databases/rows","POST",{folderPath:meta.folderPath,values:{}});const added=next.find(row=>!rows.some(old=>old.id===row.id));if(added){const ids=rows.map(row=>row.id);ids.splice(index,0,added.id);await reorder(ids)}};
-  return <div className="db-table-wrap"><table className="db-table"><thead><tr><th>Title</th>{cols.map((column,index)=><th draggable onDragStart={()=>setDragColumn(column.id)} onDragOver={e=>e.preventDefault()} onDrop={()=>{if(!dragColumn||dragColumn===column.id)return;const next=[...cols],from=next.findIndex(c=>c.id===dragColumn);next.splice(from,1);next.splice(index,0,cols[from]!);saveColumns(next);setDragColumn(null)}} key={column.id}><span>{column.name}</span><ColumnMenu column={column} columns={cols} save={saveColumns}/></th>)}<th><button onClick={()=>saveColumns([...cols,{id:crypto.randomUUID(),name:`Column ${cols.length+1}`,type:"text",order:cols.length}])}>+</button></th></tr></thead><tbody>{rows.map((row,index)=><tr draggable onDragStart={()=>setDrag(row.id)} onDragOver={e=>e.preventDefault()} onDrop={()=>{if(!drag||drag===row.id)return;const ids=rows.map(x=>x.id),from=ids.indexOf(drag);ids.splice(from,1);ids.splice(index,0,drag);void reorder(ids);setDrag(null)}} key={row.id}><td><GripVertical size={13}/><button className="db-title" onClick={()=>void useStore.getState().openFile(row.path)} onDoubleClick={()=>{const name=prompt("File name",row.fileName.replace(/\.md$/i,""))?.trim();if(name)void api("/api/databases/row","PATCH",{folderPath:meta.folderPath,rowId:row.id,name})}}>{row.fileName.replace(/\.md$/i,"")}</button><span className="db-row-actions"><button title="Insert above" onClick={()=>void insert(index)}>＋↑</button><button title="Insert below" onClick={()=>void insert(index+1)}>＋↓</button><button title="Move to Trash" onClick={()=>{if(confirm(`Move ${row.fileName} to Trash?`))void api("/api/files","DELETE",{paths:[row.path]})}}>×</button></span></td>{cols.map(column=><td key={column.id}><Cell row={row} column={column} commit={commit}/></td>)}<td/></tr>)}</tbody><tfoot><tr><td>{rows.length}</td>{cols.map(column=><td key={column.id}>{aggregate(rows,column)}</td>)}<td/></tr></tfoot></table></div>;
-}
-function ColumnMenu({column,columns,save}:{column:DatabaseColumnSchema;columns:DatabaseColumnSchema[];save:(columns:DatabaseColumnSchema[])=>void}) {
-  const patch=(next:Partial<DatabaseColumnSchema>)=>save(columns.map(c=>c.id===column.id?{...c,...next}:c));
-  return <details className="db-column-menu"><summary aria-label={`Configure ${column.name}`}>⋯</summary><div>
-    <label>Name<input defaultValue={column.name} onBlur={e=>{if(e.target.value.trim()&&e.target.value!==column.name)patch({name:e.target.value.trim()})}}/></label>
-    <label>Type<select value={column.type} onChange={e=>patch({type:e.target.value as DatabaseColumnSchema["type"]})}>{["text","number","boolean","date","date-range","select","multi-select","list"].map(type=><option key={type}>{type}</option>)}</select></label>
-    {(column.type==="select"||column.type==="multi-select")&&<label>Options<input defaultValue={(column.options??[]).join(", ")} onBlur={e=>patch({options:e.target.value.split(",").map(x=>x.trim()).filter(Boolean)})}/></label>}
-    {column.type==="number"&&<label>Format<select value={column.numberFormat??"plain"} onChange={e=>patch({numberFormat:e.target.value as any})}>{["plain","integer","decimal","percent","currency-usd","currency-krw"].map(x=><option key={x}>{x}</option>)}</select></label>}
-    <label>Aggregation<select value={column.aggregation??"none"} onChange={e=>patch({aggregation:e.target.value as any})}>{["none","count","count-empty","count-not-empty","count-unique","percent-empty","percent-not-empty","sum","average","min","max","median","range","earliest","latest","date-range-span"].map(x=><option key={x}>{x}</option>)}</select></label>
-    <button className="text-maek-red" onClick={()=>{if(confirm(`Delete column ${column.name}?`))save(columns.filter(c=>c.id!==column.id))}}>Delete column</button>
-  </div></details>;
-}
-function Kanban({meta,rows,view,commit,updateView,add}:{meta:DatabaseMeta;rows:DatabaseRow[];view:DatabaseViewDefinition;commit:any;updateView:any;add:any}) {
-  const cfg=view.config as KanbanViewConfig, group=meta.schema.find(c=>c.id===cfg.groupColumnId);
-  if(!group)return <div className="db-empty"><p>Select a select column to group cards.</p><select onChange={e=>updateView({...view,config:{...cfg,groupColumnId:e.target.value}})}><option value="">Group by…</option>{meta.schema.filter(c=>c.type==="select").map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select></div>;
-  const lanes=[...(group.options??[]),""];
-  const defaultFields=meta.schema.filter(c=>c.id!==group.id).slice(0,3).map(c=>c.id), cardFields=cfg.cardFieldIds??defaultFields;
-  const inLane=(lane:string)=>rows.filter(row=>String(row.yamlData[group.name]??"")===lane);
-  const move=async(row:DatabaseRow,lane:string,before?:string)=>{const buckets=new Map(lanes.map(value=>[value,inLane(value).filter(r=>r.id!==row.id)]));const target=buckets.get(lane)!;const index=before?target.findIndex(r=>r.id===before):target.length;target.splice(index<0?target.length:index,0,row);if(String(row.yamlData[group.name]??"")!==lane)await commit(row,group,lane||null);await api("/api/databases/reorder","POST",{folderPath:meta.folderPath,rowIds:lanes.flatMap(value=>buckets.get(value)!).map(r=>r.id)});};
-  const colorKey=(lane:string)=>lane||"__uncategorized__", colors=["none","red","orange","amber","green","blue","violet","pink","gray"];
-  return <div className="db-board-wrap"><div className="db-board-settings"><label>Group <select value={group.id} onChange={e=>updateView({...view,config:{...cfg,groupColumnId:e.target.value}})}>{meta.schema.filter(c=>c.type==="select").map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select></label><details><summary>Card fields</summary><div>{meta.schema.filter(c=>c.id!==group.id).map(c=><label key={c.id}><input type="checkbox" checked={cardFields.includes(c.id)} onChange={e=>updateView({...view,config:{...cfg,cardFieldIds:e.target.checked?[...cardFields,c.id]:cardFields.filter(id=>id!==c.id)}})}/>{c.name}</label>)}</div></details></div><div className="db-board">{lanes.map((lane,laneIndex)=><section className="db-lane" data-color={cfg.laneColors?.[colorKey(lane)]??"none"} onDragOver={e=>e.preventDefault()} onDrop={e=>{const row=rows.find(x=>x.id===e.dataTransfer.getData("row"));if(row)void move(row,lane)}} key={lane}><header><strong>{lane||"No value"}</strong><span>{inLane(lane).length}</span><select aria-label={`Color for ${lane||"No value"}`} value={cfg.laneColors?.[colorKey(lane)]??"none"} onChange={e=>updateView({...view,config:{...cfg,laneColors:{...cfg.laneColors,[colorKey(lane)]:e.target.value}}})}>{colors.map(color=><option key={color}>{color}</option>)}</select></header>{inLane(lane).map(row=><article draggable onDragStart={e=>e.dataTransfer.setData("row",row.id)} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.stopPropagation();const moved=rows.find(x=>x.id===e.dataTransfer.getData("row"));if(moved)void move(moved,lane,row.id)}} className="db-card" key={row.id}><button onClick={()=>void useStore.getState().openFile(row.path)}>{row.fileName.replace(/\.md$/i,"")}</button>{meta.schema.filter(c=>cardFields.includes(c.id)).map(c=><Cell key={c.id} row={row} column={c} commit={commit}/>) }<span className="db-card-moves"><button disabled={laneIndex===0} aria-label="Move card left" onClick={()=>void move(row,lanes[laneIndex-1]!)}>←</button><button disabled={laneIndex===lanes.length-1} aria-label="Move card right" onClick={()=>void move(row,lanes[laneIndex+1]!)}>→</button></span></article>)}<button className="db-add" onClick={()=>void add(lane?{[group.name]:lane}:{})}><Plus size={13}/>New</button></section>)}</div></div>;
-}
-function Calendar({meta,rows,view,month,setMonth,commit,updateView,add}:{meta:DatabaseMeta;rows:DatabaseRow[];view:DatabaseViewDefinition;month:Date;setMonth:any;commit:any;updateView:any;add:any}) {
-  const cfg=view.config as CalendarViewConfig, col=meta.schema.find(c=>c.id===cfg.dateColumnId);
-  const days=eachDayOfInterval({start:startOfWeek(startOfMonth(month)),end:endOfWeek(endOfMonth(month))});
-  if(!col)return <DateColumn meta={meta} view={view} updateView={updateView}/>;
-  const range=(r:DatabaseRow)=>{const v=r.yamlData[col.name];if(typeof v==="string")return{start:v.slice(0,10),end:v.slice(0,10)};if(v&&typeof v==="object"){const x=v as {start?:unknown;end?:unknown};return{start:String(x.start??"").slice(0,10),end:String(x.end??x.start??"").slice(0,10)}}return{start:"",end:""}};
-  const move=(r:DatabaseRow,key:string)=>{if(col.type!=="date-range"){void commit(r,col,key);return}const current=range(r),start=current.start?new Date(`${current.start}T00:00:00`):new Date(`${key}T00:00:00`),end=current.end?new Date(`${current.end}T00:00:00`):start,length=Math.max(0,Math.round((end.getTime()-start.getTime())/864e5));void commit(r,col,{start:key,end:format(addDays(new Date(`${key}T00:00:00`),length),"yyyy-MM-dd")})};
-  const unscheduled=rows.filter(r=>!range(r).start);
-  return <div className="db-calendar"><div className="db-calendar-nav"><button onClick={()=>setMonth(addMonths(month,-1))}><ChevronLeft/></button><strong>{format(month,"MMMM yyyy")}</strong><button onClick={()=>setMonth(startOfMonth(new Date()))}>Today</button><button onClick={()=>setMonth(addMonths(month,1))}><ChevronRight/></button></div>{unscheduled.length>0&&<div className="db-unscheduled"><strong>Unscheduled</strong>{unscheduled.map(row=><button draggable onDragStart={e=>e.dataTransfer.setData("row",row.id)} onClick={()=>void useStore.getState().openFile(row.path)} key={row.id}>{row.fileName.replace(/\.md$/i,"")}</button>)}</div>}<div className="db-calendar-grid">{days.map(d=>{const key=format(d,"yyyy-MM-dd");return <div className="db-day" key={key} onDoubleClick={()=>void add({[col.name]:col.type==="date-range"?{start:key,end:key}:key})} onDragOver={e=>e.preventDefault()} onDrop={e=>{const r=rows.find(x=>x.id===e.dataTransfer.getData("row"));if(r)move(r,key)}}><span>{format(d,"d")}</span>{rows.filter(r=>{const value=range(r);return Boolean(value.start)&&key>=value.start&&key<=value.end}).map(r=><button draggable onDragStart={e=>e.dataTransfer.setData("row",r.id)} onClick={()=>void useStore.getState().openFile(r.path)} title={`${range(r).start} – ${range(r).end}`} key={r.id}>{r.fileName.replace(/\.md$/i,"")}</button>)}</div>})}</div></div>;
-}
-function DateColumn({meta,view,updateView}:{meta:DatabaseMeta;view:DatabaseViewDefinition;updateView?:any}){return <div className="db-empty"><p>Select a date column in this view.</p><select defaultValue="" onChange={e=>updateView?.({...view,config:{...view.config,dateColumnId:e.target.value}})}><option value="">Date column…</option>{meta.schema.filter(c=>c.type==="date"||c.type==="date-range").map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select></div>}
-function Timeline({meta,rows,view,commit,updateView,add}:{meta:DatabaseMeta;rows:DatabaseRow[];view:DatabaseViewDefinition;commit:any;updateView:any;add:any}) {
-  const cfg=view.config as TimelineViewConfig, col=meta.schema.find(c=>c.id===cfg.dateColumnId);
-  if(!col)return <DateColumn meta={meta} view={view} updateView={updateView}/>;
-  const starts=rows.map(row=>{const value=row.yamlData[col.name];return typeof value==="string"?value:typeof value==="object"&&value?String((value as {start?:unknown}).start??""):""}).filter(Boolean).sort();
-  const anchor=starts[0]?new Date(`${starts[0]}T00:00:00`):new Date();
-  const span=cfg.zoom==="day"?21:cfg.zoom==="week"?42:120, start=startOfWeek(anchor), days=Array.from({length:span},(_,i)=>addDays(start,i));
-  return <div className="db-timeline"><div className="db-timeline-nav"><strong>Timeline</strong><select value={cfg.zoom} onChange={e=>updateView({...view,config:{...cfg,zoom:e.target.value}})}><option>day</option><option>week</option><option>month</option></select><button onClick={()=>void add({[col.name]:{start:format(new Date(),"yyyy-MM-dd"),end:format(addDays(new Date(),1),"yyyy-MM-dd")}})}><Plus size={13}/>New</button></div><div className="db-timeline-head"><span>Item</span>{days.map(d=><i key={d.toISOString()}>{format(d,"d")}</i>)}</div>{rows.map(row=>{const raw=row.yamlData[col.name],range=typeof raw==="string"?{start:raw,end:raw}:(raw as {start?:string;end?:string})||{},left=Math.max(0,days.findIndex(d=>format(d,"yyyy-MM-dd")===range.start)),end=Math.max(left,days.findIndex(d=>format(d,"yyyy-MM-dd")===range.end));return <div className="db-timeline-row" key={row.id}><button onClick={()=>void useStore.getState().openFile(row.path)}>{row.fileName.replace(/\.md$/i,"")}</button><div className="db-timeline-track" onDragOver={e=>e.preventDefault()} onDrop={e=>{const rect=e.currentTarget.getBoundingClientRect(),index=Math.max(0,Math.min(span-1,Math.floor((e.clientX-rect.left)/rect.width*span))),oldStart=range.start?new Date(`${range.start}T00:00:00`):days[index]!,oldEnd=range.end?new Date(`${range.end}T00:00:00`):oldStart,length=Math.max(0,Math.round((oldEnd.getTime()-oldStart.getTime())/864e5));void commit(row,col,{start:format(days[index]!,"yyyy-MM-dd"),end:format(addDays(days[index]!,length),"yyyy-MM-dd")})}}>{range.start&&<span className="db-bar" style={{left:`${left/span*100}%`,width:`${Math.max(1,end-left+1)/span*100}%`}} draggable title={`${range.start} – ${range.end}`}><input aria-label="Timeline start" type="date" value={range.start??""} onChange={e=>void commit(row,col,{...range,start:e.target.value})}/><input aria-label="Timeline end" type="date" value={range.end??""} onChange={e=>void commit(row,col,{...range,end:e.target.value})}/></span>}</div></div>})}</div>;
+export function DatabaseView({ folderPath }: { folderPath: string }) {
+  const workspace = useStore((s) => s.workspace);
+  const [error, setError] = useState("");
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    let firstLoad = true;
+    let timer: ReturnType<typeof setTimeout>;
+    setReady(false);
+    async function refresh() {
+      try {
+        const databases = await api<DatabaseMeta[]>(
+          "/api/databases",
+          "GET",
+          undefined,
+          workspace,
+        );
+        if (cancelled) return;
+        useWorkspaceStore.setState({ rootPath: workspace?.root ?? null });
+        useWorkspaceStore.getState().setDatabases(databases);
+        if (firstLoad) {
+          firstLoad = false;
+          const route = parseRoute(),
+            meta = databases.find((d) => d.folderPath === folderPath);
+          if (
+            meta &&
+            workspace &&
+            route?.kind === "folder" &&
+            route.path === folderPath
+          ) {
+            const requested = route.viewId
+              ? meta.views.find((v) => v.id === route.viewId)
+              : meta.views.find(
+                  (v) =>
+                    v.type === (route.view === "board" ? "kanban" : route.view),
+                );
+            if (requested && requested.id !== meta.activeViewId)
+              await databaseApi.databaseSetActiveView(
+                workspace.root,
+                meta.id,
+                requested.id,
+              );
+          }
+        }
+        if (!cancelled) {
+          setReady(true);
+          setError("");
+        }
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    }
+    void refresh();
+    const changed = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void refresh(), 200);
+    };
+    window.addEventListener("maek:workspace-change", changed);
+    window.addEventListener("focus", changed);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener("maek:workspace-change", changed);
+      window.removeEventListener("focus", changed);
+    };
+  }, [workspace, folderPath]);
+  const meta = useWorkspaceStore((s) =>
+    s.databases.find((d) => d.folderPath === folderPath),
+  );
+  useEffect(() => {
+    if (!ready || !meta || !workspace) return;
+    const view = meta.views.find((v) => v.id === meta.activeViewId);
+    const route = parseRoute();
+    if (view && (route?.kind !== "folder" || route.viewId !== view.id))
+      navigate(
+        {
+          kind: "folder",
+          workspaceKey: workspaceKeyFor(workspace.root),
+          path: folderPath,
+          view: view.type === "kanban" ? "board" : view.type,
+          viewId: view.id,
+        },
+        true,
+      );
+  }, [ready, meta, workspace, folderPath]);
+  if (error)
+    return (
+      <div role="alert" className="p-6 text-maek-red">
+        {error}
+      </div>
+    );
+  if (!ready)
+    return <div className="p-6 text-muted-text">Loading database…</div>;
+  if (!meta)
+    return <div className="p-6 text-muted-text">Database not found.</div>;
+  return <DatabaseViewContainer databaseFolderPath={folderPath} />;
 }

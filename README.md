@@ -52,11 +52,11 @@ npm run install:desktop
 실제 파일 이름과 위치를 유지합니다. `.maek-data`, `notes/`, `history/`,
 `databases.json`을 자동 생성하지 않습니다. 열린 탭 목록과 순서는 workspace 루트의
 `.maek/tabs.json`(원본 앱 version 4 형식)을 단일 원본으로 공유하며, 데스크톱 앱이
-파일을 바꾸면 웹에도 실시간 반영합니다. 웹은 표시할 수 있는 파일 탭만 관리하고
+파일을 바꾸면 웹에도 실시간 반영합니다. 웹은 파일·데이터베이스·워크스페이스 설정 탭을 관리하고
 원본 전용 탭·그룹·분할 정보와 알 수 없는 필드는 병합 저장으로 보존합니다. 테마·
 사이드바 폭·펼침·스크롤·선택 탭 같은 표시 상태는 브라우저 세션별 `ui.json`에,
-최근 파일은 `recentFiles.json`에 저장합니다. 원본 Maek Note의 version 4 탭 및
-version 1 최근 파일 구조는 읽기 전용 마이그레이션 입력으로 사용합니다. 브라우저
+최근 파일은 앱과 공유하는 `.maek/recentFiles.json`에 열람 횟수와 함께 저장합니다. 원본 Maek Note의 version 4 탭 및
+version 1 최근 파일 구조를 앱과 동일하게 읽고 씁니다. 기존 웹 세션별 최근 파일은 한 번 병합합니다. 브라우저
 localStorage에는 마지막 경로와 표시용 최근 Workspace만 저장합니다. 일반 `notes`·
 `history` 폴더는 사용자 파일로 취급하며 자동 삭제하지 않습니다.
 
@@ -99,3 +99,5 @@ npm run test:e2e
 ```
 
 현재 런타임 경계와 데이터 보존 규칙은 [아키텍처 문서](docs/architecture.md)를 참고하세요.
+
+데이터베이스·워크스페이스 설정의 원본 이식 범위와 저장 규칙은 [이식 문서](docs/database-desktop-parity.md)를 참고하세요.
