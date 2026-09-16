@@ -10,6 +10,17 @@ body,
 .sidebar-toggle-button {
   @apply flex items-center justify-center w-8 h-7 rounded-full text-muted-text hover:text-neutral-ink hover:bg-surface-overlay transition-colors shrink-0;
 }
+.explorer-content-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-subtle) transparent;
+}
+.explorer-content-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.explorer-content-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-border-subtle);
+  border-radius: 999px;
+}
 .workspace-input {
   @apply w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-neutral-ink outline-none focus:border-maek-red;
 }

@@ -10,7 +10,9 @@ import {
   Sun,
   ExternalLink,
   Power,
+  Plus,
   RefreshCw,
+  Search,
   Columns2,
 } from "lucide-react";
 import { useStore, schedulePersistence, type Tab } from "./store";
@@ -359,11 +361,10 @@ function AppContent() {
           </section>
         </div>
       ) : (
-        <div className="w-screen h-screen overflow-hidden bg-surface pt-[6px] pb-2 pl-2 flex text-neutral-ink">
+        <div className="w-screen h-screen overflow-hidden bg-surface flex text-neutral-ink">
           {!collapsed && (
-            <>
               <aside
-                className="glass-panel glass-panel-inner h-full overflow-hidden bg-warm-vellum rounded-2xl border border-default shrink-0"
+                className="relative h-full overflow-hidden bg-warm-vellum shrink-0"
                 style={{ width: state.sidebarWidth }}
               >
                 <Explorer
@@ -372,34 +373,36 @@ function AppContent() {
                   onCollapse={() => setCollapsed(true)}
                   onQuit={() => setShowQuitConfirm(true)}
                 />
+                <div
+                  role="separator"
+                  aria-label="Resize sidebar"
+                  aria-orientation="vertical"
+                  className="absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize touch-none"
+                  onPointerDown={(e) => {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    if (e.currentTarget.hasPointerCapture(e.pointerId))
+                      useStore.setState({
+                        sidebarWidth: Math.min(600, Math.max(180, e.clientX)),
+                      });
+                  }}
+                  onPointerUp={(e) => {
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                    schedulePersistence();
+                  }}
+                />
               </aside>
-              <div
-                role="separator"
-                aria-label="Resize sidebar"
-                aria-orientation="vertical"
-                className="w-2 cursor-col-resize shrink-0"
-                onPointerDown={(e) => {
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                }}
-                onPointerMove={(e) => {
-                  if (e.currentTarget.hasPointerCapture(e.pointerId))
-                    useStore.setState({
-                      sidebarWidth: Math.min(600, Math.max(180, e.clientX - 8)),
-                    });
-                }}
-                onPointerUp={(e) => {
-                  e.currentTarget.releasePointerCapture(e.pointerId);
-                  schedulePersistence();
-                }}
-              />
-            </>
           )}
           {collapsed && (
             <aside
-              className="h-full w-10 shrink-0 bg-surface"
+              className="h-full w-10 shrink-0 bg-warm-vellum"
               aria-label="Collapsed sidebar"
             >
-              <div className="h-[52px] pt-2 pb-1 flex items-center justify-center">
+              <nav
+                className="pt-2 flex flex-col items-center gap-1"
+                aria-label="Sidebar shortcuts"
+              >
                 <button
                   aria-label="Open sidebar"
                   title="Open sidebar"
@@ -408,7 +411,41 @@ function AppContent() {
                 >
                   <PanelIcon side="left" isExpanded={false} size={15} />
                 </button>
-              </div>
+                <div className="my-1 w-5 border-t border-default" />
+                <button
+                  aria-label="Search"
+                  title="Search"
+                  className="icon-button"
+                  onClick={() => setSearch(true)}
+                >
+                  <Search size={16} />
+                </button>
+                <button
+                  aria-label="Add new"
+                  title="Add new"
+                  className="icon-button"
+                  onClick={() => setCollapsed(false)}
+                >
+                  <Plus size={17} />
+                </button>
+                <div className="my-1 w-5 border-t border-default" />
+                <button
+                  aria-label="Open tabs"
+                  title="Open tabs"
+                  className="icon-button"
+                  onClick={() => setCollapsed(false)}
+                >
+                  <Columns2 size={16} />
+                </button>
+                <button
+                  aria-label="Files"
+                  title="Files"
+                  className="icon-button"
+                  onClick={() => setCollapsed(false)}
+                >
+                  <FolderOpen size={16} />
+                </button>
+              </nav>
             </aside>
           )}
           <main className="flex-1 min-w-0 h-full flex flex-col bg-surface overflow-hidden">

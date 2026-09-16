@@ -2,7 +2,6 @@ import { useState, useRef } from "react";
 import {
   Folder as FolderIcon,
   FolderOpen,
-  ChevronsUpDown,
   FolderPlus,
   Check,
 } from "lucide-react";
@@ -70,7 +69,7 @@ export function FolderSelector({
         onClick={() => setIsOpen(!isOpen)}
         disabled={isLoading}
         className={cn(
-          "flex items-center gap-2 px-2 py-1.5 w-full min-w-0",
+          "flex w-full items-center gap-2 px-2 py-1.5 min-w-0",
           "text-sm rounded-lg transition-colors",
           "focus:outline-none focus:ring-2 focus:ring-maek-red/20",
           isLoading
@@ -95,9 +94,6 @@ export function FolderSelector({
             <span className="text-muted-text">Select a folder...</span>
           )}
         </span>
-
-        {/* Up/Down Arrow Icon */}
-        <ChevronsUpDown className="w-4 h-4 shrink-0" />
       </button>
 
       {/* Dropdown Menu */}
@@ -106,7 +102,7 @@ export function FolderSelector({
         position={getMenuPosition()}
         onClose={handleClose}
         anchorRef={buttonRef}
-        minWidth={200}
+        minWidth={buttonRef.current?.getBoundingClientRect().width ?? 200}
       >
         {/* Workspace List */}
         {workspaces.map((workspace) => {

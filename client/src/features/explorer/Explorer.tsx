@@ -13,11 +13,13 @@ import {
   Table,
   Settings,
   Table2,
+  Trash2,
   X,
 } from "lucide-react";
 import { FolderSelector } from "./components/FolderSelector";
 import {
   FloatingMenu,
+  ConfirmDialog,
   MenuItem,
   MenuSeparator,
   PanelIcon,
@@ -26,7 +28,7 @@ import { useHoverMenu } from "../../shared/hooks";
 import { useStore, schedulePersistence } from "../../store";
 import { api, toBase64 } from "../../host";
 import type { FileNode } from "@shared/workspace";
-import type { DatabaseMeta, DatabaseViewType } from "@shared/database";
+import type { DatabaseMeta } from "@shared/database";
 import { cn } from "../../lib/utils";
 import { collectDropFiles } from "./importDrop";
 import { useFolderAppearance } from "./stores/folderAppearanceStore";
@@ -63,14 +65,16 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   } | null>(null);
   const dropIndexRef = useRef<number | null>(null);
   const suppressTabClick = useRef(false);
-  const [height, setHeight] = useState(400);
-  const [openNotesExpanded, setOpenNotesExpanded] = useState(true);
-  const [foldersExpanded, setFoldersExpanded] = useState(true);
   const [pendingReveal, setPendingReveal] = useState<{ id: string } | null>(null);
   const saveStatus = tabs.some((tab) => tab.status === "saving")
     ? "Saving"
     : tabs.some(isTabDirty) ? "Unsaved" : null;
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [pendingTrash, setPendingTrash] = useState<{
+    paths: string[];
+    label: string;
+  } | null>(null);
+  const [trashBusy, setTrashBusy] = useState(false);
   const [openNotesMenu, setOpenNotesMenu] = useState<{
     x: number;
     y: number;
@@ -186,6 +190,20 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     }
     return roots;
   }, [nodes]);
+  const visibleNodeCount = useMemo(() => {
+    const expandedIds = new Set(expanded);
+    const countVisible = (items: FileNode[]): number =>
+      items.reduce(
+        (count, item) =>
+          count +
+          1 +
+          (item.isDir && expandedIds.has(item.id)
+            ? countVisible(item.children ?? [])
+            : 0),
+        0,
+      );
+    return countVisible(data);
+  }, [data, expanded]);
 
   const revealInFolderTree = useCallback(
     (id: string) => {
@@ -193,14 +211,13 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         useStore.getState().setError("This file is no longer in the folder tree.");
         return;
       }
-      setFoldersExpanded(true);
       setPendingReveal({ id });
     },
     [nodes],
   );
   useEffect(() => {
     const api = tree.current;
-    if (!pendingReveal || !foldersExpanded || !api) return;
+    if (!pendingReveal || !api) return;
     let cancelled = false;
     const { id } = pendingReveal;
     // get(id) only sees expanded nodes. scrollTo opens ancestors using the
@@ -217,15 +234,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       setPendingReveal(null);
     })();
     return () => { cancelled = true; };
-  }, [pendingReveal, foldersExpanded, workspace?.wsId]);
-  useEffect(() => {
-    if (!container.current) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) setHeight(entry.contentRect.height);
-    });
-    observer.observe(container.current);
-    return () => observer.disconnect();
-  }, [foldersExpanded]);
+  }, [pendingReveal, workspace?.wsId]);
   useEffect(() => {
     if (pendingEdit && tree.current?.get(pendingEdit)) {
       const n = tree.current.get(pendingEdit)!;
@@ -244,10 +253,10 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   };
   const currentDir = (n = menu?.node ?? selection[0]) =>
     n ? (n.isDir ? n.id : (n.parent ?? "")) : "";
-  async function createDatabase(viewType: DatabaseViewType, dir = currentDir()) {
+  async function createDatabase(dir = currentDir()) {
     const name = window.prompt("Database name", "New Database")?.trim();
     if (!name) return;
-    const database = await api<DatabaseMeta>("/api/databases", "POST", { parent: dir, name, viewType });
+    const database = await api<DatabaseMeta>("/api/databases", "POST", { parent: dir, name, viewType: "table" });
     await useStore.getState().refresh();
     setDatabases(await api<DatabaseMeta[]>("/api/databases"));
     useStore.getState().openDatabase(database.folderPath, database.name);
@@ -268,16 +277,44 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     await useStore.getState().refresh();
   }
   async function trash(paths: string[]) {
-    if (!(await useStore.getState().saveAll())) return;
-    if (!window.confirm(`Move ${paths.length} item(s) to Trash?`)) return;
-    await api("/api/files", "DELETE", { paths });
-    for (const t of useStore
+    const affectedTabs = useStore
       .getState()
-      .tabs.filter((t) =>
-        paths.some((p) => t.id === p || t.id.startsWith(p + "/")),
-      ))
-      await useStore.getState().closeTab(t.id);
+      .tabs.filter((tab) =>
+        paths.some((p) => tab.id === p || tab.id.startsWith(p + "/")),
+      );
+    const saved = await Promise.all(
+      affectedTabs.map((tab) => useStore.getState().save(tab.id)),
+    );
+    if (!saved.every(Boolean))
+      throw new Error("Could not save an open file before moving it to Trash.");
+
+    await api("/api/files", "DELETE", { paths });
+    for (const tab of affectedTabs) await useStore.getState().closeTab(tab.id);
     await useStore.getState().refresh();
+  }
+  function requestTrash(paths: string[]) {
+    const uniquePaths = [...new Set(paths)].filter(Boolean);
+    if (!uniquePaths.length) return;
+    const label =
+      uniquePaths.length === 1
+        ? (nodes.find((node) => node.id === uniquePaths[0])?.name ??
+          uniquePaths[0]!.split("/").at(-1) ??
+          uniquePaths[0]!)
+        : `${uniquePaths.length} items`;
+    setMenu(null);
+    setPendingTrash({ paths: uniquePaths, label });
+  }
+  async function confirmTrash() {
+    if (!pendingTrash || trashBusy) return;
+    setTrashBusy(true);
+    try {
+      await trash(pendingTrash.paths);
+      setPendingTrash(null);
+    } catch (error) {
+      useStore.getState().setError(String(error));
+    } finally {
+      setTrashBusy(false);
+    }
   }
   const contextPaths = () =>
     menu?.node
@@ -436,7 +473,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         }
         if ((e.key === "Backspace" && cmd) || e.key === "Delete") {
           e.preventDefault();
-          void run(() => trash(selection.map((n) => n.id)));
+          requestTrash(selection.map((n) => n.id));
         }
       }}
     >
@@ -475,13 +512,13 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           ref={createButtonRef}
           className="w-full h-8 px-2 rounded-md flex items-center gap-2 text-sm text-muted-text hover:text-neutral-ink hover:bg-surface-overlay transition-colors"
           aria-label="Add new"
-          onClick={() => {
-            createHoverMenu.close();
-            void run(() => create("file"));
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            createHoverMenu.open({ x: rect.left, y: rect.bottom });
           }}
           onMouseEnter={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
-            createHoverMenu.open({ x: r.right, y: r.bottom });
+            createHoverMenu.open({ x: r.left, y: r.bottom });
           }}
           onMouseLeave={() => {
             createHoverMenu.startCloseTimer();
@@ -492,17 +529,10 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           <kbd className="ml-auto text-[11px] text-muted-text font-sans">⌘N</kbd>
         </button>
       </div>
+      <div ref={container} className="explorer-content-scroll flex-1 min-h-0 overflow-y-auto">
       {tabs.length > 0 && (
-        <div
-          className={cn(
-            "shrink-0 flex flex-col min-h-0",
-            openNotesExpanded && "max-h-[40%]",
-          )}
-        >
-          <div
-            className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-text flex items-center justify-between cursor-pointer shrink-0 hover:text-neutral-ink transition-colors"
-            onClick={() => setOpenNotesExpanded((p) => !p)}
-          >
+        <div className="flex flex-col">
+          <div className="pl-5 pr-3 pt-2 pb-1 text-sm font-semibold tracking-wide text-muted-text flex items-center shrink-0">
             <span className="flex items-center gap-2">
               Open Tabs
               {saveStatus && (
@@ -518,17 +548,8 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                 />
               )}
             </span>
-            <ChevronRight
-              className={cn(
-                "w-3 h-3 transition-transform",
-                openNotesExpanded && "rotate-90",
-              )}
-            />
           </div>
-          {openNotesExpanded && (
-            <div
-              className="overflow-y-auto px-1 pb-1"
-            >
+          <div className="px-3 pb-1">
               {tabs.map((t, index) => t.isPopup ? null : (
                 <div key={t.id}>
                   <div
@@ -578,7 +599,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                         : "text-neutral-ink hover:bg-surface-overlay",
                     )}
                   >
-                    {t.viewKind === "database" || t.viewKind === "kanban" ? <Table className="w-4 h-4 shrink-0" /> : t.viewKind === "spreadsheet" ? <Table2 className="w-4 h-4 shrink-0" /> : /\.html$/i.test(t.name) ? <FileCode className="w-4 h-4 shrink-0" /> : <FileText className="w-4 h-4 shrink-0" />}
                     <span className="truncate flex-1 min-w-0">
                       {t.name}
                     </span>
@@ -622,16 +642,11 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                       : "transparent",
                 }}
               />
-            </div>
-          )}
+          </div>
         </div>
       )}
-      {tabs.length > 0 && (
-        <div className="mx-3 my-1 border-b border-default shrink-0" />
-      )}
       <div
-        className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-text flex items-center justify-between cursor-pointer shrink-0 hover:text-neutral-ink transition-colors"
-        onClick={() => setFoldersExpanded((p) => !p)}
+        className="pl-5 pr-3 pt-2 pb-1 text-sm font-semibold tracking-wide text-muted-text flex items-center justify-between shrink-0"
       >
         <span>Files</span>
         <span className="flex items-center gap-1">
@@ -645,18 +660,10 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           >
             <RefreshCw size={14} />
           </button>
-          <ChevronRight
-            className={cn(
-              "w-3 h-3 transition-transform",
-              foldersExpanded && "rotate-90",
-            )}
-          />
         </span>
       </div>
-      {foldersExpanded && (
-        <div
-          className="flex-1 min-h-0 px-2"
-          ref={container}
+      <div
+        className="px-2"
         onContextMenu={(e) => {
           if ((e.target as HTMLElement).closest("[data-file-node]")) return;
           e.preventDefault();
@@ -696,7 +703,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           ref={tree}
           data={data}
           width="100%"
-          height={height}
+          height={Math.max(1, visibleNodeCount * 28)}
           rowHeight={28}
           indent={12}
           overscanCount={5}
@@ -761,8 +768,8 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           </p>
         )}
       </div>
-      )}
-      <div className="mt-auto px-3 py-2 shrink-0 border-t border-default flex items-center justify-between">
+      </div>
+      <div className="mt-auto px-3 py-2 shrink-0 flex items-center justify-between">
         <button
           className="icon-button"
           aria-label="Open settings"
@@ -786,28 +793,12 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
             onClick={() => void run(() => create("file"))}
           />
           <MenuItem
-            label="New CSV"
-            onClick={() => void run(() => create("file", currentDir(), "Untitled.csv"))}
-          />
-          <MenuItem
             label="New folder"
             onClick={() => void run(() => create("dir"))}
           />
           <MenuItem
-            label="New database (Table)"
-            onClick={() => void run(() => createDatabase("table"))}
-          />
-          <MenuItem
-            label="New database (Board)"
-            onClick={() => void run(() => createDatabase("kanban"))}
-          />
-          <MenuItem
-            label="New database (Calendar)"
-            onClick={() => void run(() => createDatabase("calendar"))}
-          />
-          <MenuItem
-            label="New database (Timeline)"
-            onClick={() => void run(() => createDatabase("timeline"))}
+            label="New database"
+            onClick={() => void run(() => createDatabase())}
           />
           <MenuSeparator />
           {menu.node?.isDir && (databases.some(d=>d.folderPath===menu.node!.id) ? <>
@@ -874,8 +865,10 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                 }
               />
               <MenuItem
+                destructive
+                icon={<Trash2 size={16} />}
                 label="Move to Trash"
-                onClick={() => void run(() => trash(contextPaths()))}
+                onClick={() => requestTrash(contextPaths())}
               />
             </>
           )}
@@ -889,6 +882,8 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           onClose={() => createHoverMenu.close()}
           onMouseEnter={createHoverMenu.cancelCloseTimer}
           onMouseLeave={createHoverMenu.startCloseTimer}
+          minWidth={createButtonRef.current?.getBoundingClientRect().width ?? 0}
+          offset={0}
         >
           <MenuItem
             icon={<FileText size={16} />}
@@ -903,7 +898,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
             label="New database"
             onClick={() => {
               createHoverMenu.close();
-              void run(() => createDatabase("table"));
+              void run(() => createDatabase());
             }}
           />
           <MenuItem
@@ -916,6 +911,21 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           />
         </FloatingMenu>
       )}
+      <ConfirmDialog
+        open={pendingTrash !== null}
+        title="Move to Trash?"
+        description={
+          pendingTrash
+            ? pendingTrash.paths.length === 1
+              ? `“${pendingTrash.label}” will be moved to Trash. You can recover it from Trash.`
+              : `${pendingTrash.label} will be moved to Trash. You can recover them from Trash.`
+            : ""
+        }
+        confirmLabel="Move to Trash"
+        busy={trashBusy}
+        onCancel={() => setPendingTrash(null)}
+        onConfirm={() => void confirmTrash()}
+      />
       {openNotesMenu && (
         <FloatingMenu
           isOpen

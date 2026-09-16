@@ -52,6 +52,7 @@ import {
   kindFor,
   previewMime as mime,
 } from "./workspace/file-kind";
+import { trashItem } from "./fs/trashItem";
 import {
   readRootTabs,
   mergeRootTabs,
@@ -538,20 +539,7 @@ export function createHost(options: HostOptions = {}) {
         const abs = await target(ws, p);
         await lstat(abs);
         if (options.trash) await options.trash(abs);
-        else {
-          if (process.platform !== "darwin")
-            throw badRequest("macOS is required");
-          await run("osascript", [
-            "-e",
-            "on run argv",
-            "-e",
-            'tell application "Finder" to delete POSIX file (item 1 of argv)',
-            "-e",
-            "end run",
-            "--",
-            abs,
-          ]);
-        }
+        else await trashItem(abs);
       }
       return { ok: true };
     });

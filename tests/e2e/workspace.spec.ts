@@ -270,7 +270,14 @@ test("search, read-only preview, unsupported file and native picker cancel", asy
   ).toBeVisible();
 });
 
-test("creates and edits a CSV spreadsheet with undo and autosave", async ({ page }) => {
+test("file tree context menu offers one database option and no CSV option", async ({ page }) => {
+  await open(page);
+  await page.locator('[data-path="Folder"]').click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: "New CSV", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "New database", exact: true })).toHaveCount(1);
+});
+
+test.skip("creates and edits a CSV spreadsheet with undo and autosave", async ({ page }) => {
   await open(page);
   await page.locator('[data-path="Folder"]').click({ button: "right" });
   await page.getByRole("menuitem", { name: "New CSV", exact: true }).click();
@@ -334,10 +341,14 @@ test("rename, duplicate, move and delete use the tree and real paths", async ({
     for (const p of deleted) rmSync(path.join(root, p));
     return route.fulfill({ json: { ok: true } });
   });
-  page.on("dialog", (d) => void d.accept());
   await page.locator('[data-path="Moved.md"]').click({ button: "right" });
   await page
     .getByRole("menuitem", { name: "Move to Trash", exact: true })
+    .click();
+  const trashDialog = page.getByRole("dialog", { name: "Move to Trash?" });
+  await expect(trashDialog).toContainText("Moved.md");
+  await trashDialog
+    .getByRole("button", { name: "Move to Trash", exact: true })
     .click();
   await expect.poll(() => deleted).toEqual(["Moved.md"]);
   await expect(page.locator('[data-path="Moved.md"]')).toHaveCount(0);
