@@ -82,6 +82,37 @@ let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let reconnectAttempt = 0;
 let workspaceOpenEpoch = 0;
 let workspaceOpenController: AbortController | undefined;
+type SplitPane = State["split"]["active"];
+// File reads can finish out of order. Keep pane placement and focus intent
+// separate so a stale response may add its tab without stealing the latest
+// user selection.
+let tabFocusIntent = 0;
+const paneOpenIntent: Record<SplitPane, number> = { left: 0, right: 0 };
+
+function beginPaneOpen(pane: SplitPane) {
+  return {
+    pane,
+    focus: ++tabFocusIntent,
+    paneOpen: ++paneOpenIntent[pane],
+  };
+}
+
+function invalidateTabFocus() {
+  tabFocusIntent++;
+}
+
+function invalidatePaneOpen(pane: SplitPane) {
+  invalidateTabFocus();
+  paneOpenIntent[pane]++;
+}
+
+function isLatestPaneOpen(intent: ReturnType<typeof beginPaneOpen>) {
+  return paneOpenIntent[intent.pane] === intent.paneOpen;
+}
+
+function isLatestTabFocus(intent: ReturnType<typeof beginPaneOpen>) {
+  return tabFocusIntent === intent.focus;
+}
 /**
  * Whether this browser changed the open-tab list (open/close/reorder) since the
  * last persist. Only a tab-list change rewrites the shared root `.maek/tabs.json`
@@ -620,24 +651,37 @@ export const useStore = create<State>((set, get) => ({
       get().setActiveTab(id);
       return;
     }
+    const intent = beginPaneOpen(get().split.active);
     try {
       const epoch = sessionEpoch;
       const workspace = get().workspace;
       if (!workspace) return;
       const file = await fileQuery(workspace, id);
       if (epoch !== sessionEpoch) return;
-      set((s) => ({
-        tabs: s.tabs.some((t) => t.id === id)
-          ? s.tabs
-          : [...s.tabs, makeTab(id, file)],
-        activeTabId: id,
-        split: { ...s.split, [s.split.active]: id, left: s.split.left ?? id },
-        recentFiles: [
-          { path: id, lastOpened: Date.now() },
-          ...s.recentFiles.filter((f) => f.path !== id),
-        ].slice(0, 200),
-        error: "",
-      }));
+      set((s) => {
+        const latestForPane = isLatestPaneOpen(intent);
+        const activate = latestForPane && isLatestTabFocus(intent);
+        const split: State["split"] = latestForPane
+          ? {
+              ...s.split,
+              left: s.split.left ?? id,
+              [intent.pane]: id,
+              ...(activate ? { active: intent.pane } : {}),
+            }
+          : s.split;
+        return {
+          tabs: s.tabs.some((t) => t.id === id)
+            ? s.tabs
+            : [...s.tabs, makeTab(id, file)],
+          activeTabId: activate ? id : s.activeTabId,
+          split,
+          recentFiles: [
+            { path: id, lastOpened: Date.now() },
+            ...s.recentFiles.filter((f) => f.path !== id),
+          ].slice(0, 200),
+          error: "",
+        };
+      });
       tabsDirty = true;
       later();
     } catch (e) {
@@ -651,27 +695,69 @@ export const useStore = create<State>((set, get) => ({
       return;
     }
     const target = get().split.active === "left" ? "right" : "left";
-    await get().openFile(id);
-    set((s) => ({
-      split: { ...s.split, left: s.split.left ?? s.activeTabId, [target]: id, active: target },
-      activeTabId: id,
-    }));
-    later();
+    const intent = beginPaneOpen(target);
+    void recordRecent(id);
+    try {
+      const epoch = sessionEpoch;
+      const workspace = get().workspace;
+      if (!workspace) return;
+      const existing = get().tabs.find((t) => t.id === id);
+      const tab = existing ?? makeTab(id, await fileQuery(workspace, id));
+      if (epoch !== sessionEpoch) return;
+      set((s) => {
+        const latestForPane = isLatestPaneOpen(intent);
+        const activate = latestForPane && isLatestTabFocus(intent);
+        const split: State["split"] = latestForPane
+          ? {
+              ...s.split,
+              left: s.split.left ?? s.activeTabId ?? id,
+              [target]: id,
+              ...(activate ? { active: target } : {}),
+            }
+          : s.split;
+        return {
+          tabs: s.tabs.some((t) => t.id === id) ? s.tabs : [...s.tabs, tab],
+          activeTabId: activate ? id : s.activeTabId,
+          split,
+          error: "",
+        };
+      });
+      if (!existing) tabsDirty = true;
+      later();
+    } catch (e) {
+      set({ error: String(e) });
+    }
   },
   setSplitActive(pane) {
     const id = get().split[pane];
     if (!id) return;
+    invalidateTabFocus();
     const previous = get().activeTabId;
     if (previous && previous !== id) void get().save(previous);
     set((s) => ({ split: { ...s.split, active: pane }, activeTabId: id }));
     later();
   },
   setSplitRatio(ratio) { set((s) => ({ split: { ...s.split, ratio: Math.min(.75, Math.max(.25, ratio)) } })); later(); },
-  singlePane(pane) { set((s) => ({ split: { ...s.split, left: s.split[pane], right: null, active: "left" }, activeTabId: s.split[pane] })); later(); },
+  singlePane(pane) {
+    invalidateTabFocus();
+    paneOpenIntent.left++;
+    paneOpenIntent.right++;
+    set((s) => ({
+      split: {
+        ...s.split,
+        left: s.split[pane],
+        right: null,
+        active: "left",
+      },
+      activeTabId: s.split[pane],
+    }));
+    later();
+  },
   setActiveTab(id) {
+    invalidatePaneOpen(get().split.active);
     const previous = get().activeTabId;
     if (previous && previous !== id) void get().save(previous);
-    set((s) => ({ activeTabId: id, split: { ...s.split, [s.split.active]: id, left: s.split.left ?? id } }));
+    set((s) => ({ activeTabId: id, split: { ...s.split, left: s.split.left ?? id, [s.split.active]: id } }));
     later();
   },
   reorderTabs(fromIndex, insertionIndex) {
@@ -785,6 +871,7 @@ export const useStore = create<State>((set, get) => ({
       get().setActiveTab(DASHBOARD_TAB_ID);
       return;
     }
+    invalidatePaneOpen(get().split.active);
     set((s) => ({
       tabs: [
         ...s.tabs,
@@ -801,6 +888,7 @@ export const useStore = create<State>((set, get) => ({
       get().setActiveTab(id);
       return;
     }
+    invalidatePaneOpen(get().split.active);
     const name = folderPath ? (folderPath.split("/").pop() ?? "") : "Workspace";
     set((s) => ({
       tabs: [
@@ -817,6 +905,7 @@ export const useStore = create<State>((set, get) => ({
       get().setActiveTab(id);
       return;
     }
+    invalidatePaneOpen(get().split.active);
     const name = displayName ?? folderPath.split("/").pop() ?? "Database";
     set((s) => ({
       tabs: [...s.tabs, makeVirtualTab(id, name, "database", folderPath)],

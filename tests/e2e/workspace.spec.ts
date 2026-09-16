@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import {
   mkdtempSync,
   mkdirSync,
@@ -470,6 +470,151 @@ test("original note picker inserts encoded links and opens literal-percent filen
   await expect(
     page.locator('[data-tab-id="Target %20 노트.md"]'),
   ).toBeVisible();
+});
+
+async function expectLatestLinkOpenToWin(
+  page: Page,
+  openLink: (link: Locator) => Promise<void>,
+) {
+  writeFileSync(
+    path.join(root, "Folder/기존 노트.md"),
+    "# Source\n\n[Open target](../target.md)\n",
+  );
+  writeFileSync(path.join(root, "earlier.md"), "# Earlier request\n");
+  writeFileSync(path.join(root, "target.md"), "# Latest link target\n");
+
+  let releaseEarlier!: () => void;
+  let markEarlierRequested!: () => void;
+  let markEarlierFinished!: () => void;
+  const earlierGate = new Promise<void>((resolve) => {
+    releaseEarlier = resolve;
+  });
+  const earlierRequested = new Promise<void>((resolve) => {
+    markEarlierRequested = resolve;
+  });
+  const earlierFinished = new Promise<void>((resolve) => {
+    markEarlierFinished = resolve;
+  });
+
+  await page.route("**/api/files/content?**", async (route) => {
+    const requestUrl = new URL(route.request().url());
+    if (
+      route.request().method() === "GET" &&
+      requestUrl.searchParams.get("path") === "earlier.md"
+    ) {
+      markEarlierRequested();
+      await earlierGate;
+      await route.continue();
+      markEarlierFinished();
+      return;
+    }
+    await route.continue();
+  });
+
+  try {
+    await open(page);
+    await editNote(page);
+
+    await page.locator('[data-path="earlier.md"]').click();
+    await earlierRequested;
+    await openLink(page.locator(".tiptap a.maek-note-link"));
+
+    const targetTab = page.locator('[data-tab-id="target.md"]');
+    await expect(page.locator(".tiptap")).toContainText("Latest link target");
+    await expect(targetTab).toHaveAttribute("aria-selected", "true");
+
+    releaseEarlier();
+    await earlierFinished;
+    await expect(page.locator('[data-tab-id="earlier.md"]')).toBeVisible();
+    await expect(page.locator(".tiptap")).toContainText("Latest link target");
+    await expect(targetTab).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveURL(/\/note\/target\.md$/);
+  } finally {
+    releaseEarlier();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+}
+
+test("a slower earlier file open cannot replace the latest note link target", async ({
+  page,
+}) => {
+  await expectLatestLinkOpenToWin(page, async (link) => {
+    await link.click();
+  });
+});
+
+test("the note-link hover action keeps the latest target active", async ({
+  page,
+}) => {
+  await expectLatestLinkOpenToWin(page, async (link) => {
+    await link.hover();
+    const hoverMenu = page.locator(".maek-link-hover-menu");
+    await expect(hoverMenu).toBeVisible();
+    await hoverMenu.getByRole("button", { name: "Open", exact: true }).click();
+  });
+});
+
+test("a delayed side-pane open cannot steal focus from a newer tab selection", async ({
+  page,
+}) => {
+  writeFileSync(path.join(root, "side-target.md"), "# Side target\n");
+  writeFileSync(path.join(root, "latest.md"), "# Latest selection\n");
+
+  let releaseSide!: () => void;
+  let markSideRequested!: () => void;
+  let markSideFinished!: () => void;
+  const sideGate = new Promise<void>((resolve) => {
+    releaseSide = resolve;
+  });
+  const sideRequested = new Promise<void>((resolve) => {
+    markSideRequested = resolve;
+  });
+  const sideFinished = new Promise<void>((resolve) => {
+    markSideFinished = resolve;
+  });
+
+  await page.route("**/api/files/content?**", async (route) => {
+    const requestUrl = new URL(route.request().url());
+    if (
+      route.request().method() === "GET" &&
+      requestUrl.searchParams.get("path") === "side-target.md"
+    ) {
+      markSideRequested();
+      await sideGate;
+      await route.continue();
+      markSideFinished();
+      return;
+    }
+    await route.continue();
+  });
+
+  try {
+    await open(page);
+    await editNote(page);
+    await page.locator('[data-path="latest.md"]').click();
+    await page.locator('[data-tab-id="Folder/기존 노트.md"]').click();
+
+    await page.getByTitle("Open File to the Side…").click();
+    await page.getByRole("textbox", { name: "Search files" }).fill("side-target");
+    await page.getByRole("option").filter({ hasText: "side-target" }).click();
+    await sideRequested;
+
+    const latestTab = page.locator('[data-tab-id="latest.md"]');
+    await latestTab.dispatchEvent("click");
+    await expect(latestTab).toHaveAttribute("aria-selected", "true");
+
+    releaseSide();
+    await sideFinished;
+    const editors = page.locator(".maek-editor-pane .tiptap");
+    await expect(editors).toHaveCount(2);
+    await expect(editors.nth(0)).toContainText("Latest selection");
+    await expect(editors.nth(1)).toContainText("Side target");
+    await expect(latestTab).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveURL(/\/note\/latest\.md$/);
+  } finally {
+    releaseSide();
+    await page.unrouteAll({ behavior: "wait" });
+  }
 });
 
 test("opens a new tree note while tabs restored from .maek remain open", async ({
