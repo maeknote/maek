@@ -111,12 +111,16 @@ export function MarkdownEditor({ tab }: { tab: Tab }) {
           const a = (event.target as HTMLElement).closest("a");
           const href = a?.getAttribute("href");
           if (!href) return false;
+
           event.preventDefault();
           if (isWorkspaceLinkHref(href)) {
             const p = resolvePath(dirname(notePath), href);
             void useStore.getState().openFile(p.replace(/^\//, ""));
-          } else if (/^https?:\/\//i.test(href))
-            window.open(href, "_blank", "noopener,noreferrer");
+          } else {
+            // Open any external link, fallback to prepending https:// if needed
+            const url = /^https?:\/\//i.test(href) ? href : `https://${href}`;
+            window.open(url, "_blank", "noopener,noreferrer");
+          }
           return true;
         },
       },

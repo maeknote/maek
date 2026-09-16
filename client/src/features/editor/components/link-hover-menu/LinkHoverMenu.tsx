@@ -85,7 +85,7 @@ export function LinkHoverMenu({
     hideTimerRef.current = setTimeout(() => {
       setLinkData(null);
       setIsEditing(false);
-    }, 200);
+    }, 300);
   }, [isEditing]);
 
   const cancelHideTimer = useCallback(() => {
@@ -409,6 +409,16 @@ export function LinkHoverMenu({
               </>
             ) : (
               <>
+                <button
+                  className="maek-link-hover-btn"
+                  onClick={() => {
+                    const url = /^https?:\/\//i.test(linkData.href) ? linkData.href : `https://${linkData.href}`;
+                    window.open(url, "_blank", "noopener,noreferrer");
+                  }}
+                  aria-label="Open"
+                >
+                  <ExternalLink />
+                </button>
                 <button
                   className="maek-link-hover-btn"
                   onClick={handleCopy}
