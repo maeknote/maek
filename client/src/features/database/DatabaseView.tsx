@@ -101,5 +101,19 @@ export function DatabaseView({ folderPath }: { folderPath: string }) {
     return <div className="p-6 text-muted-text">Loading database…</div>;
   if (!meta)
     return <div className="p-6 text-muted-text">Database not found.</div>;
-  return <DatabaseViewContainer databaseFolderPath={folderPath} />;
+  return (
+    <div className="h-full min-w-0 min-h-0 flex flex-col">
+      <div className="viewer-toolbar flex items-center gap-2 px-3 shrink-0">
+        <span
+          className="viewer-toolbar-filename flex-1 text-sm font-medium text-neutral-ink"
+          title={folderPath || meta.name}
+        >
+          {meta.name}
+        </span>
+      </div>
+      <div className="flex-1 min-h-0">
+        <DatabaseViewContainer databaseFolderPath={folderPath} />
+      </div>
+    </div>
+  );
 }

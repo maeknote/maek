@@ -32,7 +32,7 @@ export interface Session {
   activeTabId: string | null;
   scrollPositions: Record<string, number>;
   expanded: string[];
-  theme: "light" | "dark";
+  theme: "system" | "light" | "dark";
   sidebarWidth: number;
 }
 /**
@@ -54,7 +54,7 @@ export interface UiState {
   activeTabId: string | null;
   scrollPositions: Record<string, number>;
   expanded: string[];
-  theme: "light" | "dark";
+  theme: "system" | "light" | "dark";
   sidebarWidth: number;
   split?: { left: string | null; right: string | null; active: "left" | "right"; ratio: number };
 }

@@ -1,33 +1,27 @@
 import { FilePicker } from "./features/editor/components/FilePicker";
 import { NotePicker } from "./features/editor/components/note-picker/NotePicker";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   FileText,
   FolderOpen,
   X,
-  Moon,
-  Sun,
-  ExternalLink,
   Power,
   Plus,
-  RefreshCw,
   Search,
   Columns2,
 } from "lucide-react";
 import { useStore, schedulePersistence, type Tab } from "./store";
-import { api, artifactUrl, rawUrl, webArtifactUrl } from "./host";
+import { api } from "./host";
 import { Explorer } from "./features/explorer/Explorer";
-import { MarkdownEditor } from "./features/editor/MarkdownEditor";
-import { TitleBar } from "./features/editor/components/TitleBar";
+import { FilePane } from "./features/editor/components/FilePane";
 import { WorkspaceDashboard } from "./features/editor/components/WorkspaceDashboard";
 import { FolderKanbanView } from "./features/database/kanban/FolderKanbanView";
 import { DatabaseView } from "./features/database/DatabaseView";
+import { SettingsModal, usePreferences } from "./features/settings/SettingsModal";
+import { loadPreferences, resolveTheme, systemPrefersDark } from "./lib/preferences";
 import { navigate, parseRoute, pathForWorkspaceKey, workspaceKeyFor, type Route } from "./lib/routes";
-import {
-  isTabDirty,
-  getTabFileContent,
-} from "./features/editor/utils/frontmatter";
+import { getTabFileContent } from "./features/editor/utils/frontmatter";
 import {
   ToastProvider,
   ToastContainer,
@@ -35,10 +29,6 @@ import {
   PanelIcon,
 } from "./shared/components";
 import type { FileNode } from "@shared/workspace";
-
-const SpreadsheetEditor = lazy(
-  () => import("./features/spreadsheet/SpreadsheetEditor"),
-);
 
 function Modal({
   title,
@@ -75,81 +65,6 @@ function Modal({
     </Dialog.Root>
   );
 }
-function HtmlArtifactPreview({ tab, nonce }: { tab: Tab; nonce: number }) {
-  const fileUrl = artifactUrl(tab.id);
-
-  return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      <iframe
-        key={`${fileUrl}:${tab.generation}:${nonce}`}
-        title={tab.name}
-        src={fileUrl}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
-        className="flex-1 min-h-0 w-full border-0 bg-white"
-      />
-    </div>
-  );
-}
-
-function Preview({
-  tab,
-  htmlPreviewNonce = 0,
-}: {
-  tab: Tab;
-  htmlPreviewNonce?: number;
-}) {
-  if (tab.file.kind === "image")
-    return (
-      <div className="flex-1 min-h-0 overflow-auto p-8 flex items-center justify-center">
-        <img
-          src={rawUrl(tab.id) + "&v=" + tab.generation}
-          alt={tab.name}
-          className="max-w-full max-h-full object-contain"
-        />
-      </div>
-    );
-  if (tab.file.kind === "pdf")
-    return (
-      <iframe
-        title={tab.name}
-        src={rawUrl(tab.id)}
-        className="flex-1 min-h-0 w-full"
-      />
-    );
-  if (tab.file.kind === "text")
-    return (
-      <pre className="flex-1 min-h-0 overflow-auto p-8 text-sm whitespace-pre-wrap font-mono">
-        {tab.file.content}
-      </pre>
-    );
-  if (tab.file.kind === "html")
-    return <HtmlArtifactPreview key={tab.id} tab={tab} nonce={htmlPreviewNonce} />;
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-text">
-      <FileText size={40} />
-      <p>Unsupported file format</p>
-      <p className="text-sm">{tab.name}</p>
-      <Button
-        variant="outline"
-        onClick={() =>
-          void api("/api/files/open-external", "POST", { path: tab.id }).catch(
-            (e) => useStore.getState().setError(String(e)),
-          )
-        }
-      >
-        <ExternalLink size={16} />
-        Open in default app
-      </Button>
-    </div>
-  );
-}
-function SidePane({ tab, onSinglePane }: { tab: Tab; onSinglePane: () => void }) {
-  const state = useStore();
-  return <div className="flex-1 min-w-0 min-h-0 flex flex-col" onPointerDown={() => state.setSplitActive("right")}>
-    <TitleBar tab={tab} onRename={(name) => state.move(tab.id, [...tab.id.split("/").slice(0, -1), name].join("/"))} actions={<button type="button" onClick={onSinglePane} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-text hover:bg-surface-overlay hover:text-neutral-ink" title="Single Pane"><Columns2 size={14}/>Single Pane</button>} />
-    {tab.viewKind === "editor" ? <MarkdownEditor key={tab.id + ":" + tab.generation} tab={tab} /> : tab.viewKind === "spreadsheet" ? <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-text">Loading spreadsheet…</div>}><SpreadsheetEditor key={tab.id + ":" + tab.generation} tab={tab} /></Suspense> : <Preview tab={tab} />}
-  </div>;
-}
 function AppContent() {
   const state = useStore();
   const [search, setSearch] = useState(false),
@@ -158,8 +73,8 @@ function AppContent() {
     [path, setPath] = useState(""),
     [collapsed, setCollapsed] = useState(false),
     [shuttingDown, setShuttingDown] = useState(false);
-  const [htmlPreviewNonce, setHtmlPreviewNonce] = useState(0);
   const [sidePicker, setSidePicker] = useState(false);
+  const { preferences, onPreferencesChange } = usePreferences(loadPreferences());
   const [route, setRoute] = useState<Route | null>(() => parseRoute());
   const started = useRef(false);
   const expandSidebar = () => {
@@ -184,7 +99,20 @@ function AppContent() {
     const last = target ?? localStorage.getItem("maek:workspace") ?? localStorage.getItem("oh-my-maek:workspace");
     if (last) void state.openWorkspace(last);
   }, []);
-  useEffect(() => { document.documentElement.dataset.theme = state.theme; }, [state.theme]);
+  useEffect(() => {
+    const apply = () => {
+      document.documentElement.dataset.theme = resolveTheme(
+        state.theme,
+        systemPrefersDark(),
+      );
+    };
+    apply();
+    if (state.theme !== "system" || typeof window.matchMedia !== "function")
+      return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [state.theme]);
   useEffect(() => {
     if (!state.workspace || !state.ready) return;
     const key = workspaceKeyFor(state.workspace.root);
@@ -306,9 +234,19 @@ function AppContent() {
           <p className="text-sm text-muted-text mb-6">
             You can safely close this browser tab.
           </p>
-          <Button variant="outline" onClick={() => window.close()}>
-            Close Tab
-          </Button>
+          <div className="flex gap-2 justify-center">
+            <Button variant="outline" onClick={() => window.close()}>
+              Close Tab
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => {
+                window.location.href = "maek://start";
+              }}
+            >
+              Restart Server
+            </Button>
+          </div>
         </section>
       </div>
     );
@@ -485,92 +423,14 @@ function AppContent() {
                 <DatabaseView folderPath={tab.databaseFolderPath ?? ""} />
               ) : (
                 <div className="flex-1 min-h-0 flex overflow-hidden">
-                <div className="flex-1 min-w-0 min-h-0 flex flex-col" onPointerDown={() => state.setSplitActive("left")}>
-                <TitleBar
+                <FilePane
+                  pane="left"
                   tab={tab}
-                  onRename={(name) =>
-                    state.move(
-                      tab.id,
-                      [...tab.id.split("/").slice(0, -1), name].join("/"),
-                    )
-                  }
-                  actions={
-                    <div className="flex items-center gap-1 shrink-0 text-sm">
-                      <button type="button" onClick={() => setSidePicker(true)} className="icon-button" aria-label="Open file to the side" title="Open File to the Side…"><Columns2 size={14} /></button>
-                    {tab.file.kind === "html" ? (
-                      <div className="flex items-center gap-1 shrink-0 text-sm">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setHtmlPreviewNonce((value) => value + 1)
-                          }
-                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-text hover:bg-surface-overlay hover:text-neutral-ink"
-                          aria-label="Reload HTML preview"
-                        >
-                          <RefreshCw size={14} />
-                          Reload
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            window.open(
-                              webArtifactUrl(tab.id),
-                              "_blank",
-                              "noopener,noreferrer",
-                            )
-                          }
-                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-text hover:bg-surface-overlay hover:text-neutral-ink"
-                        >
-                          <ExternalLink size={14} />
-                          Open in browser
-                        </button>
-                      </div>
-                    ) : null}
-                    {sideTab ? <button type="button" onClick={() => state.singlePane("left")} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-text hover:bg-surface-overlay hover:text-neutral-ink" title="Single Pane"><Columns2 size={14} />Single Pane</button> : null}
-                    </div>
-                  }
+                  isSplit={Boolean(sideTab)}
+                  onOpenToSide={() => setSidePicker(true)}
+                  onSaveCopy={(t) => void saveCopy(t)}
                 />
-                {tab.status === "conflict" || tab.status === "error" ? (
-                  <div role="alert" className="notice">
-                    <span>{tab.error}</span>
-                    <button
-                      onClick={() => {
-                        if (
-                          !isTabDirty(tab) ||
-                          window.confirm(
-                            "Discard local edits and reload from disk?",
-                          )
-                        )
-                          void state.reload(tab.id);
-                      }}
-                    >
-                      Reload
-                    </button>
-                    <button onClick={() => void saveCopy(tab)}>
-                      Save a copy
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (window.confirm("Discard local edits and close?")) {
-                          void state.closeTab(tab.id);
-                        }
-                      }}
-                    >
-                      Close
-                    </button>
-                  </div>
-                ) : null}
-                {tab.viewKind === "editor" ? (
-                  <MarkdownEditor key={tab.id + ":" + tab.generation} tab={tab} />
-                ) : tab.viewKind === "spreadsheet" ? (
-                  <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-text">Loading spreadsheet…</div>}>
-                    <SpreadsheetEditor key={tab.id + ":" + tab.generation} tab={tab} />
-                  </Suspense>
-                ) : (
-                  <Preview tab={tab} htmlPreviewNonce={htmlPreviewNonce} />
-                )}
-                </div>
-                {sideTab ? <><div role="separator" aria-label="Resize panes" aria-orientation="vertical" tabIndex={0} className="w-2 shrink-0 cursor-col-resize border-l border-default" onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)} onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) state.setSplitRatio((e.clientX - e.currentTarget.parentElement!.getBoundingClientRect().left) / e.currentTarget.parentElement!.getBoundingClientRect().width); }} onPointerUp={(e) => { e.currentTarget.releasePointerCapture(e.pointerId); schedulePersistence(); }} onKeyDown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); state.setSplitRatio(state.split.ratio + (e.key === "ArrowLeft" ? -.02 : .02)); } }} /><SidePane tab={sideTab} onSinglePane={() => state.singlePane("right")} /></> : null}
+                {sideTab ? <><div role="separator" aria-label="Resize panes" aria-orientation="vertical" tabIndex={0} className="w-2 shrink-0 cursor-col-resize border-l border-default" onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)} onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) state.setSplitRatio((e.clientX - e.currentTarget.parentElement!.getBoundingClientRect().left) / e.currentTarget.parentElement!.getBoundingClientRect().width); }} onPointerUp={(e) => { e.currentTarget.releasePointerCapture(e.pointerId); schedulePersistence(); }} onKeyDown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); state.setSplitRatio(state.split.ratio + (e.key === "ArrowLeft" ? -.02 : .02)); } }} /><FilePane pane="right" tab={sideTab} isSplit onOpenToSide={() => setSidePicker(true)} onSaveCopy={(t) => void saveCopy(t)} /></> : null}
                 </div>
               )
             ) : (
@@ -592,46 +452,12 @@ function AppContent() {
       {search && <FilePicker onClose={() => setSearch(false)} />}
       {sidePicker && <FilePicker onClose={() => setSidePicker(false)} onSelect={async (file) => { await state.openFileToSide(file.id); setSidePicker(false); }} />}
       <NotePicker />
-      <Modal
-        title="Workspace settings"
+      <SettingsModal
         open={settings}
         onClose={() => setSettings(false)}
-      >
-        <p className="text-sm text-muted-text break-all mb-4">
-          {state.workspace?.root}
-        </p>
-        <Button variant="outline" onClick={() => void state.openWorkspace()}>
-          Open another folder
-        </Button>
-        <Button
-          className="ml-2"
-          variant="ghost"
-          onClick={() => {
-            state.openDashboard();
-            setSettings(false);
-          }}
-        >
-          Go to home
-        </Button>
-        <div className="flex items-center gap-3 mt-5 text-sm">
-          <span>Appearance</span>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              useStore.setState({
-                theme: state.theme === "dark" ? "light" : "dark",
-              });
-              schedulePersistence();
-            }}
-          >
-            {state.theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}{" "}
-            {state.theme === "dark" ? "Light" : "Dark"}
-          </Button>
-        </div>
-        <p className="text-xs text-muted-text mt-6 pt-4 border-t border-border-gray">
-          ⌘P Search · ⌘N New note · ⌘S Save · ⌘W Close tab
-        </p>
-      </Modal>
+        preferences={preferences}
+        onPreferencesChange={onPreferencesChange}
+      />
       <Modal
         title="Stop Maek?"
         open={showQuitConfirm}

@@ -283,11 +283,154 @@ test("search, read-only preview, unsupported file and native picker cancel", asy
   ).toBeVisible();
 });
 
-test("file tree context menu offers one database option and no CSV option", async ({ page }) => {
+test("non-markdown files use the compact file toolbar and markdown keeps the large title", async ({
+  page,
+}) => {
+  writeFileSync(path.join(root, "table.csv"), "name,score\nyoon,100\n");
   await open(page);
+
+  // HTML shows the compact toolbar (an editable "File name" field) instead of a
+  // large 3xl heading, and does not repeat the file name inside the preview.
+  await page.locator('[data-path="index.html"]').click();
+  const htmlName = page.getByRole("textbox", { name: "File name" });
+  await expect(htmlName).toHaveValue("index");
+  await expect(page.getByLabel("Reload HTML preview")).toBeVisible();
+  await expect(page.getByLabel("Open in browser")).toBeVisible();
+
+  // Image, PDF-less text and CSV also surface a file name in the toolbar. The
+  // text preview toolbar hides the reload button (first version).
+  await page.locator('[data-path="readme.txt"]').click();
+  await expect(page.getByRole("textbox", { name: "File name" })).toHaveValue(
+    "readme",
+  );
+  await expect(page.getByLabel("Reload HTML preview")).toHaveCount(0);
+
+  // CSV opens the spreadsheet editor with the compact toolbar file name.
+  await page.locator('[data-path="table.csv"]').click();
+  await expect(page.getByRole("textbox", { name: "File name" })).toHaveValue(
+    "table",
+  );
+
+  // Every toolbar action is reachable by its accessible name.
+  await page.locator('[data-path="index.html"]').click();
+  for (const label of [
+    "File name",
+    "Reload HTML preview",
+    "Open in browser",
+    "Open file to the side",
+  ]) {
+    await expect(page.getByLabel(label).first()).toBeVisible();
+  }
+
+  // Markdown keeps the existing large editor title (no "File name" field).
+  await editNote(page);
+  await expect(page.getByRole("textbox", { name: "File name" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Copy note" })).toBeVisible();
+});
+
+test("renames an HTML file from the toolbar and preserves the extension", async ({
+  page,
+}) => {
+  await open(page);
+  await page.locator('[data-path="index.html"]').click();
+  const field = page.getByRole("textbox", { name: "File name" });
+  await expect(field).toHaveValue("index");
+
+  // Commit a rename with Enter; the .html extension is preserved.
+  await field.fill("renamed");
+  await field.press("Enter");
+  await expect
+    .poll(() => existsSync(path.join(root, "renamed.html")))
+    .toBe(true);
+  await expect(page.getByRole("textbox", { name: "File name" })).toHaveValue(
+    "renamed",
+  );
+
+  // Escape reverts an in-progress edit without renaming.
+  const field2 = page.getByRole("textbox", { name: "File name" });
+  await field2.fill("scrapped");
+  await field2.press("Escape");
+  await expect(field2).toHaveValue("renamed");
+  expect(existsSync(path.join(root, "scrapped.html"))).toBe(false);
+  expect(existsSync(path.join(root, "renamed.html"))).toBe(true);
+});
+
+test("reload resets a mutated HTML artifact to its initial state", async ({
+  page,
+}) => {
+  await open(page);
+  await page.locator('[data-path="index.html"]').click();
+  const artifact = page.frameLocator('iframe[title="index.html"]');
+  await artifact.getByRole("button", { name: "Run action" }).click();
+  await expect(
+    artifact.getByRole("button", { name: "Action ran" }),
+  ).toBeVisible();
+
+  await page.getByLabel("Reload HTML preview").click();
+  // The iframe is recreated, so the button returns to its initial label.
+  await expect(artifact.getByRole("button", { name: "Run action" })).toBeVisible();
+});
+
+test("split HTML panes reload independently and the right pane can open in browser", async ({
+  page,
+}) => {
+  writeFileSync(
+    path.join(root, "second.html"),
+    `<h1>Second artifact</h1>
+     <button id="b">Second action</button>
+     <script>document.querySelector("#b").addEventListener("click", () => { document.querySelector("#b").textContent = "Second ran"; });</script>`,
+  );
+  await open(page);
+  await page.locator('[data-path="index.html"]').click();
+
+  // Open the second HTML file in the split (right) pane.
+  await page.getByLabel("Open file to the side").click();
+  await page.getByRole("textbox", { name: "Search files" }).fill("second");
+  await page.getByRole("option").filter({ hasText: "second" }).first().click();
+
+  const right = page.frameLocator('iframe[title="second.html"]');
+  await expect(right.getByRole("button", { name: "Second action" })).toBeVisible();
+
+  // Mutate the right pane, then reload the LEFT pane. The right iframe must not
+  // be recreated, so its mutated state survives.
+  await right.getByRole("button", { name: "Second action" }).click();
+  await expect(right.getByRole("button", { name: "Second ran" })).toBeVisible();
+
+  const leftReload = page.getByLabel("Reload HTML preview").first();
+  await leftReload.click();
+  await expect(right.getByRole("button", { name: "Second ran" })).toBeVisible();
+
+  // The right pane's own Open in browser action works.
+  const reloadButtons = page.getByLabel("Reload HTML preview");
+  await expect(reloadButtons).toHaveCount(2);
+  const browserButtons = page.getByLabel("Open in browser");
+  await expect(browserButtons).toHaveCount(2);
+  const browserPagePromise = page.waitForEvent("popup");
+  await browserButtons.nth(1).click();
+  const browserPage = await browserPagePromise;
+  await expect(
+    browserPage.getByRole("heading", { name: "Second artifact" }),
+  ).toBeVisible();
+  expect(new URL(browserPage.url()).pathname).toContain("/_web/");
+  await browserPage.close();
+});
+
+test("explorer separates creation from object context actions", async ({ page }) => {
+  await open(page);
+
+  const addNew = page.getByLabel("Add new");
+  await addNew.hover();
+  await expect(page.getByRole("menuitem", { name: "New note", exact: true })).toHaveCount(0);
+  await addNew.click();
+  await expect(page.getByRole("menuitem", { name: "New note", exact: true })).toHaveCount(1);
+  await page.keyboard.press("Escape");
+
   await page.locator('[data-path="Folder"]').click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "New CSV", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("menuitem", { name: "New database", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("menuitem", { name: "New database", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: /^Database/ })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Turn into database", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Reveal in Finder", exact: true })).toHaveCount(1);
 });
 
 test.skip("creates and edits a CSV spreadsheet with undo and autosave", async ({ page }) => {

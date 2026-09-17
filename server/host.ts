@@ -613,7 +613,7 @@ export function createHost(options: HostOptions = {}) {
     activeTabId: filePath.nullable(),
     scrollPositions: z.record(z.string(), z.number().min(0)),
     expanded: z.array(filePath),
-    theme: z.enum(["light", "dark"]),
+    theme: z.enum(["system", "light", "dark"]),
     // The client constrains this to 70% of its current viewport. Keep a
     // generous persisted-state ceiling so wide screens are not capped at the
     // old fixed 600px limit.
@@ -717,7 +717,7 @@ export function createHost(options: HostOptions = {}) {
           activeTabId: string | null;
           scrollPositions: Record<string, number>;
           expanded: string[];
-          theme: "light" | "dark";
+          theme: "system" | "light" | "dark";
           sidebarWidth: number;
         }>;
         const active =

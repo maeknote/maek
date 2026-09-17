@@ -16,6 +16,8 @@ import {
 } from "./features/editor/utils/frontmatter";
 import { api, ApiError, setHostWorkspace } from "./host";
 import { queryClient } from "./app/query-client";
+import { resolveTheme, systemPrefersDark } from "./lib/preferences";
+import { removeWorkspaceFromList } from "./lib/workspaceList";
 
 export interface Tab extends TabItem {
   file: FileContent;
@@ -39,11 +41,14 @@ interface State {
   connectionStatus: "closed" | "opening" | "ready" | "reconnecting" | "failed";
   scrollPositions: Record<string, number>;
   expanded: string[];
-  theme: "light" | "dark";
+  theme: "system" | "light" | "dark";
   sidebarWidth: number;
   split: { left: string | null; right: string | null; active: "left" | "right"; ratio: number };
   recentFiles: { path: string; lastOpened: number; openCount?: number }[];
   openWorkspace: (path?: string) => Promise<void>;
+  /** Removes a workspace from this browser's recent list only. Does not touch
+   *  the folder or its `.maek` files. */
+  removeWorkspace: (path: string) => void;
   cancelWorkspaceOpen: () => void;
   reconnectWorkspace: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -69,6 +74,9 @@ interface State {
   updateBody: (id: string, body: string, options?: { pin?: boolean }) => void;
   rebase: (id: string, body: string) => void;
   reload: (id: string) => Promise<void>;
+  /** User-initiated preview refresh (e.g. HTML artifact reload). Bumps the
+   *  per-tab previewNonce so only this tab's iframe is recreated. */
+  refreshPreview: (id: string) => void;
   change: (event: Change) => Promise<void>;
   move: (source: string, dest: string) => Promise<void>;
   updateFrontmatterRaw: (id: string, raw: string) => void;
@@ -417,10 +425,19 @@ export const useStore = create<State>((set, get) => ({
   connectionStatus: "closed",
   scrollPositions: {},
   expanded: [],
-  theme: "light",
+  theme: "system",
   sidebarWidth: 300,
   recentFiles: [],
   setError: (message) => set({ error: message }),
+  removeWorkspace(path) {
+    const workspaces = removeWorkspaceFromList(get().workspaces, path);
+    set({ workspaces });
+    try {
+      localStorage.setItem("maek:workspaces", JSON.stringify(workspaces));
+    } catch {
+      // Ignore persistence failures; the in-memory list is still updated.
+    }
+  },
   cancelWorkspaceOpen() {
     workspaceOpenEpoch++;
     workspaceOpenController?.abort();
@@ -574,7 +591,10 @@ export const useStore = create<State>((set, get) => ({
       );
       tabsDirty = false;
       later();
-      document.documentElement.dataset.theme = ui.theme;
+      document.documentElement.dataset.theme = resolveTheme(
+        ui.theme,
+        systemPrefersDark(),
+      );
       connectEvents(ws, set, get);
     } catch (e) {
       if (!isCurrent() || controller.signal.aborted) return;
@@ -1106,6 +1126,12 @@ export const useStore = create<State>((set, get) => ({
     } catch (e) {
       set({ error: String(e) });
     }
+  },
+  refreshPreview(id) {
+    patchTab(id, (tab) => ({
+      ...tab,
+      previewNonce: tab.previewNonce + 1,
+    }));
   },
   async change(event) {
     window.dispatchEvent(new CustomEvent("maek:workspace-change", { detail: event }));

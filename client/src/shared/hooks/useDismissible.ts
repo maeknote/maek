@@ -54,8 +54,43 @@ export function useDismissible({
       }
     };
 
+    const iframeListeners = new Map<HTMLIFrameElement, () => void>();
+    const listenToIframe = (iframe: HTMLIFrameElement) => {
+      if (iframeListeners.has(iframe)) return;
+
+      const handleIframeMouseDown = () => onClose();
+      const attach = () => {
+        try {
+          iframe.contentDocument?.addEventListener("mousedown", handleIframeMouseDown);
+        } catch {
+          // Cross-origin frames cannot be inspected; their clicks are isolated
+          // by the browser and cannot participate in outside-click detection.
+        }
+      };
+      const handleLoad = () => attach();
+
+      attach();
+      iframe.addEventListener("load", handleLoad);
+      iframeListeners.set(iframe, () => {
+        iframe.removeEventListener("load", handleLoad);
+        try {
+          iframe.contentDocument?.removeEventListener("mousedown", handleIframeMouseDown);
+        } catch {
+          // Ignore inaccessible cross-origin documents during cleanup.
+        }
+      });
+    };
+
+    const listenToIframes = () => {
+      document.querySelectorAll("iframe").forEach((iframe) => listenToIframe(iframe));
+    };
+
     document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
+    listenToIframes();
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      iframeListeners.forEach((cleanup) => cleanup());
+    };
   }, [isOpen, onClose, refs, outsideClick]);
 
   // Handle Escape key
