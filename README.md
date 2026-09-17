@@ -1,95 +1,103 @@
 # maek
 
-macOS localhost에서 실행하는 개인용 Markdown Workspace 앱입니다.
-Maek Note의 디자인 컴포넌트, Tiptap 에디터 확장과 react-arborist 트리를 이식했습니다.
+A personal Markdown workspace app that runs on macOS localhost.
+It ports Maek Note's design components, Tiptap editor extensions, and the react-arborist tree.
 
-## 실행
+## Running
 
-Node.js 22.12+ 또는 24+에서 실행합니다.
+Runs on Node.js 22.12+ or 24+.
 
 ```sh
 npm install
 npm run dev
 ```
 
-http://127.0.0.1:3000 에서 Open Folder로 기존 폴더를 선택합니다.
-`npm run dev`는 UI/HMR(:3000)과 Local Core(:3001)를 독립 프로세스로
-실행합니다. 일반 사용은 `npm run build && npm start`로 실행하며, 이때는
-Local Core 하나가 빌드된 UI와 파일 API를 함께 제공합니다.
+Open http://127.0.0.1:3000 and use Open Folder to pick an existing folder.
+`npm run dev` runs the UI/HMR (:3000) and the Local Core (:3001) as independent
+processes. For regular use, run `npm run build && npm start`; in that mode a
+single Local Core serves both the built UI and the file API.
 
-### Desktop 아이콘 (macOS)
+### Desktop icon (macOS)
 
-빌드 후 아래 명령을 한 번 실행하면 Desktop에 `Maek.app`이 생깁니다.
-아이콘을 클릭하면 `npm start`로 서버를 실행하고 브라우저를 엽니다. 이미 실행 중이면
-새 서버를 만들지 않고 기존 창을 엽니다.
+After building, run the command below once to create `Maek.app` on your Desktop.
+Clicking the icon starts the server with `npm start` and opens the browser. If a
+server is already running, it opens the existing window instead of creating a new one.
 
 ```sh
 npm run build
 npm run install:desktop
 ```
 
-앱 안에서는 Settings(⌘,) → **Quit server**로 로컬 서버를 종료할 수 있습니다.
-프로젝트 폴더를 다른 곳으로 옮긴 경우에는 `npm run install:desktop`을 다시 실행하세요.
+Inside the app you can shut down the local server via Settings (⌘,) → **Quit server**.
+If you move the project folder elsewhere, run `npm run install:desktop` again.
 
-네이티브 창을 사용할 수 없으면 Enter folder path에 절대 경로를 입력합니다.
-설정 또는 사이드바 폴더 메뉴에서 Workspace를 바꿀 수 있습니다.
-다음 실행 시 마지막 Workspace와 탭을 복원합니다.
+If the native window is unavailable, enter an absolute path in Enter folder path.
+You can switch the Workspace from Settings or the sidebar folder menu.
+The next run restores the last Workspace and tabs.
 
-## 파일과 메타데이터
+## Files and metadata
 
 ```text
-선택한 Workspace/
-  기존 노트.md
-  내 폴더/중첩 노트.md
+Selected Workspace/
+  Existing note.md
+  My folder/Nested note.md
   .maek/
     config.json
     tabs.json
-    assets/붙여넣은 이미지.png
-    sessions/web/<브라우저 세션>/ui.json
-    sessions/web/<브라우저 세션>/recentFiles.json
+    assets/Pasted image.png
+    sessions/web/<browser session>/ui.json
+    sessions/web/<browser session>/recentFiles.json
 ```
 
-실제 파일 이름과 위치를 유지합니다. `.maek-data`, `notes/`, `history/`,
-`databases.json`을 자동 생성하지 않습니다. 열린 탭 목록과 순서는 workspace 루트의
-`.maek/tabs.json`(원본 앱 version 4 형식)을 단일 원본으로 공유하며, 데스크톱 앱이
-파일을 바꾸면 웹에도 실시간 반영합니다. 웹은 파일·데이터베이스·워크스페이스 설정 탭을 관리하고
-원본 전용 탭·그룹·분할 정보와 알 수 없는 필드는 병합 저장으로 보존합니다. 테마·
-사이드바 폭·펼침·스크롤·선택 탭 같은 표시 상태는 브라우저 세션별 `ui.json`에,
-최근 파일은 앱과 공유하는 `.maek/recentFiles.json`에 열람 횟수와 함께 저장합니다. 원본 Maek Note의 version 4 탭 및
-version 1 최근 파일 구조를 앱과 동일하게 읽고 씁니다. 기존 웹 세션별 최근 파일은 한 번 병합합니다. 브라우저
-localStorage에는 마지막 경로와 표시용 최근 Workspace만 저장합니다. 일반 `notes`·
-`history` 폴더는 사용자 파일로 취급하며 자동 삭제하지 않습니다.
+Actual file names and locations are preserved. It does not auto-create
+`.maek-data`, `notes/`, `history/`, or `databases.json`. The open-tab list and
+order are shared through the workspace-root `.maek/tabs.json` (the original app's
+version 4 format) as a single source of truth, and changes made by the desktop
+app are reflected in the web in real time. The web app manages file, database,
+and workspace-settings tabs, and preserves original-only tab/group/split
+information and unknown fields through merge saves. Presentation state such as
+theme, sidebar width, expansion, scroll, and selected tab is stored per browser
+session in `ui.json`, while recent files are stored with view counts in the
+app-shared `.maek/recentFiles.json`. It reads and writes the original Maek Note's
+version 4 tab and version 1 recent-file structures identically to the app.
+Existing per-web-session recent files are merged once. Browser localStorage stores
+only the last path and the recent Workspaces used for display. Ordinary `notes`
+and `history` folders are treated as user files and are never auto-deleted.
 
-편집 후 1.5초, 탭 전환, 창 포커스 해제, Cmd+S에 저장합니다. 파일 해시·수정 시각을
-검사한 뒤 원자적으로 교체합니다. 외부 편집과 충돌하면 로컬 편집본을 유지하며
-Reload, Save a copy, Close를 제공합니다. 저장되지 않은 편집본이 있으면 창 종료를 경고합니다.
-원자적 교체 직전 외부 프로그램이 쓰는 극히 짧은 경합까지 OS 파일 잠금으로 차단하지는 않습니다.
+It saves 1.5 seconds after an edit, on tab switch, on window blur, and on Cmd+S.
+It checks the file hash and modification time, then replaces the file atomically.
+On a conflict with an external edit, it keeps the local edits and offers Reload,
+Save a copy, and Close. If unsaved edits exist, it warns before closing the window.
+It does not use OS file locks to block the extremely brief race in which an
+external program writes just before the atomic replacement.
 
-## 기능
+## Features
 
-- 원본 Tiptap 표·코드·수식·체크리스트·제목 접기·슬래시 메뉴·선택 툴바
-- YAML Frontmatter 원본/속성 편집, 내부 노트 링크, 이미지 삽입·붙여넣기
-- 재귀 가상화 트리, 새 노트/폴더, 이름 변경, 드래그 이동, 복제, 복사/붙여넣기
-- Finder 드롭 가져오기, Finder에서 보기, macOS 휴지통 이동
-- 다중 탭, 탭 순서 이동, 빠른 파일 검색, 최근 파일, Workspace·스크롤·테마 복원
-- 외부 파일 변경과 이름 변경 실시간 반영, 미저장 충돌 보호
-- 이미지·PDF·텍스트 읽기 전용 미리보기, 주변 JS·CSS·JSON을 함께 읽는 sandboxed HTML 아티팩트, 미지원 형식의 기본 앱 열기
-- HTML 아티팩트 새로고침과 브라우저 열기
-- CSV 스프레드시트 편집: 가상화 표, 셀·행·열 편집, 범위 선택, Excel/Google Sheets 호환 복사·붙여넣기, undo/redo, 정렬·필터·찾기·선택 통계
-- 앱과 공유하는 폴더 데이터베이스: 표·칸반·캘린더·타임라인 뷰, 이름 있는 뷰, 열 형식·집계, 다중 정렬·필터, 행·열·카드·기간 드래그 이동
+- Original Tiptap tables, code, math, checklists, heading folding, slash menu, and selection toolbar
+- YAML frontmatter raw/property editing, internal note links, image insert/paste
+- Recursive virtualized tree, new note/folder, rename, drag to move, duplicate, copy/paste
+- Finder drop import, Reveal in Finder, Move to macOS Trash
+- Multiple tabs, tab reordering, quick file search, recent files, Workspace/scroll/theme restore
+- Real-time reflection of external file changes and renames, unsaved-conflict protection
+- Read-only preview for images, PDF, and text; sandboxed HTML artifacts that also read neighboring JS/CSS/JSON; open unsupported formats in the default app
+- HTML artifact refresh and open in browser
+- CSV spreadsheet editing: virtualized grid, cell/row/column editing, range selection, Excel/Google Sheets-compatible copy/paste, undo/redo, sort/filter/find/selection stats
+- App-shared folder databases: table/kanban/calendar/timeline views, named views, column formats/aggregation, multi-sort/filter, drag to move rows/columns/cards/periods
 
-CSV는 문자열 값만 저장하며 색상·셀 서식·수식 계산·다중 시트는 지원하지 않습니다.
-UTF-8(BOM 포함) CSV를 최대 5 MiB, 50,000행, 200열, 500,000필드까지 편집합니다.
-그보다 큰 CSV는 원문 보호를 위해 읽기 전용으로 엽니다. 데이터베이스는 앱과 동일하게
-폴더의 `.maek-database.json`, Markdown frontmatter, 워크스페이스의 `.maek/database.sqlite`를 사용합니다.
-회의, AI와 터미널은 미지원입니다. Markdown은 1 MiB 초과 시 읽기 전용, 텍스트는 32 MiB 초과 시 미지원으로 처리합니다. 심볼릭 링크와
-원본의 의존성·빌드 캐시 폴더는 탐색 대상에서 제외됩니다.
+CSV stores string values only and does not support colors, cell formatting,
+formula calculation, or multiple sheets. It edits UTF-8 (including BOM) CSV up to
+5 MiB, 50,000 rows, 200 columns, and 500,000 fields. Larger CSVs open read-only to
+protect the original. Databases use the folder's `.maek-database.json`, Markdown
+frontmatter, and the workspace's `.maek/database.sqlite`, identically to the app.
+Meetings, AI, and the terminal are not supported. Markdown becomes read-only above
+1 MiB, and text is treated as unsupported above 32 MiB. Symbolic links and the
+original's dependency/build-cache folders are excluded from traversal.
 
-## 단축키와 검증
+## Shortcuts and verification
 
-Cmd+P/O 검색, Cmd+N 새 노트, Cmd+S 저장, Cmd+W 탭 닫기, Cmd+, 설정.
-트리에서 Cmd+C/V 복사·붙여넣기, Cmd+D 복제, Cmd+Backspace 휴지통.
-CSV 표에서는 Cmd+C/X/V 범위 복사·잘라내기·붙여넣기, Cmd+Z/Shift+Cmd+Z undo/redo를 사용합니다.
+Cmd+P/O search, Cmd+N new note, Cmd+S save, Cmd+W close tab, Cmd+, settings.
+In the tree, Cmd+C/V copy/paste, Cmd+D duplicate, Cmd+Backspace Trash.
+In the CSV grid, use Cmd+C/X/V for range copy/cut/paste and Cmd+Z/Shift+Cmd+Z for undo/redo.
 
 ```sh
 npm run typecheck
@@ -98,6 +106,8 @@ npm run build
 npm run test:e2e
 ```
 
-현재 런타임 경계와 데이터 보존 규칙은 [아키텍처 문서](docs/architecture.md)를 참고하세요.
+For the current runtime boundaries and data-preservation rules, see the
+[architecture document](docs/architecture.md).
 
-데이터베이스·워크스페이스 설정의 원본 이식 범위와 저장 규칙은 [이식 문서](docs/database-desktop-parity.md)를 참고하세요.
+For the porting scope and storage rules of database and workspace settings, see the
+[porting document](docs/database-desktop-parity.md).
