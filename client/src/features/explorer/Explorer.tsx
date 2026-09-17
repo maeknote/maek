@@ -512,7 +512,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         >
           <Search size={15} />
           <span>Search</span>
-          <kbd className="ml-auto text-[11px] text-muted-text font-sans">⌘P</kbd>
         </button>
         <button
           ref={createButtonRef}
@@ -525,7 +524,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         >
           <Plus size={15} />
           <span>Add new</span>
-          <kbd className="ml-auto text-[11px] text-muted-text font-sans">⌘N</kbd>
         </button>
       </div>
       <div ref={container} className="explorer-content-scroll flex-1 min-h-0 overflow-y-auto">
