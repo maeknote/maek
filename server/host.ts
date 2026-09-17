@@ -601,7 +601,10 @@ export function createHost(options: HostOptions = {}) {
     scrollPositions: z.record(z.string(), z.number().min(0)),
     expanded: z.array(filePath),
     theme: z.enum(["light", "dark"]),
-    sidebarWidth: z.number().min(180).max(600),
+    // The client constrains this to 70% of its current viewport. Keep a
+    // generous persisted-state ceiling so wide screens are not capped at the
+    // old fixed 600px limit.
+    sidebarWidth: z.number().min(150).max(10_000),
     split: z.object({ left: filePath.nullable(), right: filePath.nullable(), active: z.enum(["left", "right"]), ratio: z.number().min(0.25).max(0.75) }).optional(),
   });
   const uiStateFallback = {
@@ -609,7 +612,7 @@ export function createHost(options: HostOptions = {}) {
     scrollPositions: {},
     expanded: [],
     theme: "light" as const,
-    sidebarWidth: 260,
+    sidebarWidth: 300,
   };
   const readJson = async (abs: string): Promise<unknown> =>
     JSON.parse(await readFile(abs, "utf8"));
@@ -720,7 +723,7 @@ export function createHost(options: HostOptions = {}) {
             .map(relative)
             .filter((p: string) => !p.startsWith("..")),
           theme: legacy.theme ?? "light",
-          sidebarWidth: legacy.sidebarWidth ?? 260,
+          sidebarWidth: legacy.sidebarWidth ?? 300,
         });
       } catch {
         return uiStateFallback;

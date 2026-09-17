@@ -162,6 +162,11 @@ function AppContent() {
   const [sidePicker, setSidePicker] = useState(false);
   const [route, setRoute] = useState<Route | null>(() => parseRoute());
   const started = useRef(false);
+  const expandSidebar = () => {
+    useStore.setState({ sidebarWidth: 300 });
+    setCollapsed(false);
+    schedulePersistence();
+  };
   const activeTab = state.tabs.find((t) => t.id === state.activeTabId);
   const tab = state.split.left && state.split.right
     ? state.tabs.find((t) => t.id === state.split.left) ?? activeTab
@@ -365,7 +370,7 @@ function AppContent() {
           {!collapsed && (
               <aside
                 className="relative h-full overflow-hidden bg-warm-vellum shrink-0"
-                style={{ width: state.sidebarWidth }}
+                style={{ width: `min(${state.sidebarWidth}px, 70vw)` }}
               >
                 <Explorer
                   onSearch={() => setSearch(true)}
@@ -382,10 +387,19 @@ function AppContent() {
                     e.currentTarget.setPointerCapture(e.pointerId);
                   }}
                   onPointerMove={(e) => {
-                    if (e.currentTarget.hasPointerCapture(e.pointerId))
+                    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+
+                    const maxSidebarWidth = window.innerWidth * 0.7;
+                    if (e.clientX < 150 || maxSidebarWidth < 150) {
+                      setCollapsed(true);
+                    } else {
                       useStore.setState({
-                        sidebarWidth: Math.min(600, Math.max(180, e.clientX)),
+                        sidebarWidth: Math.min(
+                          maxSidebarWidth,
+                          Math.max(150, e.clientX),
+                        ),
                       });
+                    }
                   }}
                   onPointerUp={(e) => {
                     e.currentTarget.releasePointerCapture(e.pointerId);
@@ -400,22 +414,21 @@ function AppContent() {
               aria-label="Collapsed sidebar"
             >
               <nav
-                className="pt-2 flex flex-col items-center gap-1"
+                className="flex flex-col items-center"
                 aria-label="Sidebar shortcuts"
               >
                 <button
                   aria-label="Open sidebar"
                   title="Open sidebar"
-                  className="sidebar-toggle-button"
-                  onClick={() => setCollapsed(false)}
+                  className="sidebar-toggle-button collapsed-sidebar-header-button"
+                  onClick={expandSidebar}
                 >
                   <PanelIcon side="left" isExpanded={false} size={15} />
                 </button>
-                <div className="my-1 w-5 border-t border-default" />
                 <button
                   aria-label="Search"
                   title="Search"
-                  className="icon-button"
+                  className="icon-button collapsed-sidebar-menu-button"
                   onClick={() => setSearch(true)}
                 >
                   <Search size={16} />
@@ -423,25 +436,24 @@ function AppContent() {
                 <button
                   aria-label="Add new"
                   title="Add new"
-                  className="icon-button"
-                  onClick={() => setCollapsed(false)}
+                  className="icon-button collapsed-sidebar-menu-button mt-1"
+                  onClick={expandSidebar}
                 >
                   <Plus size={17} />
                 </button>
-                <div className="my-1 w-5 border-t border-default" />
                 <button
                   aria-label="Open tabs"
                   title="Open tabs"
-                  className="icon-button"
-                  onClick={() => setCollapsed(false)}
+                  className="icon-button collapsed-sidebar-menu-button mt-2"
+                  onClick={expandSidebar}
                 >
                   <Columns2 size={16} />
                 </button>
                 <button
                   aria-label="Files"
                   title="Files"
-                  className="icon-button"
-                  onClick={() => setCollapsed(false)}
+                  className="icon-button collapsed-sidebar-menu-button"
+                  onClick={expandSidebar}
                 >
                   <FolderOpen size={16} />
                 </button>
@@ -483,7 +495,7 @@ function AppContent() {
                   }
                   actions={
                     <div className="flex items-center gap-1 shrink-0 text-sm">
-                      <button type="button" onClick={() => setSidePicker(true)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-text hover:bg-surface-overlay hover:text-neutral-ink" title="Open File to the Side…"><Columns2 size={14} />Open to the Side</button>
+                      <button type="button" onClick={() => setSidePicker(true)} className="icon-button" aria-label="Open file to the side" title="Open File to the Side…"><Columns2 size={14} /></button>
                     {tab.file.kind === "html" ? (
                       <div className="flex items-center gap-1 shrink-0 text-sm">
                         <button

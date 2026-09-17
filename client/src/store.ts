@@ -414,7 +414,7 @@ export const useStore = create<State>((set, get) => ({
   scrollPositions: {},
   expanded: [],
   theme: "light",
-  sidebarWidth: 260,
+  sidebarWidth: 300,
   recentFiles: [],
   setError: (message) => set({ error: message }),
   cancelWorkspaceOpen() {
