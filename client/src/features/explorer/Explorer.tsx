@@ -353,6 +353,12 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
               else node.toggle();
             }
           }}
+          onDoubleClick={() => {
+            // Arborist's selection handler opens files as previews. A double
+            // click promotes that same tab to a normal, persistent tab.
+            if (!node.data.isDir)
+              void useStore.getState().openFile(node.data.id);
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             setMenu({ x: e.clientX, y: e.clientY, node: node.data });
@@ -594,12 +600,16 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                     }}
                     className={cn(
                       "group flex items-center gap-1.5 h-7 px-2 rounded-md cursor-pointer select-none text-sm transition-colors",
+                      t.isEphemeral && "italic",
                       t.id === activeTabId
                         ? "bg-maek-red/10 text-maek-red"
                         : "text-neutral-ink hover:bg-surface-overlay",
                     )}
                   >
-                    <span className="truncate flex-1 min-w-0">
+                    <span
+                      className="truncate flex-1 min-w-0"
+                      title={t.isEphemeral ? `${t.name} (Preview)` : t.name}
+                    >
                       {t.name}
                     </span>
                     {tabs.some(
@@ -716,7 +726,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
             // Tree boundary. This keeps mouse and keyboard selection aligned
             // and avoids racing a row click against Arborist's state update.
             if (selected.length === 1 && !selected[0]!.isDir)
-              void useStore.getState().openFile(selected[0]!.id);
+              void useStore.getState().openFile(selected[0]!.id, { preview: true });
           }}
           onToggle={(id) => {
             useStore.setState((s) => ({

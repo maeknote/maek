@@ -129,8 +129,13 @@ export function MarkdownEditor({ tab }: { tab: Tab }) {
         if (current && current.bodyContent === current.savedBodyContent)
           useStore.getState().rebase(notePath, markdown(editor));
       },
-      onUpdate: ({ editor }) =>
-        useStore.getState().updateBody(notePath, markdown(editor)),
+      onUpdate: ({ editor, transaction }) =>
+        useStore.getState().updateBody(notePath, markdown(editor), {
+          // Tiptap may normalize its initial document after mount. That is not
+          // a user edit and must not promote a preview tab; real text/toolbar
+          // edits occur while the editor is focused.
+          pin: editor.isFocused && transaction.docChanged,
+        }),
     },
     [notePath, tab.generation],
   );

@@ -16,7 +16,7 @@ import {
   Columns2,
 } from "lucide-react";
 import { useStore, schedulePersistence, type Tab } from "./store";
-import { api, artifactUrl, rawUrl } from "./host";
+import { api, artifactUrl, rawUrl, webArtifactUrl } from "./host";
 import { Explorer } from "./features/explorer/Explorer";
 import { MarkdownEditor } from "./features/editor/MarkdownEditor";
 import { TitleBar } from "./features/editor/components/TitleBar";
@@ -84,7 +84,7 @@ function HtmlArtifactPreview({ tab, nonce }: { tab: Tab; nonce: number }) {
         key={`${fileUrl}:${tab.generation}:${nonce}`}
         title={tab.name}
         src={fileUrl}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
         className="flex-1 min-h-0 w-full border-0 bg-white"
       />
     </div>
@@ -189,7 +189,8 @@ function AppContent() {
     if (!state.workspace || !state.ready) return;
     const key = workspaceKeyFor(state.workspace.root);
     if (!route || route.workspaceKey !== key) { navigate({ kind: "home", workspaceKey: key }, true); return; }
-    if (route.kind === "note" && route.path) void state.openFile(route.path);
+    if (route.kind === "note" && route.path)
+      void state.openFile(route.path, { source: "route" });
     if (route.kind === "folder" && route.view !== "list") {
       void api<import("@shared/database").DatabaseMeta[]>("/api/databases").then((databases) => {
         const database = databases.find((item) => item.folderPath === route.path);
@@ -513,7 +514,7 @@ function AppContent() {
                           type="button"
                           onClick={() =>
                             window.open(
-                              artifactUrl(tab.id),
+                              webArtifactUrl(tab.id),
                               "_blank",
                               "noopener,noreferrer",
                             )

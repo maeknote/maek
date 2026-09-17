@@ -6,7 +6,7 @@ import {
   recentList,
   mutateRecents,
 } from "./metadata/settings";
-import Fastify from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import path from "node:path";
 import {
@@ -392,7 +392,14 @@ export function createHost(options: HostOptions = {}) {
       .type(mime[path.extname(p).toLowerCase()]!)
       .send(createReadStream(abs));
   });
-  app.get("/_artifacts/:workspace/*", async (req, reply) => {
+  type ArtifactRoute = {
+    Params: { workspace: string; "*": string };
+  };
+  const serveArtifact = async (
+    req: FastifyRequest<ArtifactRoute>,
+    reply: FastifyReply,
+    sandboxed: boolean,
+  ) => {
     const { workspace, "*": requestedPath } = z
       .object({ workspace: z.string(), "*": z.string() })
       .parse(req.params);
@@ -411,14 +418,20 @@ export function createHost(options: HostOptions = {}) {
     const contentType = artifactMime[extension] ?? "application/octet-stream";
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Cache-Control", "no-store");
-    if (extension === ".html" || extension === ".htm") {
+    if (sandboxed && (extension === ".html" || extension === ".htm")) {
       reply.header(
         "Content-Security-Policy",
-        "sandbox allow-scripts allow-same-origin allow-forms allow-downloads",
+        "sandbox allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox",
       );
     }
     return reply.type(contentType).send(createReadStream(abs));
-  });
+  };
+  app.get<ArtifactRoute>("/_artifacts/:workspace/*", (req, reply) =>
+    serveArtifact(req, reply, true),
+  );
+  app.get<ArtifactRoute>("/_web/:workspace/*", (req, reply) =>
+    serveArtifact(req, reply, false),
+  );
   app.post("/api/files", async (req) => {
     const ws = wsFor(req);
     const { dir, name, kind } = z

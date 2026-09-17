@@ -47,7 +47,11 @@ interface State {
   cancelWorkspaceOpen: () => void;
   reconnectWorkspace: () => Promise<void>;
   refresh: () => Promise<void>;
-  openFile: (id: string) => Promise<void>;
+  /** Opens a file permanently, unless explicitly requested as a preview. */
+  openFile: (
+    id: string,
+    options?: { preview?: boolean; source?: "route" },
+  ) => Promise<void>;
   openFileToSide: (id: string) => Promise<void>;
   setSplitActive: (pane: "left" | "right") => void;
   setSplitRatio: (ratio: number) => void;
@@ -62,7 +66,7 @@ interface State {
   setActiveTab: (id: string) => void;
   reorderTabs: (fromIndex: number, insertionIndex: number) => void;
   syncTabsFromRoot: () => Promise<void>;
-  updateBody: (id: string, body: string) => void;
+  updateBody: (id: string, body: string, options?: { pin?: boolean }) => void;
   rebase: (id: string, body: string) => void;
   reload: (id: string) => Promise<void>;
   change: (event: Change) => Promise<void>;
@@ -214,7 +218,7 @@ function restoreVirtualTab(id:string):Tab|null {
   }
   return null;
 }
-function isSharedTab(tab:Tab) {return !tab.isPopup && tab.viewKind!=='kanban';}
+function isSharedTab(tab:Tab) {return !tab.isPopup && !tab.isEphemeral && tab.viewKind!=='kanban';}
 export function isVirtualTabId(id: string): boolean {
   return id.startsWith("maek:virtual:");
 }
@@ -645,10 +649,38 @@ export const useStore = create<State>((set, get) => ({
       set({ error: String(e) });
     }
   },
-  async openFile(id) {
+  async openFile(id, options = {}) {
+    const preview = options.preview === true;
+    const fromRoute = options.source === "route";
     void recordRecent(id);
-    if (get().tabs.some((t) => t.id === id)) {
+    const existing = get().tabs.find((t) => t.id === id);
+    const activePreview = get().tabs.find(
+      (t) => t.id === get().activeTabId && t.isEphemeral,
+    );
+    // A preview selection updates the URL after it changes activeTabId. While
+    // that update is in flight, a stale URL event may still reference the
+    // previous preview. It must not reopen that old file as a permanent tab.
+    if (fromRoute && activePreview && activePreview.id !== id) return;
+    if (existing) {
+      if (preview) {
+        const pane = get().split.active;
+        const previousPreviewId = get().split[pane];
+        if (previousPreviewId && previousPreviewId !== id) {
+          set((s) => ({
+            tabs: s.tabs.filter(
+              (t) => !(t.id === previousPreviewId && t.isEphemeral),
+            ),
+          }));
+        }
+      }
+      // A double-click (or any explicit open) promotes the preview in place.
+      // That keeps its editor state instead of closing and reopening the file.
+      if (!preview && !fromRoute && existing.isEphemeral) {
+        patchTab(id, (t) => ({ ...t, isEphemeral: false }));
+        tabsDirty = true;
+      }
       get().setActiveTab(id);
+      if (!preview && !fromRoute && existing.isEphemeral) later();
       return;
     }
     const intent = beginPaneOpen(get().split.active);
@@ -669,10 +701,25 @@ export const useStore = create<State>((set, get) => ({
               ...(activate ? { active: intent.pane } : {}),
             }
           : s.split;
+        const current = s.tabs.find((t) => t.id === id);
+        // One preview is kept per pane. Selecting another file replaces it;
+        // permanent tabs remain alongside it.
+        const replacedPreviewId = preview
+          ? s.split[intent.pane]
+          : null;
+        const tabsWithoutPreviousPreview = replacedPreviewId && replacedPreviewId !== id
+          ? s.tabs.filter((t) => !(t.id === replacedPreviewId && t.isEphemeral))
+          : s.tabs;
+        const nextTab = { ...makeTab(id, file), isEphemeral: preview };
+        const tabs = current
+          ? tabsWithoutPreviousPreview.map((t) =>
+              t.id === id && !preview && t.isEphemeral
+                ? { ...t, isEphemeral: false }
+                : t,
+            )
+          : [...tabsWithoutPreviousPreview, nextTab];
         return {
-          tabs: s.tabs.some((t) => t.id === id)
-            ? s.tabs
-            : [...s.tabs, makeTab(id, file)],
+          tabs,
           activeTabId: activate ? id : s.activeTabId,
           split,
           recentFiles: [
@@ -682,7 +729,10 @@ export const useStore = create<State>((set, get) => ({
           error: "",
         };
       });
-      tabsDirty = true;
+      // Preview tabs are deliberately session-only. A permanent open (or a
+      // replaced preview) changes the shared tab list.
+      if (!preview || get().tabs.some((t) => t.isEphemeral && t.id !== id))
+        tabsDirty = true;
       later();
     } catch (e) {
       set({ error: String(e) });
@@ -918,12 +968,20 @@ export const useStore = create<State>((set, get) => ({
     void api<State["recentFiles"]>("/api/workspace/recent-files", "POST", {action:"clear"}).then(recentFiles=>set({recentFiles})).catch(e=>set({error:String(e)}));
     later();
   },
-  updateBody(id, body) {
+  updateBody(id, body, options = {}) {
+    const wasEphemeral = get().tabs.find((t) => t.id === id)?.isEphemeral;
     patchTab(id, (t) => ({
       ...t,
+      // Editing a preview must make it permanent before an unrelated file
+      // selection can replace it.
+      isEphemeral: options.pin === false ? t.isEphemeral : false,
       bodyContent: body,
       status: t.status === "conflict" ? "conflict" : "idle",
     }));
+    if (wasEphemeral && options.pin !== false) {
+      tabsDirty = true;
+      later();
+    }
     clearTimeout(timers.get(id));
     timers.set(
       id,

@@ -525,6 +525,20 @@ describe("real workspace host", () => {
     expect(artifact.headers["content-security-policy"]).toContain(
       "allow-scripts",
     );
+    expect(artifact.headers["content-security-policy"]).toContain(
+      "allow-popups",
+    );
+    expect(artifact.headers["content-security-policy"]).toContain(
+      "allow-popups-to-escape-sandbox",
+    );
+    const webPage = await request("GET", `/_web/${encodeURIComponent(ws)}/artifact/index.html`);
+    expect(webPage.statusCode).toBe(200);
+    expect(webPage.headers["content-type"]).toContain("text/html");
+    expect(webPage.headers["content-security-policy"]).toBeUndefined();
+    expect(
+      (await request("GET", `/_web/${encodeURIComponent(ws)}/artifact/app.css`))
+        .headers["content-type"],
+    ).toContain("text/css");
     expect((await request("GET", `${artifactBase}/app.css`)).headers["content-type"])
       .toContain("text/css");
     expect((await request("GET", `${artifactBase}/app.js`)).body).toContain(
@@ -535,6 +549,10 @@ describe("real workspace host", () => {
     );
     expect(
       (await request("GET", `/_artifacts/${encodeURIComponent(ws)}/.maek/config.json`))
+        .statusCode,
+    ).toBe(400);
+    expect(
+      (await request("GET", `/_web/${encodeURIComponent(ws)}/.maek/config.json`))
         .statusCode,
     ).toBe(400);
     expect(

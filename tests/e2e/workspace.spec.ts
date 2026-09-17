@@ -27,6 +27,7 @@ test.beforeEach(() => {
     `<h1>Rendered HTML</h1>
      <p id="data">Loading</p>
      <button id="action">Run action</button>
+     <a href="linked.html" target="_blank">Open linked page</a>
      <script>
        fetch("artifact-data.json").then((response) => response.json()).then((data) => {
          document.querySelector("#data").textContent = data.message;
@@ -40,6 +41,7 @@ test.beforeEach(() => {
     path.join(root, "artifact-data.json"),
     JSON.stringify({ message: "Artifact data loaded" }),
   );
+  writeFileSync(path.join(root, "linked.html"), "<h1>Linked artifact page</h1>");
   writeFileSync(path.join(root, "data.db"), "\0binary");
 });
 test.afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -264,6 +266,17 @@ test("search, read-only preview, unsupported file and native picker cancel", asy
   await expect(artifact.locator("#data")).toHaveText("Artifact data loaded");
   await artifact.getByRole("button", { name: "Run action" }).click();
   await expect(artifact.getByRole("button", { name: "Action ran" })).toBeVisible();
+  const popupPromise = page.waitForEvent("popup");
+  await artifact.getByRole("link", { name: "Open linked page" }).click();
+  const popup = await popupPromise;
+  await expect(popup.getByRole("heading", { name: "Linked artifact page" })).toBeVisible();
+  await popup.close();
+  const browserPagePromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Open in browser" }).click();
+  const browserPage = await browserPagePromise;
+  await expect(browserPage.getByRole("heading", { name: "Rendered HTML" })).toBeVisible();
+  expect(new URL(browserPage.url()).pathname).toContain("/_web/");
+  await browserPage.close();
   await page.locator('[data-path="data.db"]').click();
   await expect(
     page.getByText("Unsupported file format", { exact: true }),
@@ -645,6 +658,31 @@ test("opens a new tree note while tabs restored from .maek remain open", async (
   await expect(page.locator('[data-tab-id="second.md"]')).toBeVisible();
   await expect(page.locator(".tiptap")).toContainText("Second note");
   await expect(page.locator('[role="tab"]')).toHaveCount(3); // Includes the shared dashboard.
+});
+
+test("tree click uses one replaceable preview and double click pins it", async ({
+  page,
+}) => {
+  writeFileSync(path.join(root, "second.md"), "# Second note\n");
+  writeFileSync(path.join(root, "third.md"), "# Third note\n");
+  await open(page);
+
+  const first = page.locator('[data-path="Folder/기존 노트.md"]');
+  await page.locator('[data-path="Folder"]').click();
+  await first.click();
+  await expect(page.locator('[data-tab-id="Folder/기존 노트.md"]')).toBeVisible();
+  await expect(page.locator('[data-tab-id="Folder/기존 노트.md"]')).toHaveClass(/italic/);
+
+  await page.locator('[data-path="second.md"]').click();
+  await expect(page.locator('[data-tab-id="Folder/기존 노트.md"]')).toHaveCount(0);
+  await expect(page.locator('[data-tab-id="second.md"]')).toHaveClass(/italic/);
+
+  await page.locator('[data-path="second.md"]').dblclick();
+  await expect(page.locator('[data-tab-id="second.md"]')).not.toHaveClass(/italic/);
+
+  await page.locator('[data-path="third.md"]').click();
+  await expect(page.locator('[data-tab-id="second.md"]')).toBeVisible();
+  await expect(page.locator('[data-tab-id="third.md"]')).toHaveClass(/italic/);
 });
 
 /** Basenames of web-managed tabs in root .maek/tabs.json order. */
