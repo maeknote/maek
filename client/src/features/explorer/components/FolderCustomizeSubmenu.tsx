@@ -36,7 +36,7 @@ export function FolderCustomizeSubmenu({
   const [isColorMenuOpen, setIsColorMenuOpen] = useState(false);
   const [colorMenuPosition, setColorMenuPosition] = useState<{ x: number; y: number } | null>(null);
   
-  const triggerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const portalRef = useRef<HTMLDivElement | null>(null);
   const colorButtonRef = useRef<HTMLButtonElement>(null);
   const colorMenuRef = useRef<HTMLDivElement | null>(null);
@@ -176,20 +176,19 @@ export function FolderCustomizeSubmenu({
 
   return (
     <div className="contents">
-      <div
+      <button
+        type="button"
         ref={triggerRef}
         className="relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-surface-overlay text-neutral-ink"
-        onMouseEnter={openFromTrigger}
-        onMouseLeave={scheduleClose}
         onClick={(e) => {
           e.stopPropagation();
-          openFromTrigger();
+          if (isOpen) closePanel();
+          else openFromTrigger();
         }}
       >
-        <Palette className="h-4 w-4 shrink-0" />
         <span className="min-w-0 flex-1 truncate">Change icon...</span>
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-text" />
-      </div>
+      </button>
 
       {isOpen && position
         ? createPortal(
@@ -203,6 +202,7 @@ export function FolderCustomizeSubmenu({
               }}
               onMouseEnter={clearTimer}
               onMouseLeave={() => !isColorMenuOpen && scheduleClose()}
+              onMouseDown={(event) => event.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               role="menu"
             >
@@ -354,6 +354,7 @@ export function FolderCustomizeSubmenu({
                 top: colorMenuPosition.y,
                 width: COLOR_MENU_WIDTH,
               }}
+              onMouseDown={(event) => event.stopPropagation()}
               role="menu"
             >
               {FOLDER_ICON_COLOR_OPTIONS.map((option) => {

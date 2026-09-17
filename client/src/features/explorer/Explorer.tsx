@@ -167,7 +167,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const [clipboard, setClipboard] = useState<string[]>([]);
   const [selection, setSelection] = useState<FileNode[]>([]);
   const [pendingEdit, setPendingEdit] = useState<string | null>(null);
-  const [browseFolders,setBrowseFolders]=useState<string[]>([]);
+  const [browseFolders] = useState<string[]>([]);
   const [databases, setDatabases] = useState<DatabaseMeta[]>([]);
   useEffect(() => {
     if (!workspace) { setDatabases([]); return; }
@@ -522,13 +522,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
             const rect = e.currentTarget.getBoundingClientRect();
             createHoverMenu.open({ x: rect.left, y: rect.bottom });
           }}
-          onMouseEnter={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            createHoverMenu.open({ x: r.left, y: r.bottom });
-          }}
-          onMouseLeave={() => {
-            createHoverMenu.startCloseTimer();
-          }}
         >
           <Plus size={15} />
           <span>Add new</span>
@@ -798,24 +791,12 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       </div>
       {menu && (
         <FloatingMenu isOpen position={menu} onClose={() => setMenu(null)}>
-          <MenuItem
-            label="New note"
-            onClick={() => void run(() => create("file"))}
-          />
-          <MenuItem
-            label="New folder"
-            onClick={() => void run(() => create("dir"))}
-          />
-          <MenuItem
-            label="New database"
-            onClick={() => void run(() => createDatabase())}
-          />
-          <MenuSeparator />
-          {menu.node?.isDir && (databases.some(d=>d.folderPath===menu.node!.id) ? <>
-            <MenuItem label="Open database" onClick={()=>{const db=databases.find(d=>d.folderPath===menu.node!.id)!;setBrowseFolders(s=>s.filter(p=>p!==db.folderPath));useStore.getState().openDatabase(db.folderPath,db.name);setMenu(null)}}/>
-            <MenuItem label="Browse as folder" onClick={()=>{const id=menu.node!.id;setBrowseFolders(s=>[...s,id]);tree.current?.get(id)?.open();setMenu(null)}}/>
-            <MenuItem label="Remove database" onClick={()=>void run(async()=>{const db=databases.find(d=>d.folderPath===menu.node!.id)!;await api('/api/databases/command','POST',{databaseId:db.id,action:'unregister'});setDatabases(await api<DatabaseMeta[]>('/api/databases'));for(const tab of useStore.getState().tabs.filter(t=>t.databaseFolderPath===db.folderPath))await useStore.getState().closeTab(tab.id)})}/>
-          </> : <MenuItem label="Turn into database" onClick={()=>void run(async()=>{const db=await api<DatabaseMeta>('/api/databases/convert','POST',{folderPath:menu.node!.id});setDatabases(await api<DatabaseMeta[]>('/api/databases'));useStore.getState().openDatabase(db.folderPath,db.name)})}/>)}
+          {!menu.node && <>
+            <MenuItem label="New note" onClick={() => void run(() => create("file"))} />
+            <MenuItem label="New folder" onClick={() => void run(() => create("dir"))} />
+            <MenuItem label="New database" onClick={() => void run(() => createDatabase())} />
+            {clipboard.length > 0 && <><MenuSeparator /><MenuItem label="Paste" onClick={() => void run(() => paste(""))} /></>}
+          </>}
           {menu.node && (
             <>
               <MenuItem
@@ -855,11 +836,9 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
               )}
             </>
           )}
-          <MenuItem
-            label="Paste"
-            disabled={!clipboard.length}
-            onClick={() => void run(() => paste())}
-          />
+          {menu.node?.isDir && clipboard.length > 0 && (
+            <MenuItem label="Paste" onClick={() => void run(() => paste(menu.node!.id))} />
+          )}
           {menu.node && (
             <>
               <MenuSeparator />
@@ -890,8 +869,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           position={createHoverMenu.position}
           anchorRef={createButtonRef}
           onClose={() => createHoverMenu.close()}
-          onMouseEnter={createHoverMenu.cancelCloseTimer}
-          onMouseLeave={createHoverMenu.startCloseTimer}
           minWidth={createButtonRef.current?.getBoundingClientRect().width ?? 0}
           offset={0}
         >
@@ -955,6 +932,18 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                 label="Show in file tree"
                 onClick={() => {
                   revealInFolderTree(openNotesMenu.id);
+                  setOpenNotesMenu(null);
+                }}
+              />
+              <MenuItem
+                label="Reveal in Finder"
+                onClick={() => {
+                  void run(() =>
+                    api("/api/files/open-external", "POST", {
+                      path: openNotesMenu.id,
+                      reveal: true,
+                    }),
+                  );
                   setOpenNotesMenu(null);
                 }}
               />
