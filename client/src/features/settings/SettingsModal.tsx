@@ -191,7 +191,7 @@ function GeneralPage({
               type="button"
               aria-pressed={preferences.accent === accent.id}
               aria-label={accent.label}
-              title={accent.label}
+              data-hover-hint={accent.label}
               onClick={() => update({ accent: accent.id })}
               className={`w-8 h-8 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${
                 preferences.accent === accent.id
@@ -362,7 +362,6 @@ function WorkspacePage({ onClose }: { onClose: () => void }) {
                   <button
                     type="button"
                     aria-label={`Remove ${basename(ws.path) || ws.name} from list`}
-                    title="Remove from list"
                     onClick={() => removeWorkspace(ws.path)}
                     className="icon-button opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0"
                   >

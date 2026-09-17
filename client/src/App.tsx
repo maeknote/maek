@@ -358,7 +358,6 @@ function AppContent() {
               >
                 <button
                   aria-label="Open sidebar"
-                  title="Open sidebar"
                   className="sidebar-toggle-button collapsed-sidebar-header-button"
                   onClick={expandSidebar}
                 >
@@ -366,7 +365,6 @@ function AppContent() {
                 </button>
                 <button
                   aria-label="Search"
-                  title="Search"
                   className="icon-button collapsed-sidebar-menu-button"
                   onClick={() => setSearch(true)}
                 >
@@ -374,7 +372,6 @@ function AppContent() {
                 </button>
                 <button
                   aria-label="Add new"
-                  title="Add new"
                   className="icon-button collapsed-sidebar-menu-button mt-1"
                   onClick={expandSidebar}
                 >
@@ -382,7 +379,6 @@ function AppContent() {
                 </button>
                 <button
                   aria-label="Open tabs"
-                  title="Open tabs"
                   className="icon-button collapsed-sidebar-menu-button mt-2"
                   onClick={expandSidebar}
                 >
@@ -390,7 +386,6 @@ function AppContent() {
                 </button>
                 <button
                   aria-label="Files"
-                  title="Files"
                   className="icon-button collapsed-sidebar-menu-button"
                   onClick={expandSidebar}
                 >

@@ -123,7 +123,6 @@ export function FilePane({
           onClick={() => state.singlePane(pane)}
           className="icon-button"
           aria-label="Single pane"
-          title="Single pane"
         >
           <Columns2 size={14} />
         </button>
@@ -133,7 +132,6 @@ export function FilePane({
           onClick={onOpenToSide}
           className="icon-button"
           aria-label="Open file to the side"
-          title="Open file to the side…"
         >
           <Columns2 size={14} />
         </button>
@@ -150,7 +148,6 @@ export function FilePane({
           onClick={() => state.refreshPreview(tab.id)}
           className="icon-button"
           aria-label="Reload HTML preview"
-          title="Reload HTML preview"
         >
           <RefreshCw size={14} />
         </button>
@@ -165,7 +162,6 @@ export function FilePane({
           }
           className="icon-button"
           aria-label="Open in browser"
-          title="Open in browser"
         >
           <ExternalLink size={14} />
         </button>

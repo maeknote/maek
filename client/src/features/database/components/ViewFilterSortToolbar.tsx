@@ -223,7 +223,7 @@ export function ViewFilterSortToolbar({
                 ? 'bg-maek-red/15 text-maek-red'
                 : 'text-muted-text hover:bg-surface hover:text-neutral-ink'
             )}
-            title={ascActive ? 'Clear ascending sort' : 'Sort ascending'}
+            aria-label={ascActive ? 'Clear ascending sort' : 'Sort ascending'}
             aria-pressed={ascActive}
           >
             <ArrowUp className="h-3 w-3" />
@@ -237,7 +237,7 @@ export function ViewFilterSortToolbar({
                 ? 'bg-maek-red/15 text-maek-red'
                 : 'text-muted-text hover:bg-surface hover:text-neutral-ink'
             )}
-            title={descActive ? 'Clear descending sort' : 'Sort descending'}
+            aria-label={descActive ? 'Clear descending sort' : 'Sort descending'}
             aria-pressed={descActive}
           >
             <ArrowDown className="h-3 w-3" />

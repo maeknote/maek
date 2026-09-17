@@ -50,7 +50,7 @@ export function TableAddButtons({
           type="button"
           className="table-add-btn"
           onClick={handleAddRow}
-          title="Add row"
+          aria-label="Add row"
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
@@ -65,7 +65,7 @@ export function TableAddButtons({
           type="button"
           className="table-add-btn"
           onClick={handleAddColumn}
-          title="Add column"
+          aria-label="Add column"
         >
           <Plus className="w-3.5 h-3.5" />
         </button>

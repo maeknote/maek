@@ -232,8 +232,8 @@ export function FolderCustomizeSubmenu({
                     <div className="grid grid-cols-8 gap-1">
                       <button
                         type="button"
-                        title="No Icon"
                         aria-label="No Icon"
+                        data-hover-hint="No Icon"
                         onClick={() => setSelectedIcon(null)}
                         className={cn(
                           "relative flex h-8 items-center justify-center rounded-md border border-transparent bg-transparent transition-colors",
@@ -256,8 +256,8 @@ export function FolderCustomizeSubmenu({
                           <button
                             key={preset.id}
                             type="button"
-                            title={preset.label}
                             aria-label={preset.label}
+                            data-hover-hint={preset.label}
                             onClick={() => setSelectedIcon(preset.id)}
                             className={cn(
                               "relative flex h-8 items-center justify-center rounded-md border border-transparent bg-transparent transition-colors",

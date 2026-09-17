@@ -322,6 +322,19 @@ test("non-markdown files use the compact file toolbar and markdown keeps the lar
     await expect(page.getByLabel(label).first()).toBeVisible();
   }
 
+  // Icon-only actions use the portal tooltip, so the hint is not clipped by
+  // the compact toolbar or misplaced at the viewport edge.
+  await page.getByRole("button", { name: "Open in browser" }).hover();
+  const tooltip = page.getByRole("tooltip");
+  await expect(tooltip).toHaveText("Open in browser");
+  await expect(tooltip).toBeVisible();
+  const box = await tooltip.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(1440);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(1000);
+
   // Markdown keeps the existing large editor title (no "File name" field).
   await editNote(page);
   await expect(page.getByRole("textbox", { name: "File name" })).toHaveCount(0);

@@ -781,7 +781,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         <button
           className="icon-button text-maek-red hover:bg-red-50 dark:hover:bg-red-950/30"
           aria-label="Quit server"
-          title="Quit server"
           onClick={onQuit}
         >
           <Power size={16} />

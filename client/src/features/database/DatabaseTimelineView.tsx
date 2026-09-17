@@ -716,7 +716,7 @@ export function DatabaseTimelineView({
           <button
             onClick={() => cycleZoom('out')}
             className="w-6 h-6 flex items-center justify-center rounded text-muted-text hover:text-neutral-ink hover:bg-surface-overlay transition-colors"
-            title="Zoom out"
+            aria-label="Zoom out"
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
@@ -724,7 +724,7 @@ export function DatabaseTimelineView({
           <button
             onClick={() => cycleZoom('in')}
             className="w-6 h-6 flex items-center justify-center rounded text-muted-text hover:text-neutral-ink hover:bg-surface-overlay transition-colors"
-            title="Zoom in"
+            aria-label="Zoom in"
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>

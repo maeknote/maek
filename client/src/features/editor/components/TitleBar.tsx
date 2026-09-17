@@ -86,7 +86,6 @@ export function TitleBar({ tab, onRename, actions }: TitleBarProps): ReactElemen
             onClick={handleCopyMarkdown}
             className="maek-title-copy-btn h-8 w-8 rounded-md hover:bg-surface-overlay transition-colors text-muted-text hover:text-neutral-ink flex items-center justify-center shrink-0"
             aria-label="Copy note"
-            title="Copy note"
           >
             {copied ? (
               <Check className="w-3.5 h-3.5" />

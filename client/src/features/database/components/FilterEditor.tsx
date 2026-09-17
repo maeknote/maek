@@ -117,7 +117,6 @@ export function FilterEditor({
               onClick={onDone}
               className="flex h-5 w-5 items-center justify-center rounded text-muted-text hover:bg-maek-red/15 hover:text-maek-red"
               aria-label="Apply filter and close"
-              title="Apply filter and close"
             >
               <Check className="h-3 w-3" />
             </button>
@@ -128,7 +127,6 @@ export function FilterEditor({
               onClick={onRemove}
               className="flex h-5 w-5 items-center justify-center rounded text-muted-text hover:bg-red-500/15 hover:text-red-500"
               aria-label="Remove filter"
-              title="Remove filter"
             >
               <Trash2 className="h-3 w-3" />
             </button>

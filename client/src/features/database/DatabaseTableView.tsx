@@ -810,15 +810,10 @@ export function DatabaseTableView({ databaseFolderPath }: DatabaseTableViewProps
                   </th>
                 )
               })}
-              {/* Trailing "+ add column" header — borderless.
-                  The tooltip is anchored to the trigger's right edge so it
-                  extends LEFTWARD into the table area instead of bleeding past
-                  the table's right edge. A centered tooltip would extend
-                  ~40px beyond the right edge, which the wrapper's
-                  `overflow-auto` would treat as horizontal overflow and force
-                  a scrollbar even when the table itself fits the container. */}
+              {/* Trailing "+ add column" header. The shared portal tooltip avoids
+                  both table overflow and viewport clipping. */}
               <th className="p-0 w-16 min-w-16">
-                <div className="group relative">
+                <div>
                   <button
                     type="button"
                     onClick={() => void handleAddColumn()}
@@ -827,9 +822,6 @@ export function DatabaseTableView({ databaseFolderPath }: DatabaseTableViewProps
                   >
                     <Plus className="h-3.5 w-3.5" />
                   </button>
-                  <span className="pointer-events-none absolute top-full right-0 z-10 mt-1.5 whitespace-nowrap rounded-md bg-neutral-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-neutral-700">
-                    Add column
-                  </span>
                 </div>
               </th>
             </tr>

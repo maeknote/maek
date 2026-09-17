@@ -278,13 +278,13 @@ export default function SpreadsheetEditor({ tab }: { tab: Tab }) {
       }}
     >
       <div className="csv-toolbar" role="toolbar" aria-label="Spreadsheet tools">
-        <button onClick={undo} disabled={!past.current.length || !!readonlyReason} title="Undo"><Undo2 size={15} /></button>
-        <button onClick={redo} disabled={!future.current.length || !!readonlyReason} title="Redo"><Redo2 size={15} /></button>
+        <button onClick={undo} disabled={!past.current.length || !!readonlyReason} aria-label="Undo"><Undo2 size={15} /></button>
+        <button onClick={redo} disabled={!future.current.length || !!readonlyReason} aria-label="Redo"><Redo2 size={15} /></button>
         <span className="csv-toolbar-separator" />
-        <button onClick={() => run(() => insertRow(document, selected.top))} disabled={structuralDisabled} title="Insert row above"><Plus size={14} /><Rows3 size={15} /></button>
-        <button onClick={() => run(() => deleteRow(document, selected.top))} disabled={structuralDisabled} title="Delete row"><Trash2 size={14} /><Rows3 size={15} /></button>
-        <button onClick={() => run(() => insertColumn(document, selected.left))} disabled={structuralDisabled} title="Insert column left"><Plus size={14} /><Columns3 size={15} /></button>
-        <button onClick={() => run(() => deleteColumn(document, selected.left))} disabled={structuralDisabled} title="Delete column"><Trash2 size={14} /><Columns3 size={15} /></button>
+        <button onClick={() => run(() => insertRow(document, selected.top))} disabled={structuralDisabled} aria-label="Insert row above"><Plus size={14} /><Rows3 size={15} /></button>
+        <button onClick={() => run(() => deleteRow(document, selected.top))} disabled={structuralDisabled} aria-label="Delete row"><Trash2 size={14} /><Rows3 size={15} /></button>
+        <button onClick={() => run(() => insertColumn(document, selected.left))} disabled={structuralDisabled} aria-label="Insert column left"><Plus size={14} /><Columns3 size={15} /></button>
+        <button onClick={() => run(() => deleteColumn(document, selected.left))} disabled={structuralDisabled} aria-label="Delete column"><Trash2 size={14} /><Columns3 size={15} /></button>
         <span className="csv-toolbar-separator" />
         <label className="csv-toggle"><input type="checkbox" checked={headerMode} onChange={(event) => { setHeaderMode(event.target.checked); setSelection(null); }} /> First row is header</label>
         <label className="csv-search"><Filter size={14} /><input aria-label="Filter rows" placeholder="Filter rows" value={filterText} onChange={(event) => { setFilterText(event.target.value); setSelection(null); }} /></label>

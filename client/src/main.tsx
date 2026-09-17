@@ -7,6 +7,7 @@ import "./workspace.css";
 import "katex/dist/katex.min.css";
 import App from "./App";
 import { queryClient } from "./app/query-client";
+import { GlobalTooltip } from "./shared/components/GlobalTooltip";
 if (location.hostname === "localhost") {
   location.replace(
     `${location.protocol}//127.0.0.1:${location.port}${location.pathname}${location.search}${location.hash}`,
@@ -16,6 +17,7 @@ if (location.hostname === "localhost") {
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <App />
+        <GlobalTooltip />
       </QueryClientProvider>
     </StrictMode>,
   );

@@ -549,7 +549,7 @@ export function DatabaseCalendarView({
                         <button
                           onClick={() => void handleDayClick(day)}
                           className="w-4 h-4 flex items-center justify-center rounded text-muted-text hover:text-neutral-ink opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Add row"
+                          aria-label="Add row"
                         >
                           <Plus className="w-3 h-3" />
                         </button>
