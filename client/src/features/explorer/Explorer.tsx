@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Tree, type TreeApi, type NodeRendererProps } from "react-arborist";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
+import { Tree, type TreeApi, type NodeRendererProps, type NodeApi } from "react-arborist";
 import {
   ChevronRight,
   File,
@@ -29,12 +37,20 @@ import { useStore, schedulePersistence } from "../../store";
 import { api, toBase64 } from "../../host";
 import type { FileNode } from "@shared/workspace";
 import type { DatabaseMeta } from "@shared/database";
+import type { FolderAppearance } from "./utils/folderAppearance";
 import { cn } from "../../lib/utils";
 import { collectDropFiles } from "./importDrop";
 import { useFolderAppearance } from "./stores/folderAppearanceStore";
 import { FolderCustomizeSubmenu } from "./components/FolderCustomizeSubmenu";
 import { FOLDER_ICON_MAP, getFolderIconColorValue } from "./utils/folderAppearance";
 import { isTabDirty } from "../editor/utils/frontmatter";
+import {
+  edgeScrollDelta,
+  isSelfOrDescendantDrop,
+} from "./utils/treeDnd";
+
+const ROW_HEIGHT = 28;
+const ROOT_ID = "__REACT_ARBORIST_INTERNAL_ROOT__";
 
 interface Props {
   onSearch: () => void;
@@ -42,6 +58,208 @@ interface Props {
   onCollapse: () => void;
   onQuit: () => void;
 }
+
+/**
+ * Everything the module-scope Node renderer needs, supplied through context so
+ * that changing databases/appearances/handlers never remounts the whole tree
+ * (which is what previously wiped the rename input and re-ran clicks).
+ */
+interface TreeContextValue {
+  databaseFolders: Set<string>;
+  appearances: Record<string, FolderAppearance>;
+  browseFolders: Set<string>;
+  onRowClick: (node: NodeApi<FileNode>, event: React.MouseEvent) => void;
+  onChevronClick: (node: NodeApi<FileNode>, event: React.MouseEvent) => void;
+  onRowDoubleClick: (node: NodeApi<FileNode>) => void;
+  onContextMenu: (node: NodeApi<FileNode>, event: React.MouseEvent) => void;
+}
+
+const TreeContext = createContext<TreeContextValue | null>(null);
+
+function useTreeContext(): TreeContextValue {
+  const value = useContext(TreeContext);
+  if (!value) throw new Error("Node rendered outside of TreeContext");
+  return value;
+}
+
+/**
+ * Stable, module-scope row renderer. It reads dynamic data from context rather
+ * than closing over Explorer state, so react-arborist can keep node instances
+ * mounted across data refreshes.
+ */
+function Node({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
+  const {
+    databaseFolders,
+    appearances,
+    onRowClick,
+    onChevronClick,
+    onRowDoubleClick,
+    onContextMenu,
+  } = useTreeContext();
+  const isDir = node.data.isDir;
+  const isDatabase = isDir && databaseFolders.has(node.data.id);
+  const appearance = appearances[node.data.id];
+
+  // Strip react-arborist's auto-injected paddingLeft so the depth guide spans
+  // are the single source of indent (matches the desktop design).
+  const computedStyle: React.CSSProperties = { ...(style as React.CSSProperties) };
+  delete computedStyle.paddingLeft;
+
+  return (
+    <div
+      ref={dragHandle}
+      style={computedStyle}
+      data-path={node.id}
+      data-file-node
+      className={cn(
+        "relative flex items-center h-7 px-2 cursor-pointer select-none text-sm transition-colors duration-150",
+        node.isSelected
+          ? "bg-maek-red/10 text-maek-red"
+          : "text-neutral-ink hover:bg-surface-overlay",
+        node.isDragging && "opacity-50",
+      )}
+      onClick={(e) => onRowClick(node, e)}
+      onDoubleClick={() => onRowDoubleClick(node)}
+      onContextMenu={(e) => onContextMenu(node, e)}
+    >
+      {/* Drop target highlight overlay: react-arborist marks the resolved drop
+          parent with willReceiveDrop. We paint the folder and its visible
+          subtree instead of drawing a sibling insertion line. */}
+      {node.willReceiveDrop && (
+        <div
+          className="absolute pointer-events-none z-10"
+          style={{
+            top: 0,
+            left: 0,
+            right: 0,
+            height: (() => {
+              if (!node.isOpen) return ROW_HEIGHT;
+              const visibleNodes = node.tree.visibleNodes;
+              let count = 0;
+              for (let i = (node.rowIndex ?? 0) + 1; i < visibleNodes.length; i++) {
+                if (visibleNodes[i]!.level <= node.level) break;
+                count++;
+              }
+              return (1 + count) * ROW_HEIGHT;
+            })(),
+            backgroundColor: "color-mix(in srgb, var(--color-maek-red) 8%, transparent)",
+            borderLeft: "2px solid color-mix(in srgb, var(--color-maek-red) 50%, transparent)",
+            borderRadius: "2px",
+          }}
+        />
+      )}
+      {/* Depth guide lines: inline spans that create indent + vertical line */}
+      {Array.from({ length: node.level }).map((_, i) => (
+        <span
+          key={i}
+          aria-hidden
+          className="shrink-0 self-stretch border-l border-[var(--color-border-subtle)]"
+          style={{ width: 12 }}
+        />
+      ))}
+      <span
+        className="w-4 h-4 flex items-center justify-center shrink-0"
+        onClick={(e) => {
+          // The chevron toggles a folder regardless of row-click behaviour. For
+          // database folders this is the ONLY way to expand/collapse, because a
+          // plain row click opens the database instead.
+          if (node.isInternal) onChevronClick(node, e);
+        }}
+      >
+        {node.isInternal && (
+          <ChevronRight
+            className={cn(
+              "w-3 h-3 transition-transform",
+              node.isOpen && "rotate-90",
+            )}
+          />
+        )}
+      </span>
+      {node.isInternal ? (
+        isDatabase ? (
+          <Table className="w-4 h-4 mr-2 shrink-0 text-maek-red" />
+        ) : appearance ? (
+          <span className="mr-2 flex items-center justify-center">
+            {(() => {
+              const IconComponent =
+                FOLDER_ICON_MAP[appearance.icon as keyof typeof FOLDER_ICON_MAP];
+              return IconComponent ? (
+                <IconComponent
+                  size={16}
+                  style={{ color: getFolderIconColorValue(appearance.iconColor) }}
+                />
+              ) : null;
+            })()}
+          </span>
+        ) : null
+      ) : /\.csv$/i.test(node.data.name) ? (
+        <Table2 className="w-4 h-4 mr-2 shrink-0" />
+      ) : /\.html$/i.test(node.data.name) ? (
+        <FileCode className="w-4 h-4 mr-2 shrink-0" />
+      ) : !/\.md$/i.test(node.data.name) ? (
+        <File className="w-4 h-4 mr-2 shrink-0" />
+      ) : null}
+      {node.isEditing ? (
+        <RenameInput node={node} />
+      ) : (
+        <span
+          className={cn(
+            "truncate",
+            !node.isInternal && !appearance && !/\.md$/i.test(node.data.name)
+              ? ""
+              : "ml-1",
+          )}
+        >
+          {node.data.name}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Isolated rename input. It owns an uncontrolled value and a single-shot submit
+ * guard so a workspace-change re-render during editing cannot lose the typed
+ * value or double-submit on Enter-then-blur.
+ */
+function RenameInput({ node }: { node: NodeApi<FileNode> }) {
+  const submittedRef = useRef(false);
+  const submit = (value: string) => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    void node.submit(value);
+  };
+  const cancel = () => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    node.reset();
+  };
+  return (
+    <input
+      autoFocus
+      aria-label="File name"
+      defaultValue={node.data.name}
+      className="flex-1 min-w-0 text-sm bg-surface border border-maek-red/50 rounded px-1 outline-none"
+      onFocus={(e) => e.target.select()}
+      // Prevent the row's click/selection handlers from firing while editing.
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onBlur={(e) => submit(e.target.value)}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          submit(e.currentTarget.value);
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancel();
+        }
+      }}
+    />
+  );
+}
+
 export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const {
     nodes,
@@ -54,6 +272,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   } = useStore();
   const container = useRef<HTMLDivElement>(null),
     tree = useRef<TreeApi<FileNode>>(null);
+  const filesScrollRef = useRef<HTMLDivElement>(null);
   const dragPreviewRef = useRef<HTMLDivElement>(null);
   const dragPreviewTextRef = useRef<HTMLSpanElement>(null);
   const dragTab = useRef<{
@@ -66,6 +285,8 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const dropIndexRef = useRef<number | null>(null);
   const suppressTabClick = useRef(false);
   const [pendingReveal, setPendingReveal] = useState<{ id: string } | null>(null);
+  const [filesHeight, setFilesHeight] = useState(0);
+  const [rootDropActive, setRootDropActive] = useState(false);
   const saveStatus = tabs.some((tab) => tab.status === "saving")
     ? "Saving"
     : tabs.some(isTabDirty) ? "Unsaved" : null;
@@ -82,7 +303,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   } | null>(null);
   const { appearances, load } = useFolderAppearance();
 
-
   const updateDropIndex = useCallback((index: number | null) => {
     dropIndexRef.current = index;
     setDropIndex(index);
@@ -97,13 +317,13 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           return;
         drag.dragging = true;
         suppressTabClick.current = true;
-        
+
         const tab = useStore.getState().tabs.find((t) => t.id === drag.id);
         if (tab && dragPreviewTextRef.current) {
           dragPreviewTextRef.current.textContent = tab.name;
         }
       }
-      
+
       if (dragPreviewRef.current) {
         dragPreviewRef.current.style.transform = `translate(${event.clientX + 10}px, ${event.clientY + 10}px)`;
         dragPreviewRef.current.style.display = "flex";
@@ -114,7 +334,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         .elementFromPoint(event.clientX, event.clientY)
         ?.closest<HTMLElement>("[data-tab-id]");
       if (!row) {
-        // If moved outside tabs area, we can still show preview, but maybe clear drop index
         return;
       }
       const currentTabs = useStore.getState().tabs;
@@ -135,8 +354,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         useStore.getState().reorderTabs(from, dropIndexRef.current);
       }
       updateDropIndex(null);
-      // A normal pointerup emits click next; let that click consume the flag.
-      // Clear it afterward as a fallback for pointercancel or browser quirks.
       window.setTimeout(() => {
         suppressTabClick.current = false;
       }, 0);
@@ -169,13 +386,53 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const [pendingEdit, setPendingEdit] = useState<string | null>(null);
   const [browseFolders] = useState<string[]>([]);
   const [databases, setDatabases] = useState<DatabaseMeta[]>([]);
+
+  // The database registry only changes when the workspace loads, its manifests
+  // change, or the directory structure changes. Ordinary document saves emit a
+  // "change" event for a Markdown file, which must NOT trigger a refetch (the
+  // previous code re-queried on every workspace-change and remounted the tree).
   useEffect(() => {
-    if (!workspace) { setDatabases([]); return; }
-    let cancelled=false;
-    const refresh=()=>void api<DatabaseMeta[]>('/api/databases').then(d=>{if(!cancelled)setDatabases(d)}).catch(()=>{});
-    refresh();window.addEventListener('maek:workspace-change',refresh);
-    return()=>{cancelled=true;window.removeEventListener('maek:workspace-change',refresh)};
+    if (!workspace) {
+      setDatabases([]);
+      return;
+    }
+    let cancelled = false;
+    const refresh = () =>
+      void api<DatabaseMeta[]>("/api/databases")
+        .then((d) => {
+          if (!cancelled) setDatabases(d);
+        })
+        .catch(() => {});
+    refresh();
+    const onChange = (event: Event) => {
+      const path = (event as CustomEvent<{ type?: string; path?: string }>).detail
+        ?.path;
+      const type = (event as CustomEvent<{ type?: string; path?: string }>).detail
+        ?.type;
+      if (!path) return;
+      const isManifest =
+        path.endsWith("/.maek-database.json") || path === ".maek-database.json";
+      const isStructural =
+        type === "add" ||
+        type === "addDir" ||
+        type === "unlink" ||
+        type === "unlinkDir" ||
+        type === "rename";
+      if (isManifest || isStructural) refresh();
+    };
+    window.addEventListener("maek:workspace-change", onChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("maek:workspace-change", onChange);
+    };
   }, [workspace?.wsId]);
+
+  const databaseFolders = useMemo(
+    () => new Set(databases.map((d) => d.folderPath)),
+    [databases],
+  );
+  const browseFolderSet = useMemo(() => new Set(browseFolders), [browseFolders]);
+
   const data = useMemo(() => {
     const map = new Map(
       nodes.map((n) => [
@@ -190,20 +447,18 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     }
     return roots;
   }, [nodes]);
-  const visibleNodeCount = useMemo(() => {
-    const expandedIds = new Set(expanded);
-    const countVisible = (items: FileNode[]): number =>
-      items.reduce(
-        (count, item) =>
-          count +
-          1 +
-          (item.isDir && expandedIds.has(item.id)
-            ? countVisible(item.children ?? [])
-            : 0),
-        0,
-      );
-    return countVisible(data);
-  }, [data, expanded]);
+
+  // Measure the remaining height of the Files scroll area so react-arborist
+  // virtualizes against the real viewport rather than the total node count.
+  useEffect(() => {
+    const el = filesScrollRef.current;
+    if (!el) return;
+    const measure = () => setFilesHeight(el.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [tabs.length, workspace?.wsId]);
 
   const revealInFolderTree = useCallback(
     (id: string) => {
@@ -220,8 +475,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     if (!pendingReveal || !api) return;
     let cancelled = false;
     const { id } = pendingReveal;
-    // get(id) only sees expanded nodes. scrollTo opens ancestors using the
-    // complete tree, then waits for the visible-node index to be rebuilt.
     void (async () => {
       await api.scrollTo(id, "center");
       if (cancelled) return;
@@ -233,7 +486,9 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       }
       setPendingReveal(null);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [pendingReveal, workspace?.wsId]);
   useEffect(() => {
     if (pendingEdit && tree.current?.get(pendingEdit)) {
@@ -243,6 +498,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       setPendingEdit(null);
     }
   }, [nodes, pendingEdit]);
+
   const run = async (fn: () => Promise<unknown>) => {
     setMenu(null);
     try {
@@ -256,7 +512,11 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   async function createDatabase(dir = currentDir()) {
     const name = window.prompt("Database name", "New Database")?.trim();
     if (!name) return;
-    const database = await api<DatabaseMeta>("/api/databases", "POST", { parent: dir, name, viewType: "table" });
+    const database = await api<DatabaseMeta>("/api/databases", "POST", {
+      parent: dir,
+      name,
+      viewType: "table",
+    });
     await useStore.getState().refresh();
     setDatabases(await api<DatabaseMeta[]>("/api/databases"));
     useStore.getState().openDatabase(database.folderPath, database.name);
@@ -322,137 +582,150 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         ? selection.map((n) => n.id)
         : [menu.node.id]
       : selection.map((n) => n.id);
-  const Node = useCallback(
-    ({ node, style, dragHandle }: NodeRendererProps<FileNode>) => {
-      // Strip react-arborist's auto-injected paddingLeft so the depth guide
-      // spans are the single source of indent (matches maeknote-app design).
-      const computedStyle = (() => {
-        const rest: React.CSSProperties = { ...(style as React.CSSProperties) };
-        delete rest.paddingLeft;
-        return rest;
-      })();
 
-      return (
-        <div
-          ref={dragHandle}
-          style={computedStyle}
-          data-path={node.id}
-          data-file-node
-          className={cn(
-            "relative flex items-center h-7 px-2 cursor-pointer select-none text-sm transition-all duration-150",
-            node.isSelected
-              ? "bg-maek-red/10 text-maek-red"
-              : "text-neutral-ink hover:bg-surface-overlay",
-            node.isDragging && "opacity-50",
-          )}
-          onClick={(e) => {
-            node.handleClick(e);
-            if (node.data.isDir) {
-              const database = databases.find((d) => d.folderPath === node.data.id);
-              if (database && !browseFolders.includes(node.data.id)) useStore.getState().openDatabase(database.folderPath, database.name);
-              else node.toggle();
-            }
-          }}
-          onDoubleClick={() => {
-            // Arborist's selection handler opens files as previews. A double
-            // click promotes that same tab to a normal, persistent tab.
-            if (!node.data.isDir)
-              void useStore.getState().openFile(node.data.id);
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setMenu({ x: e.clientX, y: e.clientY, node: node.data });
-          }}
-        >
-          {/* Drop target highlight overlay */}
-          {node.willReceiveDrop && (
-            <div
-              className="absolute pointer-events-none z-10"
-              style={{
-                top: 0,
-                left: 0,
-                right: 0,
-                height: (() => {
-                  if (!node.isOpen) return 28;
-                  const visibleNodes = node.tree.visibleNodes;
-                  let count = 0;
-                  for (let i = (node.rowIndex ?? 0) + 1; i < visibleNodes.length; i++) {
-                    if (visibleNodes[i]!.level <= node.level) break;
-                    count++;
-                  }
-                  return (1 + count) * 28;
-                })(),
-                backgroundColor: 'color-mix(in srgb, var(--color-maek-red) 8%, transparent)',
-                borderLeft: '2px solid color-mix(in srgb, var(--color-maek-red) 50%, transparent)',
-                borderRadius: '2px'
-              }}
-            />
-          )}
-          {/* Depth guide lines: inline spans that create indent + vertical line */}
-          {Array.from({ length: node.level }).map((_, i) => (
-            <span
-              key={i}
-              aria-hidden
-              className="shrink-0 self-stretch border-l border-[var(--color-border-subtle)]"
-              style={{ width: 12 }}
-            />
-          ))}
-          <span className="w-4 h-4 flex items-center justify-center shrink-0">
-            {node.isInternal && (
-              <ChevronRight
-                className={cn(
-                  "w-3 h-3 transition-transform",
-                  node.isOpen && "rotate-90",
-                )}
-              />
-            )}
-          </span>
-          {node.isInternal ? (
-            databases.some((database) => database.folderPath === node.data.id) ? (
-              <Table className="w-4 h-4 mr-2 shrink-0 text-maek-red" />
-            ) : appearances[node.data.id] ? (
-              <span className="mr-2 flex items-center justify-center">
-                {(() => {
-                  const app = appearances[node.data.id]!;
-                  const IconComponent = FOLDER_ICON_MAP[app.icon as keyof typeof FOLDER_ICON_MAP];
-                  if (IconComponent) {
-                    return <IconComponent size={16} style={{ color: getFolderIconColorValue(app.iconColor) }} />;
-                  }
-                  return null;
-                })()}
-              </span>
-            ) : null
-          ) : /\.csv$/i.test(node.data.name) ? (
-            <Table2 className="w-4 h-4 mr-2 shrink-0" />
-          ) : /\.html$/i.test(node.data.name) ? (
-            <FileCode className="w-4 h-4 mr-2 shrink-0" />
-          ) : !/\.md$/i.test(node.data.name) ? (
-            <File className="w-4 h-4 mr-2 shrink-0" />
-          ) : null}
-          {node.isEditing ? (
-            <input
-              autoFocus
-              aria-label="File name"
-              defaultValue={node.data.name}
-              className="flex-1 min-w-0 text-sm bg-surface border border-maek-red/50 rounded px-1 outline-none"
-              onFocus={(e) => e.target.select()}
-              onBlur={(e) => node.submit(e.target.value)}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === "Enter") void node.submit(e.currentTarget.value);
-                if (e.key === "Escape") node.reset();
-              }}
-            />
-          ) : (
-            <span className={cn("truncate", !node.isInternal && !appearances[node.data.id] && !/\.md$/i.test(node.data.name) ? "" : "ml-1")}>
-              {node.data.name}
-            </span>
-          )}
-        </div>
-      );
+  // Row-click and chevron handlers are stable and read live data at call time,
+  // so the context value they live in never invalidates node instances.
+  const onRowClick = useCallback(
+    (node: NodeApi<FileNode>, _event: React.MouseEvent) => {
+      node.select();
+      if (node.data.isDir) {
+        const database = databases.find((d) => d.folderPath === node.data.id);
+        if (database && !browseFolders.includes(node.data.id)) {
+          // Database folder: a row click opens the database. Expansion is only
+          // available via the chevron.
+          useStore.getState().openDatabase(database.folderPath, database.name);
+        } else {
+          // Ordinary folder: a row click toggles open/closed.
+          node.toggle();
+        }
+      } else {
+        // Files open as a replaceable preview; double click pins them.
+        void useStore.getState().openFile(node.data.id, { preview: true });
+      }
     },
-    [appearances, databases, browseFolders],
+    [databases, browseFolders],
   );
+  const onChevronClick = useCallback(
+    (node: NodeApi<FileNode>, event: React.MouseEvent) => {
+      // Stop the row click so a database folder toggles instead of opening.
+      event.stopPropagation();
+      node.toggle();
+    },
+    [],
+  );
+  const onRowDoubleClick = useCallback((node: NodeApi<FileNode>) => {
+    if (!node.data.isDir) void useStore.getState().openFile(node.data.id);
+  }, []);
+  const onNodeContextMenu = useCallback(
+    (node: NodeApi<FileNode>, event: React.MouseEvent) => {
+      event.preventDefault();
+      setMenu({ x: event.clientX, y: event.clientY, node: node.data });
+    },
+    [],
+  );
+
+  const treeContextValue = useMemo<TreeContextValue>(
+    () => ({
+      databaseFolders,
+      appearances,
+      browseFolders: browseFolderSet,
+      onRowClick,
+      onChevronClick,
+      onRowDoubleClick,
+      onContextMenu: onNodeContextMenu,
+    }),
+    [
+      databaseFolders,
+      appearances,
+      browseFolderSet,
+      onRowClick,
+      onChevronClick,
+      onRowDoubleClick,
+      onNodeContextMenu,
+    ],
+  );
+
+  // RAF-based edge auto-scroll while dragging inside the Files scroll area.
+  const autoScrollFrame = useRef<number | null>(null);
+  const autoScrollSpeed = useRef(0);
+  const stopAutoScroll = useCallback(() => {
+    autoScrollSpeed.current = 0;
+    if (autoScrollFrame.current !== null) {
+      cancelAnimationFrame(autoScrollFrame.current);
+      autoScrollFrame.current = null;
+    }
+  }, []);
+  const runAutoScroll = useCallback(() => {
+    const el = filesScrollRef.current;
+    if (!el || autoScrollSpeed.current === 0) {
+      autoScrollFrame.current = null;
+      return;
+    }
+    el.scrollTop += autoScrollSpeed.current;
+    autoScrollFrame.current = requestAnimationFrame(runAutoScroll);
+  }, []);
+  useEffect(() => {
+    // A tree DnD uses HTML5 drag events (react-dnd HTML5 backend). Listen on
+    // the Files scroll container so we can auto-scroll near its edges. The
+    // native "Files" (Finder) import drop is handled separately below.
+    const el = filesScrollRef.current;
+    if (!el) return;
+    const onDragOver = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes("Files")) return; // Finder import
+      // Highlight the whole Files area when the resolved drop destination is
+      // the root (no folder under the cursor). willReceiveDrop already paints
+      // folder destinations, so only the root case needs this.
+      const api = tree.current;
+      if (api) {
+        const destination = api.dragDestinationParent;
+        setRootDropActive(
+          api.dragNodes.length > 0 &&
+            (!destination || destination.id === ROOT_ID) &&
+            api.canDrop(),
+        );
+      }
+      const rect = el.getBoundingClientRect();
+      const delta = edgeScrollDelta(event.clientY, {
+        top: rect.top,
+        bottom: rect.bottom,
+      });
+      autoScrollSpeed.current = delta;
+      if (delta !== 0 && autoScrollFrame.current === null) {
+        autoScrollFrame.current = requestAnimationFrame(runAutoScroll);
+      } else if (delta === 0) {
+        stopAutoScroll();
+      }
+    };
+    const onDragLeave = (event: DragEvent) => {
+      // Only stop when the pointer actually leaves the container bounds.
+      const rect = el.getBoundingClientRect();
+      if (
+        event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom
+      ) {
+        stopAutoScroll();
+        setRootDropActive(false);
+      }
+    };
+    const clearDrag = () => {
+      stopAutoScroll();
+      setRootDropActive(false);
+    };
+    el.addEventListener("dragover", onDragOver);
+    el.addEventListener("dragleave", onDragLeave);
+    el.addEventListener("drop", clearDrag);
+    el.addEventListener("dragend", clearDrag);
+    return () => {
+      el.removeEventListener("dragover", onDragOver);
+      el.removeEventListener("dragleave", onDragLeave);
+      el.removeEventListener("drop", clearDrag);
+      el.removeEventListener("dragend", clearDrag);
+      stopAutoScroll();
+    };
+  }, [runAutoScroll, stopAutoScroll, workspace?.wsId]);
+
   return (
     <div
       className="h-full flex flex-col"
@@ -526,113 +799,118 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           <span>Add new</span>
         </button>
       </div>
-      <div ref={container} className="explorer-content-scroll flex-1 min-h-0 overflow-y-auto">
-      {tabs.length > 0 && (
-        <div className="flex flex-col">
-          <div className="pl-5 pr-3 pt-2 pb-1 text-sm font-semibold tracking-wide text-muted-text flex items-center shrink-0">
-            <span className="flex items-center gap-2">
-              Open Tabs
-              {saveStatus && (
-                <span
-                  data-testid="open-tabs-save-status"
-                  role="status"
-                  aria-label={saveStatus}
-                  title={saveStatus}
-                  className={cn(
-                    "block w-2 h-2 rounded-full bg-[var(--color-maek-red)] shrink-0",
-                    saveStatus === "Saving" && "motion-safe:animate-pulse",
-                  )}
-                />
-              )}
-            </span>
-          </div>
-          <div className="px-3 pb-1">
-              {tabs.map((t, index) => t.isPopup ? null : (
-                <div key={t.id}>
-                  <div
-                    aria-hidden
-                    className="h-0 border-t-2 -my-px transition-colors"
-                    style={{
-                      borderTopColor:
-                        dropIndex === index
-                          ? "var(--color-maek-red)"
-                          : "transparent",
-                    }}
-                  />
-                  <div
-                    role="tab"
-                    aria-selected={t.id === activeTabId}
-                    data-tab-id={t.id}
-                    tabIndex={0}
-                    onPointerDown={(e) => {
-                      if (e.button !== 0 || e.target instanceof HTMLButtonElement) return;
-                      dragTab.current = {
-                        id: t.id,
-                        pointerId: e.pointerId,
-                        startX: e.clientX,
-                        startY: e.clientY,
-                        dragging: false,
-                      };
-                    }}
-                    onClick={() => {
-                      if (suppressTabClick.current) {
-                        suppressTabClick.current = false;
-                        return;
-                      }
-                      useStore.getState().setActiveTab(t.id);
-                    }}
-                    onAuxClick={(e) => {
-                      if (e.button === 1)
-                        void useStore.getState().closeTab(t.id);
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setOpenNotesMenu({ x: e.clientX, y: e.clientY, id: t.id });
-                    }}
+      {/* Open Tabs is a flat list capped at 40% of the sidebar height with its
+          own scroll. Files uses the remaining measured height. */}
+      <div ref={container} className="flex-1 min-h-0 flex flex-col">
+        {tabs.length > 0 && (
+          <div className="flex flex-col min-h-0 max-h-[40%]">
+            <div className="pl-5 pr-3 pt-2 pb-1 text-sm font-semibold tracking-wide text-muted-text flex items-center shrink-0">
+              <span className="flex items-center gap-2">
+                Open Tabs
+                {saveStatus && (
+                  <span
+                    data-testid="open-tabs-save-status"
+                    role="status"
+                    aria-label={saveStatus}
+                    title={saveStatus}
                     className={cn(
-                      "group flex items-center gap-1.5 h-7 px-2 rounded-md cursor-pointer select-none text-sm transition-colors",
-                      t.isEphemeral && "italic",
-                      t.id === activeTabId
-                        ? "bg-maek-red/10 text-maek-red"
-                        : "text-neutral-ink hover:bg-surface-overlay",
+                      "block w-2 h-2 rounded-full bg-[var(--color-maek-red)] shrink-0",
+                      saveStatus === "Saving" && "motion-safe:animate-pulse",
                     )}
-                  >
-                    <span
-                      className="truncate flex-1 min-w-0"
-                      title={t.isEphemeral ? `${t.name} (Preview)` : t.name}
-                    >
-                      {t.name}
-                    </span>
-                    {tabs.some(
-                      (other) => other.id !== t.id && other.name === t.name,
-                    ) && (
-                      <span className="text-[10px] text-muted-text shrink-0">
-                        {t.parentName}
-                      </span>
-                    )}
-                    {isTabDirty(t) || t.status === "saving" ? (
-                      <span
-                        className={cn(
-                          "w-2 h-2 rounded-full bg-[var(--color-maek-red)] shrink-0",
-                          t.status === "saving" && "motion-safe:animate-pulse",
-                        )}
-                        aria-label={t.status === "saving" ? "Saving" : "Unsaved"}
-                        title={t.status === "saving" ? "Saving" : "Unsaved"}
-                      />
-                    ) : null}
-                    <button
-                      aria-label={"Close " + t.name}
-                      className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-surface-overlay-strong shrink-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void useStore.getState().closeTab(t.id);
+                  />
+                )}
+              </span>
+            </div>
+            <div className="px-3 pb-1 overflow-y-auto min-h-0">
+              {tabs.map((t, index) =>
+                t.isPopup ? null : (
+                  <div key={t.id}>
+                    <div
+                      aria-hidden
+                      className="h-0 border-t-2 -my-px transition-colors"
+                      style={{
+                        borderTopColor:
+                          dropIndex === index
+                            ? "var(--color-maek-red)"
+                            : "transparent",
                       }}
+                    />
+                    <div
+                      role="tab"
+                      aria-selected={t.id === activeTabId}
+                      data-tab-id={t.id}
+                      tabIndex={0}
+                      onPointerDown={(e) => {
+                        if (e.button !== 0 || e.target instanceof HTMLButtonElement)
+                          return;
+                        dragTab.current = {
+                          id: t.id,
+                          pointerId: e.pointerId,
+                          startX: e.clientX,
+                          startY: e.clientY,
+                          dragging: false,
+                        };
+                      }}
+                      onClick={() => {
+                        if (suppressTabClick.current) {
+                          suppressTabClick.current = false;
+                          return;
+                        }
+                        useStore.getState().setActiveTab(t.id);
+                      }}
+                      onAuxClick={(e) => {
+                        if (e.button === 1)
+                          void useStore.getState().closeTab(t.id);
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setOpenNotesMenu({ x: e.clientX, y: e.clientY, id: t.id });
+                      }}
+                      className={cn(
+                        "group flex items-center gap-1.5 h-7 px-2 rounded-md cursor-pointer select-none text-sm transition-colors",
+                        t.isEphemeral && "italic",
+                        t.id === activeTabId
+                          ? "bg-maek-red/10 text-maek-red"
+                          : "text-neutral-ink hover:bg-surface-overlay",
+                      )}
                     >
-                      <X size={13} />
-                    </button>
+                      <span
+                        className="truncate flex-1 min-w-0"
+                        title={t.isEphemeral ? `${t.name} (Preview)` : t.name}
+                      >
+                        {t.name}
+                      </span>
+                      {tabs.some(
+                        (other) => other.id !== t.id && other.name === t.name,
+                      ) && (
+                        <span className="text-[10px] text-muted-text shrink-0">
+                          {t.parentName}
+                        </span>
+                      )}
+                      {isTabDirty(t) || t.status === "saving" ? (
+                        <span
+                          className={cn(
+                            "w-2 h-2 rounded-full bg-[var(--color-maek-red)] shrink-0",
+                            t.status === "saving" && "motion-safe:animate-pulse",
+                          )}
+                          aria-label={t.status === "saving" ? "Saving" : "Unsaved"}
+                          title={t.status === "saving" ? "Saving" : "Unsaved"}
+                        />
+                      ) : null}
+                      <button
+                        aria-label={"Close " + t.name}
+                        className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-surface-overlay-strong shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void useStore.getState().closeTab(t.id);
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ),
+              )}
               <div
                 aria-hidden
                 className="h-0 border-t-2 -my-px transition-colors"
@@ -643,132 +921,139 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                       : "transparent",
                 }}
               />
+            </div>
           </div>
+        )}
+        <div className="pl-5 pr-3 pt-2 pb-1 text-sm font-semibold tracking-wide text-muted-text flex items-center justify-between shrink-0">
+          <span>Files</span>
+          <span className="flex items-center gap-1">
+            <button
+              className="icon-button w-6 h-6"
+              aria-label="Refresh folder tree"
+              onClick={(e) => {
+                e.stopPropagation();
+                void useStore.getState().refresh();
+              }}
+            >
+              <RefreshCw size={14} />
+            </button>
+          </span>
         </div>
-      )}
-      <div
-        className="pl-5 pr-3 pt-2 pb-1 text-sm font-semibold tracking-wide text-muted-text flex items-center justify-between shrink-0"
-      >
-        <span>Files</span>
-        <span className="flex items-center gap-1">
-          <button
-            className="icon-button w-6 h-6"
-            aria-label="Refresh folder tree"
-            onClick={(e) => {
-              e.stopPropagation();
-              void useStore.getState().refresh();
-            }}
-          >
-            <RefreshCw size={14} />
-          </button>
-        </span>
-      </div>
-      <div
-        className="px-2"
-        onContextMenu={(e) => {
-          if ((e.target as HTMLElement).closest("[data-file-node]")) return;
-          e.preventDefault();
-          setMenu({ x: e.clientX, y: e.clientY, node: null });
-        }}
-        onDragOver={(e) => {
-          if (e.dataTransfer.types.includes("Files")) {
+        <div
+          ref={filesScrollRef}
+          className={cn(
+            "relative flex-1 min-h-0 overflow-y-auto px-2",
+            rootDropActive &&
+              "outline outline-2 -outline-offset-2 outline-[color-mix(in_srgb,var(--color-maek-red)_50%,transparent)] bg-[color-mix(in_srgb,var(--color-maek-red)_5%,transparent)]",
+          )}
+          onContextMenu={(e) => {
+            if ((e.target as HTMLElement).closest("[data-file-node]")) return;
             e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-          }
-        }}
-        onDrop={(e) => {
-          if (!e.dataTransfer.files.length) return;
-          e.preventDefault();
-          const p = (e.target as HTMLElement)
-            .closest("[data-path]")
-            ?.getAttribute("data-path");
-          const n = nodes.find((n) => n.id === p);
-          const dir = n?.isDir ? n.id : (n?.parent ?? "");
-          const files = collectDropFiles(e.dataTransfer);
-          void run(async () => {
-            await api("/api/files/import", "POST", {
-              dir,
-              files: await Promise.all(
-                (await files).map(async (f) => ({
-                  name: f.name,
-                  data: await toBase64(f.file),
-                })),
-              ),
-            });
-            await useStore.getState().refresh();
-          });
-        }}
-      >
-        <Tree
-          key={workspace?.wsId}
-          ref={tree}
-          data={data}
-          width="100%"
-          height={Math.max(1, visibleNodeCount * 28)}
-          rowHeight={28}
-          indent={12}
-          overscanCount={5}
-          openByDefault={false}
-          initialOpenState={Object.fromEntries(expanded.map((p) => [p, true]))}
-          onSelect={(ns) => {
-            const selected = ns.map((n) => n.data);
-            setSelection(selected);
-            // Translate react-arborist selection into file-open intent at the
-            // Tree boundary. This keeps mouse and keyboard selection aligned
-            // and avoids racing a row click against Arborist's state update.
-            if (selected.length === 1 && !selected[0]!.isDir)
-              void useStore.getState().openFile(selected[0]!.id, { preview: true });
+            setMenu({ x: e.clientX, y: e.clientY, node: null });
           }}
-          onToggle={(id) => {
-            useStore.setState((s) => ({
-              expanded: tree.current?.isOpen(id)
-                ? [...new Set([...s.expanded, id])]
-                : s.expanded.filter((p) => p !== id),
-            }));
-            schedulePersistence();
-          }}
-          onRename={async ({ id, name }) => {
-            await run(() =>
-              useStore
-                .getState()
-                .move(id, [...id.split("/").slice(0, -1), name].join("/")),
-            );
-          }}
-          onMove={async ({ dragIds, parentId }) => {
-            const targetDir = parentId === "__REACT_ARBORIST_INTERNAL_ROOT__" || !parentId ? "" : parentId;
-            await run(async () => {
-              for (const id of dragIds) {
-                await useStore
-                  .getState()
-                  .move(
-                    id,
-                    [targetDir, id.split("/").pop()].filter(Boolean).join("/"),
-                  );
-              }
-            });
-          }}
-          disableDrop={({ parentNode, dragNodes }) => {
-            // Allow drop to root
-            if (!parentNode || parentNode.id === "__REACT_ARBORIST_INTERNAL_ROOT__") {
-              return false;
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes("Files")) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
             }
-            // Cannot drop on a file (only folders)
-            if (!parentNode.data.isDir) return true;
-
-            return dragNodes.some(
-              (n) =>
-                parentNode.id === n.id || parentNode.id.startsWith(n.id + "/"),
-            );
+          }}
+          onDrop={(e) => {
+            if (!e.dataTransfer.files.length) return;
+            e.preventDefault();
+            const p = (e.target as HTMLElement)
+              .closest("[data-path]")
+              ?.getAttribute("data-path");
+            const n = nodes.find((n) => n.id === p);
+            const dir = n?.isDir ? n.id : (n?.parent ?? "");
+            const files = collectDropFiles(e.dataTransfer);
+            void run(async () => {
+              await api("/api/files/import", "POST", {
+                dir,
+                files: await Promise.all(
+                  (await files).map(async (f) => ({
+                    name: f.name,
+                    data: await toBase64(f.file),
+                  })),
+                ),
+              });
+              await useStore.getState().refresh();
+            });
           }}
         >
-          {Node}
-        </Tree>
-        {nodes.length === 0 && (
-          <p className="text-sm text-muted-text text-center -mt-32 pointer-events-none">
-            No files found
-          </p>
-        )}
-      </div>
+          <TreeContext.Provider value={treeContextValue}>
+            <Tree
+              key={workspace?.wsId}
+              ref={tree}
+              data={data}
+              width="100%"
+              height={Math.max(1, filesHeight)}
+              rowHeight={ROW_HEIGHT}
+              indent={12}
+              overscanCount={8}
+              openByDefault={false}
+              initialOpenState={Object.fromEntries(expanded.map((p) => [p, true]))}
+              // Suppress the sibling insertion line entirely; folder/root
+              // highlight is drawn via willReceiveDrop and the root outline.
+              renderCursor={() => null}
+              onSelect={(ns) => {
+                setSelection(ns.map((n) => n.data));
+              }}
+              onToggle={(id) => {
+                useStore.setState((s) => ({
+                  expanded: tree.current?.isOpen(id)
+                    ? [...new Set([...s.expanded, id])]
+                    : s.expanded.filter((p) => p !== id),
+                }));
+                schedulePersistence();
+              }}
+              onRename={async ({ id, name }) => {
+                await run(() =>
+                  useStore
+                    .getState()
+                    .move(id, [...id.split("/").slice(0, -1), name].join("/")),
+                );
+              }}
+              onMove={async ({ dragIds, parentId }) => {
+                // Name-ordered tree: the sibling index is intentionally ignored.
+                // Move every dragged item, then save + refresh exactly once.
+                const targetDir =
+                  parentId === ROOT_ID || !parentId ? "" : parentId;
+                setRootDropActive(false);
+                stopAutoScroll();
+                await run(async () => {
+                  if (!(await useStore.getState().saveAll())) return;
+                  for (const id of dragIds) {
+                    const dest = [targetDir, id.split("/").pop()]
+                      .filter(Boolean)
+                      .join("/");
+                    if (dest === id) continue;
+                    await api("/api/files/path", "PATCH", { source: id, dest });
+                    useStore.getState().applyMoveToState(id, dest);
+                  }
+                  await useStore.getState().refresh();
+                });
+              }}
+              disableDrop={({ parentNode, dragNodes }) => {
+                // Root is always a valid destination.
+                if (!parentNode || parentNode.id === ROOT_ID) return false;
+                // Files can never receive a drop; only folders.
+                if (!parentNode.data.isDir) return true;
+                // Reject dropping a node into itself or its own subtree.
+                return isSelfOrDescendantDrop(
+                  parentNode.id,
+                  dragNodes.map((n) => n.id),
+                );
+              }}
+            >
+              {Node}
+            </Tree>
+          </TreeContext.Provider>
+          {nodes.length === 0 && (
+            <p className="text-sm text-muted-text text-center mt-8 pointer-events-none">
+              No files found
+            </p>
+          )}
+        </div>
       </div>
       <div className="mt-auto px-3 py-2 shrink-0 flex items-center justify-between">
         <button
@@ -788,12 +1073,19 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       </div>
       {menu && (
         <FloatingMenu isOpen position={menu} onClose={() => setMenu(null)}>
-          {!menu.node && <>
-            <MenuItem label="New note" onClick={() => void run(() => create("file"))} />
-            <MenuItem label="New folder" onClick={() => void run(() => create("dir"))} />
-            <MenuItem label="New database" onClick={() => void run(() => createDatabase())} />
-            {clipboard.length > 0 && <><MenuSeparator /><MenuItem label="Paste" onClick={() => void run(() => paste(""))} /></>}
-          </>}
+          {!menu.node && (
+            <>
+              <MenuItem label="New note" onClick={() => void run(() => create("file"))} />
+              <MenuItem label="New folder" onClick={() => void run(() => create("dir"))} />
+              <MenuItem label="New database" onClick={() => void run(() => createDatabase())} />
+              {clipboard.length > 0 && (
+                <>
+                  <MenuSeparator />
+                  <MenuItem label="Paste" onClick={() => void run(() => paste(""))} />
+                </>
+              )}
+            </>
+          )}
           {menu.node && (
             <>
               <MenuItem
@@ -983,7 +1275,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         <FileText className="w-4 h-4 shrink-0" />
         <span ref={dragPreviewTextRef} className="truncate flex-1 min-w-0" />
       </div>
-
     </div>
   );
 }

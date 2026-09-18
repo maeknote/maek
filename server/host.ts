@@ -138,6 +138,18 @@ export function createHost(options: HostOptions = {}) {
       if (locks.get(key) === next) locks.delete(key);
     }
   }
+  // Tree-structure mutations (create/move/rename/copy/import/trash and the
+  // database row operations that add or rename files) must make the next
+  // /api/tree read reflect the change without waiting for the filesystem
+  // watcher to catch up. Run the mutation under the per-workspace serial lock,
+  // then invalidate the workspace file index so the next snapshot() rescans.
+  async function mutateTree<T>(ws: Workspace, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await serial(ws.root, fn);
+    } finally {
+      runtimes.get(ws).files.invalidate();
+    }
+  }
   app.addHook("preClose", async () => {
     await Promise.all([...streams].map((close) => close()));
     await runtimes.close();
@@ -199,11 +211,11 @@ export function createHost(options: HostOptions = {}) {
   app.post("/api/databases/convert", async (req) => {
     const ws = wsFor(req),
       data = z.object({ folderPath: userPath }).parse(req.body);
-    return serial(ws.root, () => convertFolder(ws, data.folderPath));
+    return mutateTree(ws, () => convertFolder(ws, data.folderPath));
   });
   app.post("/api/databases/command", async (req) => {
     const ws = wsFor(req);
-    return serial(ws.root, () => databaseCommand(ws, req.body));
+    return mutateTree(ws, () => databaseCommand(ws, req.body));
   });
   app.get("/api/workspace/dashboard", async (req) =>
     serial(wsFor(req).root, () => dashboard(wsFor(req))),
@@ -248,7 +260,7 @@ export function createHost(options: HostOptions = {}) {
       })
       .parse(req.body);
     await target(ws, data.parent);
-    return serial(ws.root, () =>
+    return mutateTree(ws, () =>
       createDatabase(
         ws,
         data.parent,
@@ -289,7 +301,7 @@ export function createHost(options: HostOptions = {}) {
       (d) => d.folderPath === data.folderPath,
     );
     if (!meta) throw badRequest("Database not found");
-    return serial(ws.root, () => addDatabaseRow(ws, meta, data.values));
+    return mutateTree(ws, () => addDatabaseRow(ws, meta, data.values));
   });
   app.patch("/api/databases/cell", async (req) => {
     const ws = wsFor(req);
@@ -333,7 +345,7 @@ export function createHost(options: HostOptions = {}) {
     );
     if (!meta) throw badRequest("Database not found");
     return {
-      fileName: await serial(ws.root, () =>
+      fileName: await mutateTree(ws, () =>
         renameDatabaseRow(ws, meta, data.rowId, data.name),
       ),
     };
@@ -442,7 +454,7 @@ export function createHost(options: HostOptions = {}) {
       })
       .parse(req.body);
     if (dir.split("/").includes(".maek")) throw badRequest("Managed path");
-    return serial(ws.root, async () => {
+    return mutateTree(ws, async () => {
       const p = await unique(ws, dir, name);
       const abs = await target(ws, p);
       if (kind === "dir") await mkdir(abs);
@@ -459,7 +471,7 @@ export function createHost(options: HostOptions = {}) {
     const { source, dest } = z
       .object({ source: userPath, dest: userPath })
       .parse(req.body);
-    return serial(ws.root, async () => {
+    return mutateTree(ws, async () => {
       const from = await target(ws, source);
       const to = await target(ws, dest);
       if (source === dest) return { source, dest };
@@ -479,7 +491,7 @@ export function createHost(options: HostOptions = {}) {
       .object({ paths: z.array(userPath).min(1).max(1000), dir: filePath })
       .parse(req.body);
     if (dir.split("/").includes(".maek")) throw badRequest("Managed path");
-    return serial(ws.root, async () => {
+    return mutateTree(ws, async () => {
       const created: FileNode[] = [];
       for (const source of paths) {
         if (dir === source || dir.startsWith(source + "/"))
@@ -511,7 +523,7 @@ export function createHost(options: HostOptions = {}) {
       })
       .parse(req.body);
     if (dir.split("/").includes(".maek")) throw badRequest("Managed path");
-    return serial(ws.root, async () => {
+    return mutateTree(ws, async () => {
       const out: FileNode[] = [];
       for (const f of files) {
         const nested = path.posix.join(dir, path.posix.dirname(f.name));
@@ -545,7 +557,7 @@ export function createHost(options: HostOptions = {}) {
     const { paths } = z
       .object({ paths: z.array(userPath).min(1).max(1000) })
       .parse(req.body);
-    return serial(ws.root, async () => {
+    return mutateTree(ws, async () => {
       for (const p of paths.filter(
         (p) => !paths.some((other) => p !== other && p.startsWith(other + "/")),
       )) {

@@ -79,6 +79,9 @@ interface State {
   refreshPreview: (id: string) => void;
   change: (event: Change) => Promise<void>;
   move: (source: string, dest: string) => Promise<void>;
+  /** Remap in-memory tab/scroll/expanded/recent state for a move that has
+   *  already been persisted to disk. Does not save or refresh. */
+  applyMoveToState: (source: string, dest: string) => void;
   updateFrontmatterRaw: (id: string, raw: string) => void;
   toggleFrontmatterExpanded: (id: string) => void;
   setFrontmatterViewMode: (id: string, mode: FrontmatterViewMode) => void;
@@ -1250,9 +1253,7 @@ export const useStore = create<State>((set, get) => ({
       }
     }
   },
-  async move(source, dest) {
-    if (!(await get().saveAll())) return;
-    await api("/api/files/path", "PATCH", { source, dest });
+  applyMoveToState(source, dest) {
     const replace = (p: string): string => remapTabIdForRename(p, source, dest);
     set((s) => ({
       tabs: s.tabs.map((t) => remapTabForRename(t, source, dest)),
@@ -1265,6 +1266,11 @@ export const useStore = create<State>((set, get) => ({
     }));
     if (get().tabs.some((t) => t.id === dest || t.id.startsWith(dest + "/")))
       tabsDirty = true;
+  },
+  async move(source, dest) {
+    if (!(await get().saveAll())) return;
+    await api("/api/files/path", "PATCH", { source, dest });
+    get().applyMoveToState(source, dest);
     await get().refresh();
     later();
   },
