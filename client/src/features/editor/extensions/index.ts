@@ -1,4 +1,4 @@
-import type { AnyExtension } from "@tiptap/core";
+import { Extension, type AnyExtension } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { MaekMarkdown } from "./markdown";
@@ -26,10 +26,20 @@ interface EditorExtensionConfig {
   onLinkToNote?: (props: SlashCommandRunProps) => void | Promise<void>;
 }
 
+const StrikeShortcut = Extension.create({
+  name: "strikeShortcut",
+  addKeyboardShortcuts() {
+    return {
+      "Mod-Shift-x": () => this.editor.commands.toggleStrike(),
+    };
+  },
+});
+
 export function getEditorExtensions(
   config: EditorExtensionConfig,
 ): AnyExtension[] {
   return [
+    StrikeShortcut,
     StarterKit.configure({
       link: false,
       heading: false,
