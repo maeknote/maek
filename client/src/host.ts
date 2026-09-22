@@ -52,6 +52,8 @@ const workspaceFileUrl = (route: "_artifacts" | "_web", p: string) => {
 };
 export const artifactUrl = (p: string) => workspaceFileUrl("_artifacts", p);
 export const webArtifactUrl = (p: string) => workspaceFileUrl("_web", p);
+export const customPageUrl = (mountPath: string) =>
+  `${location.protocol}//localhost:${location.port}${mountPath}`;
 export async function toBase64(file: File) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let s = "";

@@ -49,3 +49,4 @@ OS watcher를 공유합니다. 이벤트 재생이 불가능하면 클라이언�
 Finder 선택 창, 휴지통 이동과 기본 앱 열기는 실제 macOS 환경에서 별도로 확인합니다.
 
 DB 및 대시보드의 공유 저장·호환성·검증은 [원본 이식 문서](database-desktop-parity.md)에 정리합니다.
+module-local manifest 기반 HTML 페이지의 격리된 데이터 API와 확장 방식은 [Custom Page Runtime 설계와 구현 계획](custom-page-runtime-design.md)에 정리합니다.

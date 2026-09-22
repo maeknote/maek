@@ -8,14 +8,14 @@
 - 완료: 앱과 다른 hostname에서 iframe을 실행하고 sandbox에 scripts/forms/downloads를 필요한 범위로 허용.
 - 완료: HTML 아티팩트 새로고침과 브라우저 열기.
 - 완료: 실제 브라우저에서 상대경로 JSON 로딩과 버튼 동작을 검증하는 회귀 테스트.
-- 다음 설계: 앱 서버가 등록된 아티팩트 스크립트의 실행·종료·로그와 API 연결을 직접 관리한다. 사용자가 로컬 URL을 입력하는 연결 UI는 제거했다.
+- 완료: 별도 스크립트 서버를 실행하지 않고 앱의 Fastify 프로세스 안에서 module-local manifest를 자동 발견해 제한된 resource/transaction API를 제공한다. 구체 구조와 루틴 이관은 [Custom Page Runtime 설계와 구현 계획](custom-page-runtime-design.md)에 정리했다.
 - 보류: 협력 스크립트가 없는 임의의 외부 로컬 앱에서 내부 JavaScript 오류를 부모 앱으로 전달하는 기능.
 
 ## 확인된 원인
 
 현재 `client/src/App.tsx:98`의 HTML 미리보기는 파일 내용을 `iframe.srcDoc`에 넣는다. 파일의 디렉터리 URL, 관련 자원 제공 경로, 전용 서버 연결 정보는 전달하지 않는다. `allow-scripts`는 이미 설정돼 있으므로 JavaScript 실행을 일괄 금지한 문제가 아니다.
 
-조사한 실제 사례는 `/Users/yoonchul/life-os/000_Life_Areas/005_Routines/루틴 대쉬보드.html`이다.
+조사한 실제 사례는 `/Users/yoonchul/life-os/000_Life_Areas/005_Routines/루틴-대쉬보드.html`이다.
 
 1. `loadDefinition()`은 `api/definition`, `routine-workflow/routines.json` 순으로 요청한다(690행). 현재 미리보기에서는 이 상대경로가 원본 파일 폴더가 아닌 호스트 페이지 URL을 기준으로 해석된다.
 2. `boot()`는 `api/health`로 쓰기 가능 여부를 확인하고, 정의와 기록을 읽는다(1360행 이후). 정의 읽기에 실패하면 오류 문구를 넣은 다음 `return`한다(1378행). 탭 전환, 주간 이동, 편집, 다운로드 등의 이벤트 등록은 그 뒤에 있어 실행되지 않는다.
@@ -56,7 +56,9 @@
 
 완료 기준: HTML과 주변 파일만으로 구성된 아티팩트가 클릭·데이터 읽기·탐색을 수행한다. 이 단계에서는 전용 backend가 필요한 저장 기능까지 해결된 것으로 보지 않는다.
 
-### 3. 루틴처럼 서버가 필요한 아티팩트 연결
+### 3. 루틴처럼 서버가 필요했던 아티팩트 연결 (대체 및 구현 완료)
+
+아래의 외부 로컬 서버 연결안은 2026-09-22에 [Custom Page Runtime 설계와 구현 계획](custom-page-runtime-design.md)의 동일 Fastify 프로세스 내 resource/transaction API 방식으로 대체했다. 아래 내용은 이전 판단의 기록으로만 남긴다.
 
 파일 미리보기와 연결할 로컬 앱 URL을 artifact별로 지정하는 모델을 추가한다. 루틴은 기존 `serve.py`가 제공하는 실제 HTML URL을 iframe에서 열어 HTML과 API가 같은 서버를 사용하게 한다. 루틴 전용 API를 maek의 `/api` 아래에 복제하지 않는다.
 
@@ -80,10 +82,10 @@
 ## 최종 수용 기준
 
 1. 단일 HTML 버튼 및 주변 파일을 읽는 HTML이 모두 작동한다.
-2. 루틴 전용 서버에 연결하면 화면 표시부터 저장·재조회까지 작동한다.
+2. 루틴 HTML을 Maek에서 열면 전용 서버 없이 화면 표시부터 저장·재조회까지 작동한다.
 3. 서버가 없거나 데이터가 깨졌을 때 실패 이유와 다음 행동이 표시된다.
 4. 다운로드·클립보드·탭 전환 동작이 실제 브라우저에서 검증된다.
 5. artifact에서 workspace 외부 파일이나 편집기 DOM/API에 접근할 수 없다.
 6. 개발 모드와 빌드 후 실행 모두에서 테스트하며 기존 Markdown 편집·충돌 보호·파일 미리보기가 유지된다.
 
-권장 작업 묶음은 (1) 회귀 테스트와 파일 기반 런타임, (2) 로컬 서비스 연결과 루틴 저장 검증, (3) 진단 UX 및 실행 관리다. 사용자 관점의 완료는 iframe 표시가 아니라 실제 데이터 조회와 버튼 실행, 저장 후 재조회로 판단한다.
+구현 작업 묶음은 (1) 회귀 테스트와 파일 기반 런타임, (2) 공용 resource/transaction API와 루틴 저장 통합, (3) 진단 UX 개선 순서다. 사용자 관점의 완료는 iframe 표시가 아니라 실제 데이터 조회와 버튼 실행, 저장 후 재조회로 판단한다.

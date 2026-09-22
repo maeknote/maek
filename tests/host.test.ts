@@ -632,6 +632,166 @@ describe("real workspace host", () => {
     expect(runRes.json().stdout.trim()).toBe("runner works");
     expect(runRes.json().exitCode).toBe(0);
   });
+  it("mounts manifest-backed pages with isolated resource reads and versioned transactions", async () => {
+    await writeFile(path.join(root, "plain.html"), "<h1>Plain</h1>");
+    await mkdir(path.join(root, "tracker"));
+    await writeFile(
+      path.join(root, "tracker", "index.html"),
+      '<script src="app.js"></script><h1>Tracker</h1>',
+    );
+    await writeFile(path.join(root, "tracker", "app.js"), "window.tracker = true");
+    await writeFile(path.join(root, "tracker", "data.json"), '{"count":1}\n');
+    await writeFile(path.join(root, "tracker", "view.md"), "Count: 1\n");
+    await writeFile(path.join(root, "tracker", "readonly.json"), "{}\n");
+    await writeFile(
+      path.join(root, "tracker", "maek.page.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "tracker",
+        title: "Tracker",
+        entry: "index.html",
+        assetsRoot: ".",
+        resources: {
+          data: {
+            path: "data.json",
+            format: "json",
+            access: "read-write",
+            maxBytes: 10000,
+            backup: { keep: 2 },
+          },
+          view: {
+            path: "view.md",
+            format: "text",
+            access: "read-write",
+            maxBytes: 10000,
+            backup: { keep: 2 },
+          },
+          readonly: {
+            path: "readonly.json",
+            format: "json",
+            access: "read",
+          },
+        },
+      }),
+    );
+
+    expect(
+      (await request("POST", "/api/custom-pages/mount", { entry: "plain.html" }))
+        .json(),
+    ).toEqual({ kind: "static" });
+    const mounted = (
+      await request("POST", "/api/custom-pages/mount", {
+        entry: "tracker/index.html",
+      })
+    ).json();
+    expect(mounted).toMatchObject({
+      kind: "custom-page",
+      pageId: "tracker",
+      title: "Tracker",
+    });
+    const base = mounted.mountPath.replace(/\/$/, "");
+    const pageRequest = (
+      method: "GET" | "POST" | "PUT",
+      url: string,
+      payload?: Record<string, unknown>,
+    ) =>
+      app.inject({
+        method,
+        url,
+        headers: { host: "localhost" },
+        ...(payload === undefined ? {} : { payload }),
+      });
+
+    const page = await pageRequest("GET", mounted.mountPath);
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("Tracker");
+    expect(page.headers["content-security-policy"]).toContain("connect-src 'self'");
+    expect((await pageRequest("GET", `${base}/app.js`)).body).toContain(
+      "window.tracker",
+    );
+    expect(
+      (await pageRequest("GET", `${base}/maek.page.json`)).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: mounted.mountPath,
+          headers: { host: "127.0.0.1" },
+        })
+      ).statusCode,
+    ).toBe(403);
+
+    expect((await pageRequest("GET", `${base}/_api/health`)).json()).toMatchObject({
+      ok: true,
+      pageId: "tracker",
+      writable: true,
+    });
+    const data = await pageRequest("GET", `${base}/_api/resources/data`);
+    const view = await pageRequest("GET", `${base}/_api/resources/view`);
+    expect(data.json()).toEqual({ count: 1 });
+    expect(data.headers.etag).toMatch(/^"sha256-/);
+
+    const saved = await pageRequest("POST", `${base}/_api/transaction`, {
+      writes: [
+        {
+          resource: "view",
+          baseVersion: view.headers.etag,
+          content: "Count: 2\n",
+        },
+        {
+          resource: "data",
+          baseVersion: data.headers.etag,
+          content: { count: 2 },
+        },
+      ],
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().versions).toEqual({
+      view: expect.stringMatching(/^"sha256-/),
+      data: expect.stringMatching(/^"sha256-/),
+    });
+    expect(await readFile(path.join(root, "tracker", "data.json"), "utf8"))
+      .toBe('{\n  "count": 2\n}\n');
+    expect(await readFile(path.join(root, "tracker", "view.md"), "utf8"))
+      .toBe("Count: 2\n");
+    expect(
+      await readdir(
+        path.join(root, ".maek/custom-page-backups/tracker/data"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      (
+        await pageRequest("POST", `${base}/_api/transaction`, {
+          writes: [
+            {
+              resource: "data",
+              baseVersion: data.headers.etag,
+              content: { count: 3 },
+            },
+          ],
+        })
+      ).statusCode,
+    ).toBe(409);
+
+    const readonly = await pageRequest("GET", `${base}/_api/resources/readonly`);
+    expect(
+      (
+        await pageRequest("PUT", `${base}/_api/resources/readonly`, {
+          baseVersion: readonly.headers.etag,
+          content: { changed: true },
+        })
+      ).statusCode,
+    ).toBe(403);
+
+    // A safe regular file at mount time must not become a symlink-backed data
+    // capability later, even when the link still points inside the workspace.
+    await rm(path.join(root, "tracker", "data.json"));
+    await symlink("readonly.json", path.join(root, "tracker", "data.json"));
+    expect(
+      (await pageRequest("GET", `${base}/_api/resources/data`)).statusCode,
+    ).toBe(400);
+  });
   it("blocks traversal, symlinks, foreign origins and managed metadata mutations", async () => {
     await symlink(tmpdir(), path.join(root, "escape"));
     await symlink(tmpdir(), path.join(root, ".maek", "escape"));

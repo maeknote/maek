@@ -283,6 +283,71 @@ test("search, read-only preview, unsupported file and native picker cancel", asy
   ).toBeVisible();
 });
 
+test("manifest-backed HTML edits its declared resource through the shared page API", async ({
+  page,
+}) => {
+  mkdirSync(path.join(root, "Tracker"));
+  writeFileSync(path.join(root, "Tracker", "data.json"), '{"count":1}\n');
+  writeFileSync(
+    path.join(root, "Tracker", "maek.page.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: "tracker",
+      title: "Tracker",
+      entry: "custom.html",
+      assetsRoot: ".",
+      resources: {
+        data: {
+          path: "data.json",
+          format: "json",
+          access: "read-write",
+          maxBytes: 10000,
+          backup: { keep: 2 },
+        },
+      },
+    }),
+  );
+  writeFileSync(
+    path.join(root, "Tracker", "custom.html"),
+    `<p id="count">Loading</p><button id="increment">Increment</button>
+     <script>
+       let value, version;
+       async function load() {
+         const response = await fetch("_api/resources/data");
+         version = response.headers.get("ETag");
+         value = await response.json();
+         document.querySelector("#count").textContent = String(value.count);
+       }
+       document.querySelector("#increment").addEventListener("click", async () => {
+         value.count += 1;
+         const response = await fetch("_api/resources/data", {
+           method: "PUT",
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify({ baseVersion: version, content: value }),
+         });
+         const result = await response.json();
+         version = result.versions.data;
+         document.querySelector("#count").textContent = String(value.count);
+       });
+       load();
+     </script>`,
+  );
+
+  await open(page);
+  await page.locator('[data-path="Tracker"]').click();
+  await page.locator('[data-path="Tracker/custom.html"]').click();
+  const customPage = page.frameLocator('iframe[title="custom.html"]');
+  await expect(customPage.locator("#count")).toHaveText("1");
+  await customPage.getByRole("button", { name: "Increment" }).click();
+  await expect(customPage.locator("#count")).toHaveText("2");
+  await expect
+    .poll(() => JSON.parse(readFileSync(path.join(root, "Tracker/data.json"), "utf8")).count)
+    .toBe(2);
+  expect(
+    readdirSync(path.join(root, ".maek/custom-page-backups/tracker/data")),
+  ).toHaveLength(1);
+});
+
 test("non-markdown files use the compact file toolbar and markdown keeps the large title", async ({
   page,
 }) => {

@@ -77,6 +77,7 @@ import type {
   DatabaseMeta,
   DatabaseViewType,
 } from "../shared/database";
+import { registerCustomPages } from "./custom-pages";
 
 const run = promisify(execFile);
 const filePath = RelPath.refine(
@@ -149,6 +150,10 @@ export function createHost(options: HostOptions = {}) {
         () => {},
       ),
   );
+  registerCustomPages(app, {
+    serial,
+    invalidate: (workspace) => runtimes.get(workspace).files.invalidate(),
+  });
   // Tree-structure mutations (create/move/rename/copy/import/trash and the
   // database row operations that add or rename files) must make the next
   // /api/tree read reflect the change without waiting for the filesystem

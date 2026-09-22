@@ -178,6 +178,13 @@ export const ErrorCode = z.enum([
   'eacces',
   'conflict',
   'dialog_failed',
+  'forbidden',
+  'too_large',
+  'invalid_json',
+  'invalid_text',
+  'mount_not_found',
+  'resource_not_found',
+  'read_only',
   'internal'
 ])
 export type ErrorCode = z.infer<typeof ErrorCode>

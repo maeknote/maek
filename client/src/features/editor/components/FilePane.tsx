@@ -1,4 +1,11 @@
-import { lazy, Suspense, type ReactElement, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import {
   Columns2,
   ExternalLink,
@@ -9,7 +16,14 @@ import {
   useStore,
   type Tab,
 } from "../../../store";
-import { api, artifactUrl, rawUrl, webArtifactUrl } from "../../../host";
+import {
+  api,
+  artifactUrl,
+  customPageUrl,
+  rawUrl,
+  webArtifactUrl,
+} from "../../../host";
+import type { CustomPageMountResult } from "@shared/custom-page";
 import { Button } from "@renderer/shared/components";
 import { isTabDirty } from "../utils/frontmatter";
 import { MarkdownEditor } from "../MarkdownEditor";
@@ -21,7 +35,67 @@ const SpreadsheetEditor = lazy(
 );
 
 function HtmlArtifactPreview({ tab }: { tab: Tab }): ReactElement {
-  const fileUrl = artifactUrl(tab.id);
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "ready"; url: string }
+    | { status: "error"; message: string }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    let mountId: string | null = null;
+    setState({ status: "loading" });
+    void api<CustomPageMountResult>("/api/custom-pages/mount", "POST", {
+      entry: tab.id,
+    }).then(
+      (result) => {
+        if (result.kind === "custom-page") mountId = result.mountId;
+        if (cancelled) {
+          if (mountId)
+            void api(`/api/custom-pages/mount/${mountId}`, "DELETE").catch(
+              () => {},
+            );
+          return;
+        }
+        setState({
+          status: "ready",
+          url:
+            result.kind === "custom-page"
+              ? customPageUrl(result.mountPath)
+              : artifactUrl(tab.id),
+        });
+      },
+      (error) => {
+        if (!cancelled)
+          setState({ status: "error", message: String(error) });
+      },
+    );
+    return () => {
+      cancelled = true;
+      if (mountId)
+        void api(`/api/custom-pages/mount/${mountId}`, "DELETE").catch(
+          () => {},
+        );
+    };
+  }, [tab.id, tab.generation, tab.previewNonce, attempt]);
+
+  if (state.status === "loading")
+    return (
+      <div className="flex-1 min-h-0 flex items-center justify-center text-muted-text">
+        Loading page…
+      </div>
+    );
+  if (state.status === "error")
+    return (
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 text-muted-text">
+        <p role="alert">{state.message}</p>
+        <Button variant="outline" onClick={() => setAttempt((value) => value + 1)}>
+          Try again
+        </Button>
+      </div>
+    );
+  const fileUrl = state.url;
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <iframe

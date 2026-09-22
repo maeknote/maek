@@ -24,6 +24,10 @@ export default defineConfig({
       '/_web': {
         target: `http://127.0.0.1:${process.env.CORE_PORT ?? Number(process.env.PORT ?? 3000) + 1}`,
         changeOrigin: false
+      },
+      '/_pages': {
+        target: `http://127.0.0.1:${process.env.CORE_PORT ?? Number(process.env.PORT ?? 3000) + 1}`,
+        changeOrigin: false
       }
     }
   },
