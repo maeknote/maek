@@ -8,17 +8,17 @@ import type {
   UiState,
   ViewGroup,
 } from "@shared/workspace";
-import type { TabItem, FrontmatterViewMode } from "./features/editor/types";
+import type { TabItem, FrontmatterViewMode } from "@renderer/features/editor";
 import {
   splitFrontmatter,
   isTabDirty,
   getTabFileContent,
   validateFrontmatterYaml,
-} from "./features/editor/utils/frontmatter";
-import { api, ApiError, setHostWorkspace } from "./host";
-import { queryClient } from "./app/query-client";
-import { resolveTheme, systemPrefersDark } from "./lib/preferences";
-import { removeWorkspaceFromList } from "./lib/workspaceList";
+} from "@renderer/features/editor";
+import { api, ApiError, setHostWorkspace } from "@renderer/shared/api";
+import { queryClient } from "@renderer/app/query-client";
+import { resolveTheme, systemPrefersDark } from "@renderer/lib/preferences";
+import { removeWorkspaceFromList } from "@renderer/lib/workspaceList";
 
 export interface Tab extends TabItem {
   file: FileContent;

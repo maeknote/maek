@@ -1,1 +1,1 @@
-export { createHost as createApp } from './host'
+export { createHost as createApp } from './app/create-host'

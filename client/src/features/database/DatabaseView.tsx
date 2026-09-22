@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useStore } from "../../store";
-import { api } from "../../host";
+import { useStore } from "@renderer/features/workspace";
+import { api } from "@renderer/shared/api";
 import { databaseApi } from "./api";
 import { DatabaseViewContainer } from "./DatabaseViewContainer";
 import { useWorkspaceStore } from "./workspaceStore";

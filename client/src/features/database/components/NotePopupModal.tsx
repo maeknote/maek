@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { api } from "../../../host";
-import { makeTab, useStore } from "../../../store";
+import { api } from "@renderer/shared/api";
+import { makeTab, useStore } from "@renderer/features/workspace";
 import type { FileContent } from "@shared/workspace";
 import { MarkdownEditor } from "../../editor/MarkdownEditor";
 import { TitleBar } from "../../editor/components/TitleBar";

@@ -9,7 +9,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { Table, FileText, Search } from "lucide-react";
 import { computePosition, offset, flip, shift } from "@floating-ui/dom";
-import { useStore } from "../../../../store";
+import { useStore } from "@renderer/features/workspace";
 import { useNotePickerStore } from "../../stores/notePickerStore";
 import { useTabStore } from "../../stores/tabStore";
 import { getDisplayName } from "../../utils/displayName";

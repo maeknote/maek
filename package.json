@@ -11,6 +11,8 @@
     "start": "node --import tsx server/main.ts",
     "install:desktop": "./scripts/install-desktop-app.sh",
     "typecheck": "tsc --noEmit",
+    "check:boundaries": "node scripts/check-feature-boundaries.mjs",
+    "check": "npm run typecheck && npm run check:boundaries",
     "build": "vite build --outDir ../dist",
     "test:e2e": "playwright test",
     "test": "vitest run",

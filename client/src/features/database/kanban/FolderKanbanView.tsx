@@ -7,8 +7,8 @@ import {
   serializeYamlData,
   composeMarkdownFile,
 } from "@shared/frontmatter";
-import { useStore } from "../../../store";
-import { api } from "../../../host";
+import { useStore } from "@renderer/features/workspace";
+import { api } from "@renderer/shared/api";
 import { cn } from "../../../lib/utils";
 import type { FileContent } from "@shared/workspace";
 

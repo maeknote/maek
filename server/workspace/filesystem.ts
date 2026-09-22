@@ -1,8 +1,8 @@
 import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 import type { FileNode } from "../../shared/workspace";
-import { badRequest } from "../errors";
-import { resolveInWorkspace } from "../fs/guard";
+import { badRequest } from "../core/errors";
+import { resolveInWorkspace } from "../core/fs/guard";
 import type { Workspace } from "../workspaces";
 
 const ignoredNames = new Set([

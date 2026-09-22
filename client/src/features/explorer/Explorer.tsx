@@ -31,8 +31,8 @@ import {
   PanelIcon,
 } from "../../shared/components";
 import { useHoverMenu } from "../../shared/hooks";
-import { useStore, schedulePersistence } from "../../store";
-import { api, toBase64 } from "../../host";
+import { useStore, schedulePersistence } from "@renderer/features/workspace";
+import { api, toBase64 } from "@renderer/shared/api";
 import type { FileNode } from "@shared/workspace";
 import type { DatabaseMeta } from "@shared/database";
 import type { FolderAppearance } from "./utils/folderAppearance";

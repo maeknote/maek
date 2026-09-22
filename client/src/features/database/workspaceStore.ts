@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { DatabaseMeta } from "@shared/database";
-import { useStore } from "../../store";
+import { useStore } from "@renderer/features/workspace";
 export const useWorkspaceStore = create<{
   rootPath: string | null;
   databases: DatabaseMeta[];

@@ -20,19 +20,10 @@ OS watcher를 공유합니다. 이벤트 재생이 불가능하면 클라이언�
 
 - TanStack Query: 서버에서 읽은 파일 snapshot과 요청 중복 제거
 - Zustand: UI 세션, 열린 탭과 Tiptap 편집 초안
-- `.maek/tabs.json`(workspace 루트, 원본 앱 version 4 형식): 열린 탭 목록과 순서의
-  단일 원본. 모든 브라우저가 공유하며 데스크톱 앱과 함께 사용합니다.
-- `.maek/sessions/web/<browser-session-id>/ui.json`: 브라우저별 테마, 사이드바 폭,
-  펼침 상태, 스크롤 위치, 선택 탭
+- `.maek/tabs.json`: 열린 탭 목록과 순서의 단일 원본
+- `.maek/sessions/web/<browser-session-id>/ui.json`: 브라우저별 UI 상태
 - `.maek/recentFiles.json`: 앱과 웹이 공유하는 최근 파일·열람 횟수
 - `.maek/assets/`: 붙여넣거나 가져온 이미지
-
-웹은 파일·데이터베이스·워크스페이스 설정 탭을 루트 `tabs.json`에서 관리하며, 원본 전용 탭과
-알 수 없는 필드·`tabGroups`·`editorSplit`은 병합 저장으로 보존합니다. 루트 문서가
-없을 때만 해당 브라우저의 구버전 세션 `tabs.json`에서 초기 목록을 만들고, 구버전
-파일은 마이그레이션 입력으로만 읽습니다. 서버는 루트 `tabs.json`을 감시해 외부
-변경을 `tabs-session-changed` SSE 이벤트로 알리고, 클라이언트는 열린 목록과 순서를
-실시간으로 조정합니다. 현재 선택 탭은 브라우저별로 유지합니다.
 
 ## Data invariants
 
@@ -43,10 +34,51 @@ OS watcher를 공유합니다. 이벤트 재생이 불가능하면 클라이언�
 - 앱 메타데이터와 의존성·빌드 캐시는 탐색 트리에 표시하지 않습니다.
 - 동일한 workspace를 보는 클라이언트는 하나의 파일 감시 런타임을 공유합니다.
 
-## Verification
+## Feature ownership
 
-변경 후 `npm run typecheck`, `npm test`, `npm run build`, `npm run test:e2e`를 실행합니다.
-Finder 선택 창, 휴지통 이동과 기본 앱 열기는 실제 macOS 환경에서 별도로 확인합니다.
+Maek is organized by product feature. A feature owns its UI, state, domain logic,
+and feature-specific helpers; it exposes only the small public API in its
+`index.ts`.
 
-DB 및 대시보드의 공유 저장·호환성·검증은 [원본 이식 문서](database-desktop-parity.md)에 정리합니다.
-module-local manifest 기반 HTML 페이지의 격리된 데이터 API와 확장 방식은 [Custom Page Runtime 설계와 구현 계획](custom-page-runtime-design.md)에 정리합니다.
+## Client
+
+- `client/src/app`: application assembly, providers, and startup only.
+- `client/src/features/<feature>`: independently understandable product areas.
+  Current areas include `workspace`, `editor`, `explorer`, `database`,
+  `custom-page`, `spreadsheet`, `search`, and `settings`.
+- `client/src/shared`: reusable UI, API transport, hooks, design tokens, and
+  utilities. Shared code must not depend on `app` or a feature.
+
+Use `@renderer/features/<feature>` when one feature needs another feature's
+public capability. Do not import another feature's internal file. `app` may
+compose feature public APIs. A new custom page is manifest-discovered and uses
+the shared custom-page/file APIs; it does not require a separate server or a
+central registration list.
+
+## Server
+
+- `server/app`: Fastify composition and HTTP application bootstrap.
+- `server/features`: domain services and routes, such as database and custom
+  pages.
+- `server/core`: infrastructure that is safe to share everywhere, including
+  filesystem guards and RPC errors.
+- `server/workspace` and `server/metadata`: established workspace domain
+  services, retained as cohesive feature namespaces during the gradual move.
+
+The HTTP contract in `shared/` is the boundary between client and server.
+Feature code may depend on `core`; `core` must never depend on a feature.
+
+## Change rules
+
+1. Add new product code inside the owning feature first.
+2. Put genuinely cross-feature code in `shared` (client) or `core` (server).
+3. Export only intentional public APIs from a feature `index.ts`.
+4. Run `npm run check` before handing off. It runs TypeScript and the lightweight
+   feature-boundary checker.
+5. Keep compatibility re-exports only while migrating callers, then remove
+   them in the same change or a tracked follow-up.
+
+DB 및 대시보드의 공유 저장·호환성·검증은
+[원본 이식 문서](database-desktop-parity.md)에 정리합니다. module-local manifest 기반
+HTML 페이지의 데이터 API와 확장 방식은
+[Custom Page Runtime 설계와 구현 계획](custom-page-runtime-design.md)에 정리합니다.

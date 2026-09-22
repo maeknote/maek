@@ -1,7 +1,7 @@
 import { FileText, FolderOpen, Plus } from "lucide-react";
 import { useMemo, type ReactElement } from "react";
-import { useStore } from "../../../store";
-import { getDisplayName } from "../utils/displayName";
+import { useStore } from "@renderer/features/workspace";
+import { getDisplayName } from "@renderer/features/editor";
 
 interface WorkspaceDashboardProps {
   onNewNote: () => void;

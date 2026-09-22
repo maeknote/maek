@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { api } from "../../../host";
+import { api } from "@renderer/shared/api";
 import type { FolderAppearance } from "../utils/folderAppearance";
 
 export interface FolderAppearanceData {

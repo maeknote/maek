@@ -1,5 +1,5 @@
 import { useRef, type ReactElement } from "react";
-import { useStore, schedulePersistence } from "../../../store";
+import { useStore, schedulePersistence } from "@renderer/features/workspace";
 import {
   ratioFromClientX,
   clampSplitRatio,

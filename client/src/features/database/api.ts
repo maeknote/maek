@@ -1,5 +1,5 @@
-import { api } from "../../host";
-import { useStore } from "../../store";
+import { api } from "@renderer/shared/api";
+import { useStore } from "@renderer/features/workspace";
 import { useWorkspaceStore } from "./workspaceStore";
 import type {
   DatabaseMeta,

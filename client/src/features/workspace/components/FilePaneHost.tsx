@@ -1,8 +1,7 @@
 import { type ReactElement } from "react";
-import { useStore, type Tab } from "../../../store";
-import { cn } from "../../../lib/utils";
-import { FilePane } from "./FilePane";
-import { paneWidths } from "../utils/splitLayout";
+import { useStore, type Tab } from "@renderer/features/workspace";
+import { cn } from "@renderer/lib/utils";
+import { FilePane, paneWidths } from "@renderer/features/editor";
 
 /** File-backed view kinds render through the FilePane cache. Other view kinds
  *  (workspace-settings, kanban, database) are non-file surfaces rendered

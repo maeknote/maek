@@ -1,5 +1,4 @@
-import { FilePicker } from "./features/editor/components/FilePicker";
-import { NotePicker } from "./features/editor/components/note-picker/NotePicker";
+import { FilePicker, NotePicker, SplitSeparator, getTabFileContent } from "@renderer/features/editor";
 import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
@@ -11,24 +10,20 @@ import {
   Search,
   Columns2,
 } from "lucide-react";
-import { useStore, schedulePersistence, type Tab } from "./store";
-import { api } from "./host";
-import { Explorer } from "./features/explorer/Explorer";
-import { FilePaneHost, isFileBackedTab } from "./features/editor/components/FilePaneHost";
-import { SplitSeparator } from "./features/editor/components/SplitSeparator";
-import { WorkspaceDashboard } from "./features/editor/components/WorkspaceDashboard";
-import { FolderKanbanView } from "./features/database/kanban/FolderKanbanView";
-import { DatabaseView } from "./features/database/DatabaseView";
-import { SettingsModal, usePreferences } from "./features/settings/SettingsModal";
-import { loadPreferences, resolveTheme, systemPrefersDark } from "./lib/preferences";
-import { navigate, parseRoute, pathForWorkspaceKey, workspaceKeyFor, type Route } from "./lib/routes";
-import { getTabFileContent } from "./features/editor/utils/frontmatter";
+import { useStore, schedulePersistence, type Tab, FilePaneHost, isFileBackedTab, WorkspaceDashboard } from "@renderer/features/workspace";
+import { api } from "@renderer/shared/api";
+import { Explorer } from "@renderer/features/explorer";
+import { FolderKanbanView } from "@renderer/features/database/kanban/FolderKanbanView";
+import { DatabaseView } from "@renderer/features/database/DatabaseView";
+import { SettingsModal, usePreferences } from "@renderer/features/settings";
+import { loadPreferences, resolveTheme, systemPrefersDark } from "@renderer/lib/preferences";
+import { navigate, parseRoute, pathForWorkspaceKey, workspaceKeyFor, type Route } from "@renderer/lib/routes";
 import {
   ToastProvider,
   ToastContainer,
   Button,
   PanelIcon,
-} from "./shared/components";
+} from "@renderer/shared/components";
 import type { FileNode } from "@shared/workspace";
 
 function Modal({

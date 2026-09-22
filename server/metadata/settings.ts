@@ -8,7 +8,7 @@ import type {
   MaekWorkspaceConfig,
   FolderAppearanceData,
 } from "../../shared/workspace-settings";
-import { conflict } from "../errors";
+import { conflict } from "../core/errors";
 const repository = new WorkspaceMetadataRepository();
 async function read<T>(
   ws: Workspace,

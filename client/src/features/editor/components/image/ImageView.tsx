@@ -4,7 +4,7 @@ import { Trash2 } from "lucide-react";
 import { basename, dirname, resolvePath } from "@renderer/lib/pathUtils";
 import { bytesToBlobUrl, inferMimeFromPath } from "../preview/utils";
 import { useImageResizeStore } from "../../stores/imageResizeStore";
-import { rawUrl } from "../../../../host";
+import { rawUrl } from "@renderer/shared/api";
 
 type ResolvedImageSource =
   | { kind: "none" }

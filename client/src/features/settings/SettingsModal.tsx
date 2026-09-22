@@ -14,7 +14,7 @@ import {
   Globe,
   Mail,
 } from "lucide-react";
-import { useStore, schedulePersistence } from "../../store";
+import { useStore, schedulePersistence } from "@renderer/features/workspace";
 import { Button } from "../../shared/components";
 import { basename } from "../../lib/pathUtils";
 import {

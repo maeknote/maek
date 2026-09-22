@@ -19,8 +19,8 @@ import {
 } from "lucide-react";
 import "react-data-grid/lib/styles.css";
 import "./spreadsheet.css";
-import type { Tab } from "../../store";
-import { useStore } from "../../store";
+import type { Tab } from "@renderer/features/workspace";
+import { useStore } from "@renderer/features/workspace";
 import { parseTsv, rangeToTsv } from "./clipboard";
 import {
   clearRange,

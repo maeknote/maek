@@ -10,7 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { Search, File, FileCode, X } from "lucide-react";
 import { cn } from "@renderer/lib/utils";
-import { useStore } from "../../../store";
+import { useStore } from "@renderer/features/workspace";
 import { getDisplayName } from "../utils/displayName";
 import {
   HighlightMatch,

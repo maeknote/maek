@@ -1,5 +1,5 @@
 import { dirname, resolvePath } from "../../../lib/pathUtils";
-import { useStore } from "../../../store";
+import { useStore } from "@renderer/features/workspace";
 export function getWorkspaceTargetDisplayName(p: string) {
   return (
     useStore.getState().nodes.find((n) => n.id === p)?.name ??

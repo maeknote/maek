@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode } from "react";
-import type { Tab } from "../../../store";
+import type { Tab } from "@renderer/features/workspace";
 import { parseFileName } from "../utils/fileName";
 import { useFileRename } from "./useFileRename";
 

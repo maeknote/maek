@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useStore } from "../../../store";
+import { useStore } from "@renderer/features/workspace";
 interface RecentFileEntry {
   lastOpenedAt: number;
   openCount: number;

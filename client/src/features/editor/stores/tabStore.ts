@@ -1,1 +1,1 @@
-export { useStore as useTabStore } from "../../../store";
+export { useStore as useTabStore } from "@renderer/features/workspace";

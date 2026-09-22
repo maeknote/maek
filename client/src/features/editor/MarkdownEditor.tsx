@@ -13,8 +13,8 @@ import {
   resolvePath,
   isWorkspaceLinkHref,
 } from "../../lib/pathUtils";
-import { useStore, schedulePersistence, type Tab } from "../../store";
-import { api, toBase64 } from "../../host";
+import { useStore, schedulePersistence, type Tab } from "@renderer/features/workspace";
+import { api, toBase64 } from "@renderer/shared/api";
 import "./styles/editor.css";
 
 const markdown = (editor: Editor) =>
