@@ -46,6 +46,19 @@ export interface RootTabs {
    * selection lives in UiState). */
   activeTabId: string | null;
 }
+
+/** A browser-local tab workspace. Unlike RootTabs, this records how open files
+ * are composed on screen and is never shared with another browser session. */
+export type ViewGroup =
+  | { id: string; kind: "single"; tabId: string }
+  | {
+      id: string;
+      kind: "split";
+      left: string;
+      right: string;
+      active: "left" | "right";
+      ratio: number;
+    };
 /**
  * Per-browser presentation state that must not be shared through the root tab
  * document. Stored in `.maek/sessions/web/<session-id>/ui.json`.
@@ -57,6 +70,9 @@ export interface UiState {
   theme: "system" | "light" | "dark";
   sidebarWidth: number;
   split?: { left: string | null; right: string | null; active: "left" | "right"; ratio: number };
+  /** v2 browser-local tab composition. `split` remains for migration from v1. */
+  viewGroups?: ViewGroup[];
+  activeViewGroupId?: string | null;
 }
 export interface Change {
   type: "add" | "change" | "unlink" | "addDir" | "unlinkDir" | "rename";

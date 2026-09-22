@@ -30,6 +30,16 @@ export class WorkspaceWatchHub {
   constructor(
     private readonly workspace: Workspace,
     private readonly ignored: (relativePath: string) => boolean,
+    /**
+     * Optional hook invoked when an inode-preserving rename is detected for a
+     * directory, before the `rename` SSE event is emitted. The host injects a
+     * serialization-wrapped folder-appearance remap here so an external Finder
+     * move preserves custom folder icons without racing an appearance PUT.
+     */
+    private readonly onDirectoryRename?: (
+      source: string,
+      destination: string,
+    ) => Promise<void>,
   ) {}
 
   subscribe(subscriber: Subscriber, lastEventId?: number): () => void {
@@ -141,12 +151,26 @@ export class WorkspaceWatchHub {
           }
           this.identities.delete(existing);
           this.identities.set(relativePath, ino);
-          this.emit("change", {
-            type: "rename",
-            source: existing,
-            path: relativePath,
-            node: nodeFor(relativePath, type === "addDir"),
-          });
+          const isDirectory = type === "addDir";
+          const emitRename = () =>
+            this.emit("change", {
+              type: "rename",
+              source: existing,
+              path: relativePath,
+              node: nodeFor(relativePath, isDirectory),
+            });
+          if (isDirectory && this.onDirectoryRename) {
+            // Remap folder-appearance keys (under the host's serialization
+            // lock) before announcing the rename, so the client reloads the
+            // appearance store already pointing at the new paths. An
+            // app-initiated move already remapped the keys, so this second run
+            // is an idempotent no-op.
+            void this.onDirectoryRename(existing, relativePath)
+              .catch(() => {})
+              .finally(emitRename);
+          } else {
+            emitRename();
+          }
           return;
         }
       }

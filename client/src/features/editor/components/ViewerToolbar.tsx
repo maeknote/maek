@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode } from "react";
 import type { Tab } from "../../../store";
+import { parseFileName } from "../utils/fileName";
 import { useFileRename } from "./useFileRename";
 
 interface ViewerToolbarProps {
@@ -22,11 +23,7 @@ export function ViewerToolbar({
 }: ViewerToolbarProps): ReactElement {
   const rename = useFileRename({ fileName: tab.name, onRename });
 
-  const lastDotIndex = tab.name.lastIndexOf(".");
-  const ext =
-    lastDotIndex > 0 && lastDotIndex < tab.name.length - 1
-      ? tab.name.slice(lastDotIndex)
-      : "";
+  const { extension: ext } = parseFileName(tab.name);
 
   return (
     <div className="viewer-toolbar flex items-center gap-2 px-3 shrink-0">
@@ -61,7 +58,7 @@ export function ViewerToolbar({
         {ext && (
           <span
             className="text-sm text-muted-text select-none cursor-default shrink-0"
-            title={`File extension: ${ext}`}
+            title={tab.name}
           >
             {ext}
           </span>

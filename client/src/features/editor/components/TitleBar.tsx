@@ -10,6 +10,7 @@ import { Check, Copy } from "lucide-react";
 import { useToast } from "@renderer/shared/components";
 import type { TabItem } from "../types";
 import { getTabFileContent, isEditableMarkdownTab } from "../utils/frontmatter";
+import { parseFileName } from "../utils/fileName";
 import { useFileRename } from "./useFileRename";
 
 interface TitleBarProps {
@@ -42,9 +43,8 @@ export function TitleBar({ tab, onRename, actions }: TitleBarProps): ReactElemen
     }
   }, [tab, showToast]);
 
-  const lastDotIndex = tab.name.lastIndexOf(".");
-  const ext = lastDotIndex > 0 && lastDotIndex < tab.name.length - 1 ? tab.name.slice(lastDotIndex) : "";
-  const showExtension = ext && ext.toLowerCase() !== ".md";
+  const { extension: ext } = parseFileName(tab.name);
+  const showExtension = ext.length > 0;
 
   return (
     <div className="px-8 pt-6 pb-3 shrink-0">
@@ -74,7 +74,7 @@ export function TitleBar({ tab, onRename, actions }: TitleBarProps): ReactElemen
           {showExtension && (
             <span
               className="text-3xl font-bold text-muted-text select-none cursor-default shrink-0"
-              title={`File extension: ${ext}`}
+              title={tab.name}
             >
               {ext}
             </span>

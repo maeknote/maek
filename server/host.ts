@@ -6,6 +6,7 @@ import {
   recentList,
   mutateRecents,
 } from "./metadata/settings";
+import { moveFolderAppearance } from "./metadata/folder-appearance";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import path from "node:path";
@@ -125,7 +126,6 @@ export interface HostOptions {
 export function createHost(options: HostOptions = {}) {
   const app = Fastify({ logger: false, bodyLimit: 48 * 1024 * 1024 });
   const streams = new Set<() => Promise<void>>();
-  const runtimes = new WorkspaceRuntimeManager(isIgnored);
   const metadata = new WorkspaceMetadataRepository();
   const locks = new Map<string, Promise<unknown>>();
   async function serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -138,6 +138,17 @@ export function createHost(options: HostOptions = {}) {
       if (locks.get(key) === next) locks.delete(key);
     }
   }
+  // An external (Finder) folder rename recognized by the watcher must remap
+  // folder-appearance keys before the client reloads. Run the remap under the
+  // same per-workspace serial lock the appearance PUT uses so the two writers
+  // can never overwrite one another.
+  const runtimes = new WorkspaceRuntimeManager(
+    isIgnored,
+    (ws) => (source, destination) =>
+      serial(ws.root, () => moveFolderAppearance(ws, source, destination)).then(
+        () => {},
+      ),
+  );
   // Tree-structure mutations (create/move/rename/copy/import/trash and the
   // database row operations that add or rename files) must make the next
   // /api/tree read reflect the change without waiting for the filesystem
@@ -480,8 +491,13 @@ export function createHost(options: HostOptions = {}) {
       if (await lstat(to).catch(() => null))
         throw conflict("changed", "Destination already exists");
       await rename(from, to);
-      if ((await stat(to)).isDirectory())
+      if ((await stat(to)).isDirectory()) {
         await databaseFolderMoved(ws, source, dest);
+        // Preserve custom folder icons for the moved folder and every
+        // configured descendant. Runs inside the same serialization block as
+        // the rename so it cannot interleave with an appearance PUT.
+        await moveFolderAppearance(ws, source, dest);
+      }
       return { source, dest };
     });
   });
@@ -621,6 +637,21 @@ export function createHost(options: HostOptions = {}) {
     tabs: z.array(filePath).max(200),
     activeTabId: filePath.nullable(),
   });
+  // View groups are browser-local composition state. They may contain virtual
+  // `maek:` ids as well as workspace-relative file paths, so they use a
+  // deliberately narrow string schema instead of `filePath`.
+  const viewTabId = z.string().min(1).max(4096).refine(
+    (value) => !value.split("/").includes(".."),
+    "Parent traversal is forbidden",
+  );
+  const viewGroup = z.discriminatedUnion("kind", [
+    z.object({ id: z.string().min(1).max(256), kind: z.literal("single"), tabId: viewTabId }),
+    z.object({
+      id: z.string().min(1).max(256), kind: z.literal("split"),
+      left: viewTabId, right: viewTabId,
+      active: z.enum(["left", "right"]), ratio: z.number().min(.25).max(.75),
+    }),
+  ]);
   const uiState = z.object({
     activeTabId: filePath.nullable(),
     scrollPositions: z.record(z.string(), z.number().min(0)),
@@ -631,6 +662,8 @@ export function createHost(options: HostOptions = {}) {
     // old fixed 600px limit.
     sidebarWidth: z.number().min(150).max(10_000),
     split: z.object({ left: filePath.nullable(), right: filePath.nullable(), active: z.enum(["left", "right"]), ratio: z.number().min(0.25).max(0.75) }).optional(),
+    viewGroups: z.array(viewGroup).max(200).optional(),
+    activeViewGroupId: z.string().min(1).max(256).nullable().optional(),
   });
   const uiStateFallback = {
     activeTabId: null,

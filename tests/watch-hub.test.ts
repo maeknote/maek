@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rename, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -128,4 +128,68 @@ describe("WorkspaceRuntimeManager", () => {
     });
     expect(events).toEqual(["tabs-session-changed"]);
   }, 10_000);
+
+  it("remaps folder appearance before emitting an external directory rename", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "maek-watch-rename-"));
+    roots.push(root);
+    await mkdir(path.join(root, ".maek"), { recursive: true });
+    await mkdir(path.join(root, "Projects/Alpha"), { recursive: true });
+    await writeFile(
+      path.join(root, ".maek/folder-appearance.json"),
+      JSON.stringify({
+        version: 1,
+        folders: {
+          Projects: { icon: "rocket", iconColor: "blue" },
+          "Projects/Alpha": { icon: "star", iconColor: "accent" },
+        },
+      }),
+    );
+    const workspace = await registerWorkspace(root);
+
+    // Hook mirrors the host's serialization-wrapped remap.
+    const { moveFolderAppearance } = await import(
+      "../server/metadata/folder-appearance"
+    );
+    const manager = new WorkspaceRuntimeManager(
+      isIgnored,
+      () => (source, destination) =>
+        moveFolderAppearance(workspace, source, destination).then(() => {}),
+    );
+    managers.push(manager);
+    const runtime = manager.get(workspace);
+
+    await new Promise<void>((resolve, reject) => {
+      let ready = false;
+      const timeout = setTimeout(() => reject(new Error("no rename event")), 8000);
+      runtime.watcher.subscribe((event) => {
+        if (event.event === "ready" && !ready) {
+          ready = true;
+          void rename(
+            path.join(root, "Projects"),
+            path.join(root, "Renamed"),
+          );
+        }
+        if (event.event === "change") {
+          const change = event.data as { type: string; source?: string; path?: string };
+          if (change.type === "rename" && change.source === "Projects") {
+            clearTimeout(timeout);
+            resolve();
+          }
+        }
+      });
+    });
+
+    // By the time the rename event fired, the appearance file must already
+    // point at the new paths and leave no stale entries behind.
+    const stored = JSON.parse(
+      await readFile(path.join(root, ".maek/folder-appearance.json"), "utf8"),
+    );
+    expect(stored).toEqual({
+      version: 1,
+      folders: {
+        Renamed: { icon: "rocket", iconColor: "blue" },
+        "Renamed/Alpha": { icon: "star", iconColor: "accent" },
+      },
+    });
+  }, 15_000);
 });

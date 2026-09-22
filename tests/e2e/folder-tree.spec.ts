@@ -28,6 +28,42 @@ async function open(page: Page) {
   await expect(page.locator('[data-path="Folder"]')).toBeVisible();
 }
 
+test("file rows drop format icons while folder and database icons remain", async ({
+  page,
+}) => {
+  // A custom folder icon via the app-shared appearance file.
+  mkdirSync(path.join(root, ".maek"), { recursive: true });
+  mkdirSync(path.join(root, "Iconed"));
+  writeFileSync(
+    path.join(root, ".maek/folder-appearance.json"),
+    JSON.stringify({
+      version: 1,
+      folders: { Iconed: { icon: "rocket", iconColor: "blue" } },
+    }),
+  );
+  writeFileSync(path.join(root, "sheet.csv"), "a,b\n1,2\n");
+  writeFileSync(path.join(root, "page.html"), "<h1>Hi</h1>");
+  await open(page);
+
+  // File rows carry no SVG (file-type) icon: only the name + muted extension.
+  const csvRow = page.locator('[data-path="sheet.csv"]');
+  await expect(csvRow).toBeVisible();
+  await expect(csvRow.locator("svg")).toHaveCount(0);
+  await expect(csvRow.getByText(".csv", { exact: true })).toBeVisible();
+
+  const htmlRow = page.locator('[data-path="page.html"]');
+  await expect(htmlRow.locator("svg")).toHaveCount(0);
+  await expect(htmlRow.getByText(".html", { exact: true })).toBeVisible();
+
+  const mdRow = page.locator('[data-path="top.md"]');
+  await expect(mdRow.getByText(".md", { exact: true })).toBeVisible();
+
+  // The custom folder icon still renders (folders are not file formats). The
+  // row also carries a chevron, so an iconed folder has two SVGs vs a file's
+  // zero.
+  await expect(page.locator('[data-path="Iconed"] svg')).toHaveCount(2);
+});
+
 test("an ordinary folder toggles open and closed on a single row click", async ({
   page,
 }) => {

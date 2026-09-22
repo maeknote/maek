@@ -10,8 +10,7 @@ import {
 import { Tree, type TreeApi, type NodeRendererProps, type NodeApi } from "react-arborist";
 import {
   ChevronRight,
-  File,
-  FileCode,
+  Columns2,
   FileText,
   FolderPlus,
   Plus,
@@ -20,7 +19,6 @@ import {
   Search,
   Table,
   Settings,
-  Table2,
   Trash2,
   X,
 } from "lucide-react";
@@ -42,12 +40,19 @@ import { cn } from "../../lib/utils";
 import { collectDropFiles } from "./importDrop";
 import { useFolderAppearance } from "./stores/folderAppearanceStore";
 import { FolderCustomizeSubmenu } from "./components/FolderCustomizeSubmenu";
+import { FileNameLabel } from "../editor/components/FileNameLabel";
 import { FOLDER_ICON_MAP, getFolderIconColorValue } from "./utils/folderAppearance";
 import { isTabDirty } from "../editor/utils/frontmatter";
 import {
   edgeScrollDelta,
   isSelfOrDescendantDrop,
 } from "./utils/treeDnd";
+import { UnifiedTreeOuter } from "./components/UnifiedTreeOuter";
+import {
+  useUnifiedExplorerScroll,
+  SECTION_HEADER_HEIGHT,
+} from "./hooks/useUnifiedExplorerScroll";
+import { clamp, maxTreeOffset } from "./utils/unifiedScroll";
 
 const ROW_HEIGHT = 28;
 const ROOT_ID = "__REACT_ARBORIST_INTERNAL_ROOT__";
@@ -192,26 +197,22 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
             })()}
           </span>
         ) : null
-      ) : /\.csv$/i.test(node.data.name) ? (
-        <Table2 className="w-4 h-4 mr-2 shrink-0" />
-      ) : /\.html$/i.test(node.data.name) ? (
-        <FileCode className="w-4 h-4 mr-2 shrink-0" />
-      ) : !/\.md$/i.test(node.data.name) ? (
-        <File className="w-4 h-4 mr-2 shrink-0" />
       ) : null}
       {node.isEditing ? (
         <RenameInput node={node} />
-      ) : (
+      ) : node.isInternal ? (
         <span
           className={cn(
             "truncate",
-            !node.isInternal && !appearance && !/\.md$/i.test(node.data.name)
-              ? ""
-              : "ml-1",
+            !appearance && !isDatabase ? "" : "ml-1",
           )}
         >
           {node.data.name}
         </span>
+      ) : (
+        // File rows carry no file-type icon; the extension is shown as muted
+        // secondary text inline with the name instead.
+        <FileNameLabel fileName={node.data.name} title={node.data.name} />
       )}
     </div>
   );
@@ -268,11 +269,11 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     expanded,
     workspaces,
     tabs,
-    activeTabId,
+    viewGroups,
+    activeViewGroupId,
   } = useStore();
   const container = useRef<HTMLDivElement>(null),
     tree = useRef<TreeApi<FileNode>>(null);
-  const filesScrollRef = useRef<HTMLDivElement>(null);
   const dragPreviewRef = useRef<HTMLDivElement>(null);
   const dragPreviewTextRef = useRef<HTMLSpanElement>(null);
   const dragTab = useRef<{
@@ -284,12 +285,29 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   } | null>(null);
   const dropIndexRef = useRef<number | null>(null);
   const suppressTabClick = useRef(false);
+  // Bridge to the unified-scroll helpers (populated after the hook runs) so the
+  // tab-drag pointer handler, defined before the hook, can drive the shared
+  // scroller for edge auto-scroll during long-list reordering.
+  const scrollBridge = useRef<{
+    scrollEl: HTMLDivElement | null;
+    filesSectionTop: () => number;
+    scrollTo: (top: number) => void;
+  }>({ scrollEl: null, filesSectionTop: () => 0, scrollTo: () => {} });
+  const tabAutoScrollFrame = useRef<number | null>(null);
+  const tabAutoScrollSpeed = useRef(0);
   const [pendingReveal, setPendingReveal] = useState<{ id: string } | null>(null);
-  const [filesHeight, setFilesHeight] = useState(0);
   const [rootDropActive, setRootDropActive] = useState(false);
   const saveStatus = tabs.some((tab) => tab.status === "saving")
     ? "Saving"
     : tabs.some(isTabDirty) ? "Unsaved" : null;
+  const tabById = useMemo(() => new Map(tabs.map((tab) => [tab.id, tab])), [tabs]);
+  const visibleViewGroups = useMemo(
+    () => viewGroups.filter((group) => {
+      const ids = group.kind === "single" ? [group.tabId] : [group.left, group.right];
+      return ids.some((id) => !tabById.get(id)?.isPopup);
+    }),
+    [viewGroups, tabById],
+  );
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [pendingTrash, setPendingTrash] = useState<{
     paths: string[];
@@ -300,6 +318,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     x: number;
     y: number;
     id: string;
+    groupId?: string;
   } | null>(null);
   const { appearances, load } = useFolderAppearance();
 
@@ -309,6 +328,29 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   }, []);
 
   useEffect(() => {
+    const stopTabAutoScroll = () => {
+      tabAutoScrollSpeed.current = 0;
+      if (tabAutoScrollFrame.current !== null) {
+        cancelAnimationFrame(tabAutoScrollFrame.current);
+        tabAutoScrollFrame.current = null;
+      }
+    };
+    const runTabAutoScroll = () => {
+      const el = scrollBridge.current.scrollEl;
+      if (!el || tabAutoScrollSpeed.current === 0) {
+        tabAutoScrollFrame.current = null;
+        return;
+      }
+      // Min 0 (top of Open Tabs); max = the Files section top, which brings the
+      // last tab row into view without scrolling deep into Files.
+      const max = scrollBridge.current.filesSectionTop();
+      const next = Math.min(
+        max,
+        Math.max(0, el.scrollTop + tabAutoScrollSpeed.current),
+      );
+      if (next !== el.scrollTop) scrollBridge.current.scrollTo(next);
+      tabAutoScrollFrame.current = requestAnimationFrame(runTabAutoScroll);
+    };
     const onPointerMove = (event: PointerEvent) => {
       const drag = dragTab.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
@@ -318,9 +360,12 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         drag.dragging = true;
         suppressTabClick.current = true;
 
-        const tab = useStore.getState().tabs.find((t) => t.id === drag.id);
-        if (tab && dragPreviewTextRef.current) {
-          dragPreviewTextRef.current.textContent = tab.name;
+        const group = useStore.getState().viewGroups.find((item) => item.id === drag.id);
+        if (group && dragPreviewTextRef.current) {
+          const ids = group.kind === "single" ? [group.tabId] : [group.left, group.right];
+          dragPreviewTextRef.current.textContent = ids
+            .map((id) => useStore.getState().tabs.find((tab) => tab.id === id)?.name ?? id)
+            .join(" · ");
         }
       }
 
@@ -330,14 +375,32 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       }
 
       event.preventDefault();
+
+      // Edge auto-scroll so long tab lists can be reordered beyond the current
+      // viewport. Measured against the shared scroller; clamped so a tab drag
+      // does not run deep into Files (max = the Files section top).
+      const scrollEl = scrollBridge.current.scrollEl;
+      if (scrollEl) {
+        const scrollerRect = scrollEl.getBoundingClientRect();
+        tabAutoScrollSpeed.current = edgeScrollDelta(event.clientY, {
+          top: scrollerRect.top,
+          bottom: scrollerRect.bottom,
+        });
+        if (tabAutoScrollSpeed.current !== 0 && tabAutoScrollFrame.current === null) {
+          tabAutoScrollFrame.current = requestAnimationFrame(runTabAutoScroll);
+        } else if (tabAutoScrollSpeed.current === 0) {
+          stopTabAutoScroll();
+        }
+      }
+
       const row = document
         .elementFromPoint(event.clientX, event.clientY)
-        ?.closest<HTMLElement>("[data-tab-id]");
+        ?.closest<HTMLElement>("[data-view-group-id]");
       if (!row) {
         return;
       }
-      const currentTabs = useStore.getState().tabs;
-      const index = currentTabs.findIndex((tab) => tab.id === row.dataset.tabId);
+      const currentGroups = useStore.getState().viewGroups;
+      const index = currentGroups.findIndex((group) => group.id === row.dataset.viewGroupId);
       if (index < 0) return;
       const rect = row.getBoundingClientRect();
       updateDropIndex(event.clientY - rect.top > rect.height / 2 ? index + 1 : index);
@@ -345,13 +408,14 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     const finishPointerDrag = (event: PointerEvent) => {
       const drag = dragTab.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
+      stopTabAutoScroll();
       dragTab.current = null;
       if (dragPreviewRef.current) {
         dragPreviewRef.current.style.display = "none";
       }
       if (drag.dragging && dropIndexRef.current !== null) {
-        const from = useStore.getState().tabs.findIndex((tab) => tab.id === drag.id);
-        useStore.getState().reorderTabs(from, dropIndexRef.current);
+        const from = useStore.getState().viewGroups.findIndex((group) => group.id === drag.id);
+        useStore.getState().reorderViewGroups(from, dropIndexRef.current);
       }
       updateDropIndex(null);
       window.setTimeout(() => {
@@ -365,6 +429,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       document.removeEventListener("pointermove", onPointerMove);
       document.removeEventListener("pointerup", finishPointerDrag);
       document.removeEventListener("pointercancel", finishPointerDrag);
+      stopTabAutoScroll();
     };
   }, [updateDropIndex]);
 
@@ -448,17 +513,57 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     return roots;
   }, [nodes]);
 
-  // Measure the remaining height of the Files scroll area so react-arborist
-  // virtualizes against the real viewport rather than the total node count.
+  // Number of visible Open Tabs workspaces; drives the anchor-preservation shift.
+  const tabCount = useMemo(
+    () => visibleViewGroups.length,
+    [visibleViewGroups],
+  );
+
+  // Total height of the pinned, stacked section headers. Open Tabs (when any
+  // tabs exist) sits at top:0 and Files stacks directly beneath it, so the tree
+  // viewport must start below both. With no tabs, only the Files header pins.
+  const hasTabs = tabCount > 0;
+  const headerStackHeight = hasTabs
+    ? SECTION_HEADER_HEIGHT * 2
+    : SECTION_HEADER_HEIGHT;
+
+  const {
+    sidebarScrollRef,
+    filesSectionRef,
+    filesViewportRef,
+    treeViewportHeight,
+    treeContentHeight,
+    onSidebarScroll,
+    scrollTreeNodeIntoView,
+    measureFilesSectionTop,
+    scrollSidebarTo,
+  } = useUnifiedExplorerScroll({
+    tree,
+    data,
+    expanded,
+    workspaceRoot: workspace?.root ?? null,
+    tabCount,
+    headerStackHeight,
+  });
+
+  // Keep the tab-drag pointer handler's scroll bridge current. Also stop any
+  // in-flight tab auto-scroll when the workspace changes.
   useEffect(() => {
-    const el = filesScrollRef.current;
-    if (!el) return;
-    const measure = () => setFilesHeight(el.clientHeight);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [tabs.length, workspace?.wsId]);
+    scrollBridge.current = {
+      scrollEl: sidebarScrollRef.current,
+      filesSectionTop: measureFilesSectionTop,
+      scrollTo: scrollSidebarTo,
+    };
+  });
+  useEffect(() => {
+    return () => {
+      tabAutoScrollSpeed.current = 0;
+      if (tabAutoScrollFrame.current !== null) {
+        cancelAnimationFrame(tabAutoScrollFrame.current);
+        tabAutoScrollFrame.current = null;
+      }
+    };
+  }, [workspace?.wsId]);
 
   const revealInFolderTree = useCallback(
     (id: string) => {
@@ -476,9 +581,9 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     let cancelled = false;
     const { id } = pendingReveal;
     void (async () => {
-      await api.scrollTo(id, "center");
+      const revealed = await scrollTreeNodeIntoView(id);
       if (cancelled) return;
-      if (api.get(id)) {
+      if (revealed && api.get(id)) {
         api.select(id, { align: "center" });
         container.current?.querySelector<HTMLElement>('[role="tree"]')?.focus();
       } else {
@@ -489,7 +594,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [pendingReveal, workspace?.wsId]);
+  }, [pendingReveal, workspace?.wsId, scrollTreeNodeIntoView]);
   useEffect(() => {
     if (pendingEdit && tree.current?.get(pendingEdit)) {
       const n = tree.current.get(pendingEdit)!;
@@ -536,6 +641,41 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     await api("/api/files/copy", "POST", { dir, paths: clipboard });
     await useStore.getState().refresh();
   }
+  /**
+   * Shared creation actions (New note / New folder / New database) reused by the
+   * empty-area menu, the Add New hover menu, and every folder row context menu
+   * so their order, icons, and handlers stay identical. `dir` is the explicit
+   * destination folder ("" for the workspace root). `onRun` closes the host
+   * menu before running the action.
+   */
+  const creationActions = (dir: string, onRun: () => void) => (
+    <>
+      <MenuItem
+        icon={<FileText size={16} />}
+        label="New note"
+        onClick={() => {
+          onRun();
+          void run(() => create("file", dir));
+        }}
+      />
+      <MenuItem
+        icon={<FolderPlus size={16} />}
+        label="New folder"
+        onClick={() => {
+          onRun();
+          void run(() => create("dir", dir));
+        }}
+      />
+      <MenuItem
+        icon={<Table size={16} />}
+        label="New database"
+        onClick={() => {
+          onRun();
+          void run(() => createDatabase(dir));
+        }}
+      />
+    </>
+  );
   async function trash(paths: string[]) {
     const affectedTabs = useStore
       .getState()
@@ -645,7 +785,9 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     ],
   );
 
-  // RAF-based edge auto-scroll while dragging inside the Files scroll area.
+  // RAF-based edge auto-scroll while dragging inside the visible tree viewport.
+  // It drives the shared scroller (not a nested Files container) and clamps to
+  // the logical tree range so a tree drag can never scroll back into Open Tabs.
   const autoScrollFrame = useRef<number | null>(null);
   const autoScrollSpeed = useRef(0);
   const stopAutoScroll = useCallback(() => {
@@ -656,19 +798,29 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     }
   }, []);
   const runAutoScroll = useCallback(() => {
-    const el = filesScrollRef.current;
+    const el = sidebarScrollRef.current;
     if (!el || autoScrollSpeed.current === 0) {
       autoScrollFrame.current = null;
       return;
     }
-    el.scrollTop += autoScrollSpeed.current;
+    const filesTop = measureFilesSectionTop();
+    const min = filesTop;
+    const max = filesTop + maxTreeOffset(treeContentHeight, treeViewportHeight);
+    const next = clamp(el.scrollTop + autoScrollSpeed.current, min, max);
+    if (next !== el.scrollTop) scrollSidebarTo(next);
     autoScrollFrame.current = requestAnimationFrame(runAutoScroll);
-  }, []);
+  }, [
+    sidebarScrollRef,
+    measureFilesSectionTop,
+    treeContentHeight,
+    treeViewportHeight,
+    scrollSidebarTo,
+  ]);
   useEffect(() => {
     // A tree DnD uses HTML5 drag events (react-dnd HTML5 backend). Listen on
-    // the Files scroll container so we can auto-scroll near its edges. The
+    // the visible tree viewport so we can auto-scroll near its edges. The
     // native "Files" (Finder) import drop is handled separately below.
-    const el = filesScrollRef.current;
+    const el = filesViewportRef.current;
     if (!el) return;
     const onDragOver = (event: DragEvent) => {
       if (event.dataTransfer?.types.includes("Files")) return; // Finder import
@@ -724,7 +876,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       el.removeEventListener("dragend", clearDrag);
       stopAutoScroll();
     };
-  }, [runAutoScroll, stopAutoScroll, workspace?.wsId]);
+  }, [filesViewportRef, runAutoScroll, stopAutoScroll, workspace?.wsId]);
 
   return (
     <div
@@ -799,52 +951,78 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           <span>Add new</span>
         </button>
       </div>
-      {/* Open Tabs is a flat list capped at 40% of the sidebar height with its
-          own scroll. Files uses the remaining measured height. */}
+      {/* One continuous vertical scroller merges Open Tabs and Files. Both
+          section headers are sticky and stack at the top: Open Tabs at top:0
+          and Files just below it, so "Files" always sits under "Open Tabs" and
+          both labels stay visible while the content scrolls beneath them. To
+          keep each header pinned across the whole scroll range, the headers and
+          their content are direct children of the single scroller (not nested
+          per-section wrappers, which would unstick a header once its own
+          content scrolled away). */}
       <div ref={container} className="flex-1 min-h-0 flex flex-col">
-        {tabs.length > 0 && (
-          <div className="flex flex-col min-h-0 max-h-[40%]">
-            <div className="pl-5 pr-3 pt-2 pb-1 text-sm font-semibold tracking-wide text-muted-text flex items-center shrink-0">
-              <span className="flex items-center gap-2">
-                Open Tabs
-                {saveStatus && (
-                  <span
-                    data-testid="open-tabs-save-status"
-                    role="status"
-                    aria-label={saveStatus}
-                    title={saveStatus}
-                    className={cn(
-                      "block w-2 h-2 rounded-full bg-[var(--color-maek-red)] shrink-0",
-                      saveStatus === "Saving" && "motion-safe:animate-pulse",
-                    )}
-                  />
-                )}
-              </span>
-            </div>
-            <div className="px-3 pb-1 overflow-y-auto min-h-0">
-              {tabs.map((t, index) =>
-                t.isPopup ? null : (
-                  <div key={t.id}>
-                    <div
-                      aria-hidden
-                      className="h-0 border-t-2 -my-px transition-colors"
-                      style={{
-                        borderTopColor:
-                          dropIndex === index
-                            ? "var(--color-maek-red)"
-                            : "transparent",
-                      }}
+        <div
+          ref={sidebarScrollRef}
+          data-testid="explorer-content-scroll"
+          className="explorer-content-scroll flex-1 min-h-0 overflow-y-auto"
+          onScroll={onSidebarScroll}
+        >
+          {visibleViewGroups.length > 0 && (
+            <>
+              <div
+                className="sticky top-0 z-30 bg-warm-vellum pl-5 pr-3 pt-2 pb-1 text-sm font-semibold tracking-wide text-muted-text flex items-center"
+                style={{ height: SECTION_HEADER_HEIGHT }}
+              >
+                <span className="flex items-center gap-2">
+                  Open Tabs
+                  {saveStatus && (
+                    <span
+                      data-testid="open-tabs-save-status"
+                      role="status"
+                      aria-label={saveStatus}
+                      title={saveStatus}
+                      className={cn(
+                        "block w-2 h-2 rounded-full bg-[var(--color-maek-red)] shrink-0",
+                        saveStatus === "Saving" && "motion-safe:animate-pulse",
+                      )}
                     />
-                    <div
-                      role="tab"
-                      aria-selected={t.id === activeTabId}
-                      data-tab-id={t.id}
+                  )}
+                </span>
+              </div>
+              <div className="px-3 pb-1">
+                {visibleViewGroups.map((group, index) => {
+                  const ids = group.kind === "single" ? [group.tabId] : [group.left, group.right];
+                  const groupTabs = ids.map((id) => tabById.get(id)).filter(Boolean);
+                  const primary = groupTabs[0];
+                  const activeId = group.kind === "split"
+                    ? (group.active === "left" ? group.left : group.right)
+                    : group.tabId;
+                  const split = group.kind === "split";
+                  const dirty = groupTabs.some((tab) => tab && (isTabDirty(tab) || tab.status === "saving"));
+                  if (!primary) return null;
+                  return (
+                    <div key={group.id}>
+                      <div
+                        aria-hidden
+                        className="h-0 border-t-2 -my-px transition-colors"
+                        style={{
+                          borderTopColor:
+                            dropIndex === index
+                              ? "var(--color-maek-red)"
+                              : "transparent",
+                        }}
+                      />
+                      <div
+                        role="tab"
+                      aria-selected={group.id === activeViewGroupId}
+                      aria-label={split ? `Split view: ${groupTabs.map((tab) => tab!.name).join(" and ")}` : primary.name}
+                      data-tab-id={primary.id}
+                      data-view-group-id={group.id}
                       tabIndex={0}
                       onPointerDown={(e) => {
                         if (e.button !== 0 || e.target instanceof HTMLButtonElement)
                           return;
                         dragTab.current = {
-                          id: t.id,
+                          id: group.id,
                           pointerId: e.pointerId,
                           startX: e.clientX,
                           startY: e.clientY,
@@ -856,141 +1034,167 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                           suppressTabClick.current = false;
                           return;
                         }
-                        useStore.getState().setActiveTab(t.id);
+                        useStore.getState().setActiveViewGroup(group.id);
                       }}
                       onAuxClick={(e) => {
                         if (e.button === 1)
-                          void useStore.getState().closeTab(t.id);
+                          void useStore.getState().closeViewGroup(group.id);
                       }}
                       onContextMenu={(e) => {
                         e.preventDefault();
-                        setOpenNotesMenu({ x: e.clientX, y: e.clientY, id: t.id });
+                        setOpenNotesMenu({ x: e.clientX, y: e.clientY, id: activeId, groupId: group.id });
                       }}
                       className={cn(
                         "group flex items-center gap-1.5 h-7 px-2 rounded-md cursor-pointer select-none text-sm transition-colors",
-                        t.isEphemeral && "italic",
-                        t.id === activeTabId
+                        groupTabs.some((tab) => tab?.isEphemeral) && "italic",
+                        group.id === activeViewGroupId
                           ? "bg-maek-red/10 text-maek-red"
                           : "text-neutral-ink hover:bg-surface-overlay",
                       )}
                     >
-                      <span
-                        className="truncate flex-1 min-w-0"
-                        title={t.isEphemeral ? `${t.name} (Preview)` : t.name}
-                      >
-                        {t.name}
-                      </span>
-                      {tabs.some(
-                        (other) => other.id !== t.id && other.name === t.name,
+                      {split ? (
+                        <>
+                          <Columns2 size={14} className="shrink-0" aria-hidden />
+                          <span className="flex-1 min-w-0 grid grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] items-center gap-1.5" title={groupTabs.map((tab) => tab!.name).join(" · ")}>
+                            <FileNameLabel fileName={groupTabs[0]!.name} className={group.active === "left" ? "font-semibold" : ""} />
+                            <span className="h-3 bg-current opacity-20" aria-hidden />
+                            <FileNameLabel fileName={groupTabs[1]!.name} className={group.active === "right" ? "font-semibold" : ""} />
+                          </span>
+                        </>
+                      ) : <FileNameLabel fileName={primary.name} className="flex-1 min-w-0" title={primary.isEphemeral ? `${primary.name} (Preview)` : primary.name} />}
+                      {!split && tabs.some(
+                        (other) => other.id !== primary.id && other.name === primary.name,
                       ) && (
                         <span className="text-[10px] text-muted-text shrink-0">
-                          {t.parentName}
+                          {primary.parentName}
                         </span>
                       )}
-                      {isTabDirty(t) || t.status === "saving" ? (
+                      {dirty ? (
                         <span
                           className={cn(
                             "w-2 h-2 rounded-full bg-[var(--color-maek-red)] shrink-0",
-                            t.status === "saving" && "motion-safe:animate-pulse",
+                            groupTabs.some((tab) => tab?.status === "saving") && "motion-safe:animate-pulse",
                           )}
-                          aria-label={t.status === "saving" ? "Saving" : "Unsaved"}
-                          title={t.status === "saving" ? "Saving" : "Unsaved"}
+                          aria-label={groupTabs.some((tab) => tab?.status === "saving") ? "Saving" : "Unsaved"}
+                          title={groupTabs.some((tab) => tab?.status === "saving") ? "Saving" : "Unsaved"}
                         />
                       ) : null}
                       <button
-                        aria-label={"Close " + t.name}
+                        aria-label={"Close " + (split ? "split view" : primary.name)}
                         className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-surface-overlay-strong shrink-0"
                         onClick={(e) => {
                           e.stopPropagation();
-                          void useStore.getState().closeTab(t.id);
+                          void useStore.getState().closeViewGroup(group.id);
                         }}
                       >
                         <X size={13} />
                       </button>
                     </div>
                   </div>
-                ),
-              )}
-              <div
-                aria-hidden
-                className="h-0 border-t-2 -my-px transition-colors"
-                style={{
-                  borderTopColor:
-                    dropIndex === tabs.length
-                      ? "var(--color-maek-red)"
-                      : "transparent",
-                }}
-              />
-            </div>
-          </div>
-        )}
-        <div className="pl-5 pr-3 pt-2 pb-1 text-sm font-semibold tracking-wide text-muted-text flex items-center justify-between shrink-0">
-          <span>Files</span>
-          <span className="flex items-center gap-1">
-            <button
-              className="icon-button w-6 h-6"
-              aria-label="Refresh folder tree"
-              onClick={(e) => {
-                e.stopPropagation();
-                void useStore.getState().refresh();
-              }}
-            >
-              <RefreshCw size={14} />
-            </button>
-          </span>
-        </div>
-        <div
-          ref={filesScrollRef}
-          className={cn(
-            "relative flex-1 min-h-0 overflow-y-auto px-2",
-            rootDropActive &&
-              "outline outline-2 -outline-offset-2 outline-[color-mix(in_srgb,var(--color-maek-red)_50%,transparent)] bg-[color-mix(in_srgb,var(--color-maek-red)_5%,transparent)]",
+                  );
+                })}
+                <div
+                  aria-hidden
+                  className="h-0 border-t-2 -my-px transition-colors"
+                  style={{
+                    borderTopColor:
+                      dropIndex === visibleViewGroups.length
+                        ? "var(--color-maek-red)"
+                        : "transparent",
+                  }}
+                />
+              </div>
+            </>
           )}
-          onContextMenu={(e) => {
-            if ((e.target as HTMLElement).closest("[data-file-node]")) return;
-            e.preventDefault();
-            setMenu({ x: e.clientX, y: e.clientY, node: null });
-          }}
-          onDragOver={(e) => {
-            if (e.dataTransfer.types.includes("Files")) {
+          {/* Files header. It is sticky just below the Open Tabs header (top:32
+              when tabs exist, top:0 otherwise) so both labels stack and stay
+              visible. Its containing block is the scroller, so it stays pinned
+              across the whole scroll range. */}
+          <div
+            className="sticky z-20 bg-warm-vellum pl-5 pr-3 pt-2 pb-1 text-sm font-semibold tracking-wide text-muted-text flex items-center justify-between"
+            style={{
+              top: tabs.some((t) => !t.isPopup) ? SECTION_HEADER_HEIGHT : 0,
+              height: SECTION_HEADER_HEIGHT,
+            }}
+          >
+            <span>Files</span>
+            <span className="flex items-center gap-1">
+              <button
+                className="icon-button w-6 h-6"
+                aria-label="Refresh folder tree"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void useStore.getState().refresh();
+                }}
+              >
+                <RefreshCw size={14} />
+              </button>
+            </span>
+          </div>
+          <div
+            ref={filesSectionRef}
+            className="relative px-2"
+            style={{ height: Math.max(1, treeContentHeight) }}
+            onContextMenu={(e) => {
+              if ((e.target as HTMLElement).closest("[data-file-node]")) return;
               e.preventDefault();
-              e.dataTransfer.dropEffect = "copy";
-            }
-          }}
-          onDrop={(e) => {
-            if (!e.dataTransfer.files.length) return;
-            e.preventDefault();
-            const p = (e.target as HTMLElement)
-              .closest("[data-path]")
-              ?.getAttribute("data-path");
-            const n = nodes.find((n) => n.id === p);
-            const dir = n?.isDir ? n.id : (n?.parent ?? "");
-            const files = collectDropFiles(e.dataTransfer);
-            void run(async () => {
-              await api("/api/files/import", "POST", {
-                dir,
-                files: await Promise.all(
-                  (await files).map(async (f) => ({
-                    name: f.name,
-                    data: await toBase64(f.file),
-                  })),
-                ),
+              setMenu({ x: e.clientX, y: e.clientY, node: null });
+            }}
+            onDragOver={(e) => {
+              if (e.dataTransfer.types.includes("Files")) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+              }
+            }}
+            onDrop={(e) => {
+              if (!e.dataTransfer.files.length) return;
+              e.preventDefault();
+              const p = (e.target as HTMLElement)
+                .closest("[data-path]")
+                ?.getAttribute("data-path");
+              const n = nodes.find((n) => n.id === p);
+              const dir = n?.isDir ? n.id : (n?.parent ?? "");
+              const files = collectDropFiles(e.dataTransfer);
+              void run(async () => {
+                await api("/api/files/import", "POST", {
+                  dir,
+                  files: await Promise.all(
+                    (await files).map(async (f) => ({
+                      name: f.name,
+                      data: await toBase64(f.file),
+                    })),
+              ),
               });
               await useStore.getState().refresh();
             });
           }}
         >
+          {/* Sticky, viewport-sized window that holds the real virtual tree.
+              It sits just below the stacked sticky headers and stays pinned as
+              the shared scroller moves; the tree's own scroll offset is driven
+              programmatically to match. The root-drop highlight is drawn around
+              this visible viewport, not the full logical spacer. */}
+          <div
+            ref={filesViewportRef}
+            className={cn(
+              "sticky",
+              rootDropActive &&
+                "outline outline-2 -outline-offset-2 outline-[color-mix(in_srgb,var(--color-maek-red)_50%,transparent)] bg-[color-mix(in_srgb,var(--color-maek-red)_5%,transparent)]",
+            )}
+            style={{ top: headerStackHeight, height: treeViewportHeight }}
+          >
           <TreeContext.Provider value={treeContextValue}>
             <Tree
               key={workspace?.wsId}
               ref={tree}
               data={data}
               width="100%"
-              height={Math.max(1, filesHeight)}
+              height={Math.max(1, treeViewportHeight)}
               rowHeight={ROW_HEIGHT}
               indent={12}
               overscanCount={8}
               openByDefault={false}
+              outerElementType={UnifiedTreeOuter}
               initialOpenState={Object.fromEntries(expanded.map((p) => [p, true]))}
               // Suppress the sibling insertion line entirely; folder/root
               // highlight is drawn via willReceiveDrop and the root outline.
@@ -1048,13 +1252,15 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
               {Node}
             </Tree>
           </TreeContext.Provider>
+          </div>
           {nodes.length === 0 && (
             <p className="text-sm text-muted-text text-center mt-8 pointer-events-none">
               No files found
             </p>
           )}
+            </div>
+          </div>
         </div>
-      </div>
       <div className="mt-auto px-3 py-2 shrink-0 flex items-center justify-between">
         <button
           className="icon-button"
@@ -1075,15 +1281,19 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         <FloatingMenu isOpen position={menu} onClose={() => setMenu(null)}>
           {!menu.node && (
             <>
-              <MenuItem label="New note" onClick={() => void run(() => create("file"))} />
-              <MenuItem label="New folder" onClick={() => void run(() => create("dir"))} />
-              <MenuItem label="New database" onClick={() => void run(() => createDatabase())} />
+              {creationActions("", () => setMenu(null))}
               {clipboard.length > 0 && (
                 <>
                   <MenuSeparator />
                   <MenuItem label="Paste" onClick={() => void run(() => paste(""))} />
                 </>
               )}
+            </>
+          )}
+          {menu.node?.isDir && (
+            <>
+              {creationActions(menu.node.id, () => setMenu(null))}
+              <MenuSeparator />
             </>
           )}
           {menu.node && (
@@ -1161,30 +1371,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           minWidth={createButtonRef.current?.getBoundingClientRect().width ?? 0}
           offset={0}
         >
-          <MenuItem
-            icon={<FileText size={16} />}
-            label="New note"
-            onClick={() => {
-              createHoverMenu.close();
-              void run(() => create("file"));
-            }}
-          />
-          <MenuItem
-            icon={<Table size={16} />}
-            label="New database"
-            onClick={() => {
-              createHoverMenu.close();
-              void run(() => createDatabase());
-            }}
-          />
-          <MenuItem
-            icon={<FolderPlus size={16} />}
-            label="New folder"
-            onClick={() => {
-              createHoverMenu.close();
-              void run(() => create("dir"));
-            }}
-          />
+          {creationActions("", () => createHoverMenu.close())}
         </FloatingMenu>
       )}
       <ConfirmDialog
@@ -1242,24 +1429,38 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
           <MenuItem
             label="Close"
             onClick={() => {
-              void useStore.getState().closeTab(openNotesMenu.id);
+              if (openNotesMenu.groupId)
+                void useStore.getState().closeViewGroup(openNotesMenu.groupId);
+              else
+                void useStore.getState().closeTab(openNotesMenu.id);
               setOpenNotesMenu(null);
             }}
           />
           <MenuItem
             label="Close others"
             onClick={() => {
-              for (const t of useStore.getState().tabs)
-                if (t.id !== openNotesMenu.id)
-                  void useStore.getState().closeTab(t.id);
+              if (openNotesMenu.groupId) {
+                for (const group of useStore.getState().viewGroups)
+                  if (group.id !== openNotesMenu.groupId)
+                    void useStore.getState().closeViewGroup(group.id);
+              } else {
+                for (const t of useStore.getState().tabs)
+                  if (t.id !== openNotesMenu.id)
+                    void useStore.getState().closeTab(t.id);
+              }
               setOpenNotesMenu(null);
             }}
           />
           <MenuItem
             label="Close all"
             onClick={() => {
-              for (const t of useStore.getState().tabs)
-                void useStore.getState().closeTab(t.id);
+              if (openNotesMenu.groupId) {
+                for (const group of useStore.getState().viewGroups)
+                  void useStore.getState().closeViewGroup(group.id);
+              } else {
+                for (const t of useStore.getState().tabs)
+                  void useStore.getState().closeTab(t.id);
+              }
               setOpenNotesMenu(null);
             }}
           />

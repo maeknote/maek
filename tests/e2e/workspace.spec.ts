@@ -439,11 +439,38 @@ test("explorer separates creation from object context actions", async ({ page })
   await page.keyboard.press("Escape");
 
   await page.locator('[data-path="Folder"]').click({ button: "right" });
-  await expect(page.getByRole("menuitem", { name: "New CSV", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("menuitem", { name: "New database", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("menuitem", { name: /^Database/ })).toHaveCount(0);
-  await expect(page.getByRole("menuitem", { name: "Turn into database", exact: true })).toHaveCount(0);
+  // Folder context menus now surface the shared creation group above the
+  // object actions.
+  await expect(page.getByRole("menuitem", { name: "New note", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("menuitem", { name: "New folder", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("menuitem", { name: "New database", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("menuitem", { name: "Rename", exact: true })).toHaveCount(1);
   await expect(page.getByRole("menuitem", { name: "Reveal in Finder", exact: true })).toHaveCount(1);
+});
+
+test("folder context menu creates a note, folder and database under that folder", async ({ page }) => {
+  await open(page);
+
+  // New note under the folder → creates Untitled.md on disk and opens it.
+  await page.locator('[data-path="Folder"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "New note", exact: true }).click();
+  await expect.poll(() => existsSync(path.join(root, "Folder/Untitled.md"))).toBe(true);
+  await expect(page.locator('[data-tab-id="Folder/Untitled.md"]')).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // New folder under the folder → creates New Folder on disk.
+  await page.locator('[data-path="Folder"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "New folder", exact: true }).click();
+  await expect.poll(() => existsSync(path.join(root, "Folder/New Folder"))).toBe(true);
+  await page.keyboard.press("Escape");
+
+  // New database under the folder → prompts for a name then creates it there.
+  page.once("dialog", (dialog) => void dialog.accept("Tasks"));
+  await page.locator('[data-path="Folder"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "New database", exact: true }).click();
+  await expect
+    .poll(() => existsSync(path.join(root, "Folder/Tasks/.maek-database.json")))
+    .toBe(true);
 });
 
 test.skip("creates and edits a CSV spreadsheet with undo and autosave", async ({ page }) => {

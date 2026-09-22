@@ -14,7 +14,8 @@ import {
 import { useStore, schedulePersistence, type Tab } from "./store";
 import { api } from "./host";
 import { Explorer } from "./features/explorer/Explorer";
-import { FilePane } from "./features/editor/components/FilePane";
+import { FilePaneHost, isFileBackedTab } from "./features/editor/components/FilePaneHost";
+import { SplitSeparator } from "./features/editor/components/SplitSeparator";
 import { WorkspaceDashboard } from "./features/editor/components/WorkspaceDashboard";
 import { FolderKanbanView } from "./features/database/kanban/FolderKanbanView";
 import { DatabaseView } from "./features/database/DatabaseView";
@@ -77,6 +78,7 @@ function AppContent() {
   const { preferences, onPreferencesChange } = usePreferences(loadPreferences());
   const [route, setRoute] = useState<Route | null>(() => parseRoute());
   const started = useRef(false);
+  const fileAreaRef = useRef<HTMLDivElement>(null);
   const expandSidebar = () => {
     useStore.setState({ sidebarWidth: 300 });
     setCollapsed(false);
@@ -186,7 +188,10 @@ function AppContent() {
       }
       if (cmd && e.key.toLowerCase() === "w" && tab) {
         e.preventDefault();
-        void state.closeTab(tab.id);
+        if (state.activeViewGroupId)
+          void state.closeViewGroup(state.activeViewGroupId);
+        else
+          void state.closeTab(tab.id);
       }
       if (cmd && e.key === ",") {
         e.preventDefault();
@@ -195,7 +200,7 @@ function AppContent() {
     };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
-  }, [state.workspace, tab]);
+  }, [state.workspace, tab, state.activeViewGroupId]);
   async function saveCopy(t: Tab) {
     try {
       const copy = await api<FileNode>("/api/files", "POST", {
@@ -407,27 +412,66 @@ function AppContent() {
               </div>
             )}
             {tab ? (
-              tab.viewKind === "workspace-settings" ? (
-                <WorkspaceDashboard
-                  onNewNote={() => void newNote()}
-                  onOpenNote={() => setSearch(true)}
-                />
-              ) : tab.viewKind === "kanban" ? (
-                <FolderKanbanView folderPath={tab.kanbanFolderPath ?? ""} />
-              ) : tab.viewKind === "database" ? (
-                <DatabaseView folderPath={tab.databaseFolderPath ?? ""} />
-              ) : (
-                <div className="flex-1 min-h-0 flex overflow-hidden">
-                <FilePane
-                  pane="left"
-                  tab={tab}
-                  isSplit={Boolean(sideTab)}
-                  onOpenToSide={() => setSidePicker(true)}
-                  onSaveCopy={(t) => void saveCopy(t)}
-                />
-                {sideTab ? <><div role="separator" aria-label="Resize panes" aria-orientation="vertical" tabIndex={0} className="w-2 shrink-0 cursor-col-resize border-l border-default" onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)} onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) state.setSplitRatio((e.clientX - e.currentTarget.parentElement!.getBoundingClientRect().left) / e.currentTarget.parentElement!.getBoundingClientRect().width); }} onPointerUp={(e) => { e.currentTarget.releasePointerCapture(e.pointerId); schedulePersistence(); }} onKeyDown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); state.setSplitRatio(state.split.ratio + (e.key === "ArrowLeft" ? -.02 : .02)); } }} /><FilePane pane="right" tab={sideTab} isSplit onOpenToSide={() => setSidePicker(true)} onSaveCopy={(t) => void saveCopy(t)} /></> : null}
-                </div>
-              )
+              (() => {
+                const activeFileTab = isFileBackedTab(tab) ? tab : null;
+                const hasFileTabs = state.tabs.some(isFileBackedTab);
+                const nonFileOverlay =
+                  tab.viewKind === "workspace-settings" ? (
+                    <WorkspaceDashboard
+                      onNewNote={() => void newNote()}
+                      onOpenNote={() => setSearch(true)}
+                    />
+                  ) : tab.viewKind === "kanban" ? (
+                    <FolderKanbanView folderPath={tab.kanbanFolderPath ?? ""} />
+                  ) : tab.viewKind === "database" ? (
+                    <DatabaseView folderPath={tab.databaseFolderPath ?? ""} />
+                  ) : null;
+                return (
+                  <>
+                    {hasFileTabs && (
+                      <div
+                        ref={fileAreaRef}
+                        className="flex-1 min-h-0 flex overflow-hidden"
+                        // Keep file panes mounted (preserving their runtime
+                        // state) but out of the layout while a non-file view is
+                        // active.
+                        style={
+                          nonFileOverlay
+                            ? {
+                                position: "absolute",
+                                width: 0,
+                                height: 0,
+                                overflow: "hidden",
+                                pointerEvents: "none",
+                                visibility: "hidden",
+                              }
+                            : undefined
+                        }
+                        aria-hidden={nonFileOverlay ? true : undefined}
+                      >
+                        <FilePaneHost
+                          leftTab={activeFileTab}
+                          rightTab={sideTab}
+                          ratio={state.split.ratio}
+                          onOpenToSide={() => setSidePicker(true)}
+                          onSaveCopy={(t) => void saveCopy(t)}
+                          separator={
+                            activeFileTab && sideTab ? (
+                              <SplitSeparator
+                                getAreaRect={() =>
+                                  fileAreaRef.current?.getBoundingClientRect() ??
+                                  null
+                                }
+                              />
+                            ) : null
+                          }
+                        />
+                      </div>
+                    )}
+                    {nonFileOverlay}
+                  </>
+                );
+              })()
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-muted-text gap-3">
                 <FileText size={36} strokeWidth={1} />

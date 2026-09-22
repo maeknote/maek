@@ -179,14 +179,14 @@ export function FolderCustomizeSubmenu({
       <button
         type="button"
         ref={triggerRef}
-        className="relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-surface-overlay text-neutral-ink"
+        className="menu-item"
         onClick={(e) => {
           e.stopPropagation();
           if (isOpen) closePanel();
           else openFromTrigger();
         }}
       >
-        <span className="min-w-0 flex-1 truncate">Change icon...</span>
+        <span className="menu-item-label flex-1">Change icon</span>
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-text" />
       </button>
 

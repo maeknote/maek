@@ -127,6 +127,63 @@ describe("real workspace host", () => {
       ),
     ).toBeNull();
   });
+  it("preserves folder icons for a folder and its descendants on an app move", async () => {
+    await mkdir(path.join(root, "Projects/Alpha"), { recursive: true });
+    await mkdir(path.join(root, "Team"), { recursive: true });
+    await mkdir(path.join(root, ".maek"), { recursive: true });
+    await writeFile(
+      path.join(root, ".maek/folder-appearance.json"),
+      JSON.stringify({
+        version: 1,
+        folders: {
+          Projects: { icon: "rocket", iconColor: "blue" },
+          "Projects/Alpha": { icon: "star", iconColor: "accent" },
+          Other: { icon: "flag", iconColor: "green" },
+        },
+      }),
+    );
+
+    const moved = await request("PATCH", "/api/files/path", {
+      source: "Projects",
+      dest: "Team/Projects",
+    });
+    expect(moved.statusCode).toBe(200);
+
+    const stored = JSON.parse(
+      await readFile(path.join(root, ".maek/folder-appearance.json"), "utf8"),
+    );
+    expect(stored).toEqual({
+      version: 1,
+      folders: {
+        Other: { icon: "flag", iconColor: "green" },
+        "Team/Projects": { icon: "rocket", iconColor: "blue" },
+        "Team/Projects/Alpha": { icon: "star", iconColor: "accent" },
+      },
+    });
+  });
+  it("does not rewrite the appearance file when the moved folder has no icon", async () => {
+    await mkdir(path.join(root, "Plain"), { recursive: true });
+    await mkdir(path.join(root, "Dest"), { recursive: true });
+    await mkdir(path.join(root, ".maek"), { recursive: true });
+    const original = { version: 1, folders: { Other: { icon: "flag", iconColor: "accent" } } };
+    await writeFile(
+      path.join(root, ".maek/folder-appearance.json"),
+      JSON.stringify(original),
+    );
+
+    const moved = await request("PATCH", "/api/files/path", {
+      source: "Plain",
+      dest: "Dest/Plain",
+    });
+    expect(moved.statusCode).toBe(200);
+
+    // The file is untouched (no matching entries → no rewrite).
+    expect(
+      JSON.parse(
+        await readFile(path.join(root, ".maek/folder-appearance.json"), "utf8"),
+      ),
+    ).toEqual(original);
+  });
   it("saves actual paths atomically and rejects stale or concurrent baselines", async () => {
     await writeFile(
       path.join(root, "note.md"),
