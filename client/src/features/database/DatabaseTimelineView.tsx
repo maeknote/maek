@@ -76,7 +76,7 @@ const ZOOM_CONFIGS: Record<ZoomLevel, ZoomConfig> = {
 const ROW_HEIGHT = 32
 const ROW_GAP = 2
 const HEADER_HEIGHT = 48
-const TIMELINE_PADDING_DAYS = 7
+const TIMELINE_PADDING_DAYS = 365
 const EDGE_HANDLE_WIDTH = 6
 const DRAG_THRESHOLD_PX = 3
 const ROW_DRAG_MIME = 'application/x-maek-row-id'
@@ -151,6 +151,7 @@ export function DatabaseTimelineView({
   const [unscheduledDragRowId, setUnscheduledDragRowId] = useState<string | null>(null)
   const [isTimelineDropActive, setIsTimelineDropActive] = useState(false)
   const timelineRef = useRef<HTMLDivElement>(null)
+  const autoScrollKeyRef = useRef<string | null>(null)
   // Tracks whether the most recently completed pointer interaction was a drag,
   // so the synthetic click that follows pointerup can be ignored without
   // suppressing real clicks.
@@ -337,17 +338,9 @@ export function DatabaseTimelineView({
 
   // Calculate the time range for the timeline
   const { timelineStart, timelineEnd, totalDays } = useMemo(() => {
-    if (scheduled.length === 0) {
-      const today = startOfDay(new Date())
-      return {
-        timelineStart: subDays(today, 14),
-        timelineEnd: addDays(today, 30),
-        totalDays: 44
-      }
-    }
-
-    const allStarts = scheduled.map((s) => s.start)
-    const allEnds = scheduled.map((s) => s.end)
+    const today = startOfDay(new Date())
+    const allStarts = [today, ...scheduled.map((s) => s.start)]
+    const allEnds = [today, ...scheduled.map((s) => s.end)]
     const earliest = dateMin(allStarts)
     const latest = dateMax(allEnds)
 
@@ -371,7 +364,7 @@ export function DatabaseTimelineView({
     const labels: { month: string; startIdx: number; span: number }[] = []
     let currentMonth = ''
     for (let i = 0; i < headerDays.length; i++) {
-      const month = format(headerDays[i], 'MMM yyyy')
+      const month = format(headerDays[i]!, 'MMM yyyy')
       if (month !== currentMonth) {
         labels.push({ month, startIdx: i, span: 1 })
         currentMonth = month
@@ -419,10 +412,15 @@ export function DatabaseTimelineView({
     return () => el.removeEventListener('wheel', handleWheel)
   }, [dateColumn])
 
-  // Scroll to today on mount
+  // Center once per view and zoom level. Row refreshes can recompute the date
+  // range, but must not snap a user's horizontal pan back to today.
   useEffect(() => {
+    if (!meta || !dateColumn) return
+    const key = `${meta.id}:${dateColumn.id}:${zoom}`
+    if (autoScrollKeyRef.current === key) return
+    autoScrollKeyRef.current = key
     scrollToToday()
-  }, [scrollToToday])
+  }, [meta, dateColumn, zoom, scrollToToday])
 
   const handleRowClick = useCallback(
     (row: DatabaseRow) => {
@@ -774,6 +772,7 @@ export function DatabaseTimelineView({
       {/* Scrollable timeline (full-width, no sidebar) */}
       <div
         ref={timelineRef}
+        data-testid="timeline-scroll"
         className={cn('flex-1 overflow-auto', isTimelineDropActive && 'bg-maek-red/[0.03]')}
         onDragOver={handleTimelineDragOver}
         onDragLeave={handleTimelineDragLeave}

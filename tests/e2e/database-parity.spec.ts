@@ -174,6 +174,36 @@ test("database popup fills the dialog through the scrollbar and heading rail", a
   expect(geometry.dialogRight - geometry.railRight).toBeLessThanOrEqual(20);
 });
 
+test("timeline pans horizontally over a scheduled bar", async ({ page }) => {
+  await page.goto("/");
+  await page.getByText("Enter folder path", { exact: true }).click();
+  await page.getByRole("textbox", { name: "Workspace path" }).fill(root);
+  await page.getByRole("button", { name: "Open", exact: true }).click();
+  await page.locator('[data-path="Projects"]').click();
+  await page.getByRole("button", { name: "Timeline", exact: true }).click();
+
+  const scroller = page.locator('[data-testid="timeline-scroll"]');
+  await expect(page.getByRole("button", { name: "Task A", exact: true })).toBeVisible();
+  const before = await scroller.evaluate((element) => ({
+    left: element.scrollLeft,
+    width: element.clientWidth,
+    contentWidth: element.scrollWidth,
+  }));
+  expect(before.contentWidth - before.width).toBeGreaterThan(200);
+
+  await page.getByRole("button", { name: "Task A", exact: true }).hover();
+  await page.mouse.wheel(150, 0);
+  await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeGreaterThan(before.left);
+
+  const afterRight = await scroller.evaluate((element) => element.scrollLeft);
+  await page.mouse.wheel(-150, 0);
+  await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeLessThan(afterRight);
+
+  await page.getByRole("button", { name: "Zoom out" }).click();
+  const monthRange = await scroller.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(monthRange).toBeGreaterThan(200);
+});
+
 test("keeps the Home label when a workspace rename arrives", async ({ page }) => {
   await page.goto("/");
   await page.getByText("Enter folder path", { exact: true }).click();
