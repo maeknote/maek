@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { FileText, X } from "lucide-react";
 import { api } from "@renderer/shared/api";
 import { makeTab, useStore } from "@renderer/features/workspace";
 import type { FileContent } from "@shared/workspace";
@@ -77,7 +77,7 @@ export function NotePopupModal({
   }
   return createPortal(
     <div
-      className="fixed inset-0 z-50"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation();
@@ -86,28 +86,27 @@ export function NotePopupModal({
       }}
     >
       <div
-        className="absolute inset-0 bg-black/15"
+        className="absolute inset-0 bg-black/30 backdrop-blur-sm"
         onClick={() => void close()}
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Database note"
-        className="absolute inset-6 flex flex-col overflow-hidden glass-modal"
+        className="relative z-10 flex h-[min(840px,calc(100dvh-32px))] w-full max-w-6xl flex-col overflow-hidden rounded-2xl glass-modal text-neutral-ink"
       >
-        <button
-          aria-label="Close note"
-          className="absolute top-3 right-3 z-10 p-2"
-          onClick={() => void close()}
-        >
-          <X size={16} />
-        </button>
         {error && (
-          <div role="alert" className="p-6 text-maek-red">
-            {error}
+          <div role="alert" className="m-5 rounded-xl border border-maek-red/30 bg-maek-red/10 p-4 text-sm text-maek-red">
+            <p className="font-medium">Could not open this note</p>
+            <p className="mt-1 text-xs text-maek-red/80">{error}</p>
           </div>
         )}
-        {!tab && !error && <div className="p-6">Loading note…</div>}
+        {!tab && !error && (
+          <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-text">
+            <FileText size={16} aria-hidden="true" />
+            Loading note…
+          </div>
+        )}
         {tab && (
           <>
             <TitleBar
@@ -117,10 +116,19 @@ export function NotePopupModal({
                   throw new Error("Save the note before renaming");
                 await onRename?.(name);
               }}
+              actions={
+                <button
+                  type="button"
+                  aria-label="Close note"
+                  className="icon-button"
+                  onClick={() => void close()}
+                >
+                  <X size={16} />
+                </button>
+              }
             />
-            <div className="px-8 text-xs text-muted-text">{relativePath}</div>
             {tab.error && (
-              <div role="alert" className="px-8 text-maek-red">
+              <div role="alert" className="px-4 py-2 text-xs text-maek-red">
                 {tab.error}
               </div>
             )}
