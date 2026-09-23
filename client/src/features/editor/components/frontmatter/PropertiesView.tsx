@@ -39,7 +39,7 @@ export function PropertiesView({
 
   const commitChanges = useCallback(
     (updatedProperties: PropertyItem[]) => {
-      const yaml = serializePropertiesToYaml(updatedProperties);
+      const yaml = serializePropertiesToYaml(updatedProperties, tab.frontmatter.raw);
       updateFrontmatterRaw(tab.id, yaml);
     },
     [tab.id, updateFrontmatterRaw],
