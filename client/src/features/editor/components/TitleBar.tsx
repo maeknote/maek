@@ -6,10 +6,12 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, ListTree } from "lucide-react";
+import { cn } from "@renderer/lib/utils";
 import { useToast } from "@renderer/shared/components";
 import type { TabItem } from "../types";
 import { getTabFileContent, isEditableMarkdownTab } from "../utils/frontmatter";
+import { useTabStore } from "../stores/tabStore";
 import { ViewerToolbar } from "./ViewerToolbar";
 
 interface TitleBarProps {
@@ -22,6 +24,11 @@ export function TitleBar({ tab, onRename, actions }: TitleBarProps): ReactElemen
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { showToast } = useToast();
+  const { setFrontmatterViewMode, toggleFrontmatterExpanded } = useTabStore();
+  const frontmatterMode = tab.frontmatter.viewMode ?? "properties";
+  const hasFrontmatter =
+    isEditableMarkdownTab(tab) && tab.frontmatter.hasFrontmatter;
+  const isFrontmatterInvalid = Boolean(tab.frontmatter.validationError);
 
   useEffect(() => {
     return () => {
@@ -56,6 +63,40 @@ export function TitleBar({ tab, onRename, actions }: TitleBarProps): ReactElemen
             >
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
+          )}
+          {hasFrontmatter && (
+            <>
+              <button
+                type="button"
+                onClick={() => toggleFrontmatterExpanded(tab.id)}
+                className={cn(
+                  "icon-button",
+                  tab.frontmatter.expanded && "bg-surface-overlay",
+                )}
+                aria-label={
+                  tab.frontmatter.expanded
+                    ? "Hide properties"
+                    : "Show properties"
+                }
+                aria-pressed={tab.frontmatter.expanded}
+              >
+                <ListTree size={14} />
+              </button>
+              {tab.frontmatter.expanded && !isFrontmatterInvalid && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFrontmatterViewMode(
+                      tab.id,
+                      frontmatterMode === "raw" ? "properties" : "raw",
+                    )
+                  }
+                  className="frontmatter-mode-switch"
+                >
+                  {frontmatterMode === "raw" ? "Properties" : "Source"}
+                </button>
+              )}
+            </>
           )}
           {actions}
         </>
