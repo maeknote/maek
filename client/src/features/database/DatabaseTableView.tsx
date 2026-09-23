@@ -520,8 +520,8 @@ export function DatabaseTableView({ databaseFolderPath }: DatabaseTableViewProps
 
   const handleCellCommit =
     (rowId: string, columnName: string) =>
-    (value: unknown): void => {
-      void updateCell(rowId, columnName, value)
+    async (value: unknown): Promise<void> => {
+      await updateCell(rowId, columnName, value)
     }
 
   const handleAggregationChange = async (
@@ -601,12 +601,12 @@ export function DatabaseTableView({ databaseFolderPath }: DatabaseTableViewProps
   }
 
   /** Add a single new option to a select / multi-select column. Used by cell editors. */
-  const handleAddOptionToColumn = (columnId: string, newOption: string): void => {
+  const handleAddOptionToColumn = async (columnId: string, newOption: string): Promise<void> => {
     const target = columns.find((c) => c.id === columnId)
-    if (!target) return
+    if (!target) throw new Error('Column not found')
     const existing = target.options ?? []
     if (existing.includes(newOption)) return
-    void handleColumnOptionsChange(columnId, [...existing, newOption])
+    await handleColumnOptionsChange(columnId, [...existing, newOption])
   }
 
   const handleColumnDelete = async (columnId: string): Promise<void> => {

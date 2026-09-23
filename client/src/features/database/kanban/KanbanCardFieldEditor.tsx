@@ -33,10 +33,10 @@ interface KanbanCardFieldEditorProps {
   value: unknown
   /** Anchor element to position the popover against. */
   anchorRef: RefObject<HTMLElement | null>
-  onCommit: (next: unknown) => void
+  onCommit: (next: unknown) => Promise<void>
   onClose: () => void
   /** Append a new option to the column's schema (select / multi-select only). */
-  onAddOption?: (newOption: string) => void
+  onAddOption?: (newOption: string) => Promise<void>
 }
 
 const INPUT_CLASS =
@@ -51,6 +51,20 @@ export function KanbanCardFieldEditor({
   onAddOption
 }: KanbanCardFieldEditorProps): ReactElement | null {
   const [position, setPosition] = useState<FloatingMenuPosition | null>(null)
+  const [commitError, setCommitError] = useState<string | null>(null)
+  const outsideCommit = useRef<(() => void) | null>(null)
+  const registerOutsideCommit = useCallback((callback: () => void) => {
+    outsideCommit.current = callback
+  }, [])
+  const commit = async (next: unknown): Promise<void> => {
+    setCommitError(null)
+    try {
+      await onCommit(next)
+    } catch (cause) {
+      setCommitError(cause instanceof Error ? cause.message : 'Could not save this property')
+      throw cause
+    }
+  }
 
   // Anchor the popover under (or above, FloatingMenu handles the flip)
   // the trigger element. Recompute on mount; FloatingMenu itself handles
@@ -69,17 +83,19 @@ export function KanbanCardFieldEditor({
       isOpen={position !== null}
       position={position}
       onClose={onClose}
+      onOutsideClick={() => {
+        if (outsideCommit.current) outsideCommit.current()
+        else onClose()
+      }}
+      onEscape={onClose}
       anchorRef={anchorRef}
       minWidth={minWidth}
       className="p-2"
     >
-      <EditorBody
-        column={column}
-        value={value}
-        onCommit={onCommit}
-        onClose={onClose}
-        onAddOption={onAddOption}
-      />
+      <>
+        {commitError && <p role="alert" className="mb-2 max-w-64 text-xs text-red-500">{commitError}</p>}
+        <EditorBody column={column} value={value} onCommit={commit} onClose={onClose} onAddOption={onAddOption} registerOutsideCommit={registerOutsideCommit} />
+      </>
     </FloatingMenu>
   )
 }
@@ -87,9 +103,10 @@ export function KanbanCardFieldEditor({
 interface EditorBodyProps {
   column: DatabaseColumnSchema
   value: unknown
-  onCommit: (next: unknown) => void
+  onCommit: (next: unknown) => Promise<void>
   onClose: () => void
-  onAddOption?: (newOption: string) => void
+  onAddOption?: (newOption: string) => Promise<void>
+  registerOutsideCommit: (callback: () => void) => void
 }
 
 function EditorBody({
@@ -97,7 +114,8 @@ function EditorBody({
   value,
   onCommit,
   onClose,
-  onAddOption
+  onAddOption,
+  registerOutsideCommit
 }: EditorBodyProps): ReactElement {
   switch (column.type) {
     case 'select':
@@ -108,6 +126,7 @@ function EditorBody({
           onCommit={onCommit}
           onClose={onClose}
           onAddOption={onAddOption}
+          registerOutsideCommit={registerOutsideCommit}
         />
       )
     case 'multi-select':
@@ -118,32 +137,34 @@ function EditorBody({
           onCommit={onCommit}
           onClose={onClose}
           onAddOption={onAddOption}
+          registerOutsideCommit={registerOutsideCommit}
         />
       )
     case 'number':
-      return <NumberBody value={value} onCommit={onCommit} onClose={onClose} />
+      return <NumberBody value={value} onCommit={onCommit} onClose={onClose} registerOutsideCommit={registerOutsideCommit} />
     case 'boolean':
-      return <BooleanBody value={value} onCommit={onCommit} onClose={onClose} />
+      return <BooleanBody value={value} onCommit={onCommit} onClose={onClose} registerOutsideCommit={registerOutsideCommit} />
     case 'date':
-      return <DateBody value={value} onCommit={onCommit} onClose={onClose} />
+      return <DateBody value={value} onCommit={onCommit} onClose={onClose} registerOutsideCommit={registerOutsideCommit} />
     case 'date-range':
-      return <DateRangeBody value={value} onCommit={onCommit} onClose={onClose} />
+      return <DateRangeBody value={value} onCommit={onCommit} onClose={onClose} registerOutsideCommit={registerOutsideCommit} />
     case 'list':
-      return <ListBody value={value} onCommit={onCommit} onClose={onClose} />
+      return <ListBody value={value} onCommit={onCommit} onClose={onClose} registerOutsideCommit={registerOutsideCommit} />
     default:
-      return <TextBody value={value} onCommit={onCommit} onClose={onClose} />
+      return <TextBody value={value} onCommit={onCommit} onClose={onClose} registerOutsideCommit={registerOutsideCommit} />
   }
 }
 
 interface SimpleBodyProps {
   value: unknown
-  onCommit: (next: unknown) => void
+  onCommit: (next: unknown) => Promise<void>
   onClose: () => void
+  registerOutsideCommit: (callback: () => void) => void
 }
 
 interface ColumnBodyProps extends SimpleBodyProps {
   column: DatabaseColumnSchema
-  onAddOption?: (newOption: string) => void
+  onAddOption?: (newOption: string) => Promise<void>
 }
 
 // SelectBody — single-select; outside-click closes the popover via FloatingMenu's
@@ -153,8 +174,10 @@ function SelectBody({
   value,
   onCommit,
   onClose,
-  onAddOption
+  onAddOption,
+  registerOutsideCommit
 }: ColumnBodyProps): ReactElement {
+  useEffect(() => registerOutsideCommit(onClose), [onClose, registerOutsideCommit])
   const options = column.options ?? []
   const current = coerceText(value)
   return (
@@ -162,8 +185,7 @@ function SelectBody({
       options={options}
       current={current}
       onPick={(next) => {
-        onCommit(next)
-        onClose()
+        void onCommit(next).then(onClose).catch(() => {})
       }}
       onAddOption={onAddOption}
     />
@@ -175,20 +197,22 @@ function MultiSelectBody({
   value,
   onCommit,
   onClose,
-  onAddOption
+  onAddOption,
+  registerOutsideCommit
 }: ColumnBodyProps): ReactElement {
   const options = column.options ?? []
   const [draft, setDraft] = useState<string[]>(coerceList(value))
+  const commit = async (): Promise<void> => { await onCommit(draft); onClose() }
+  useEffect(() => {
+    registerOutsideCommit(() => { void commit().catch(() => {}) })
+  }, [commit, registerOutsideCommit])
 
   return (
     <MultiSelectOptionList
       options={options}
       draft={draft}
       setDraft={setDraft}
-      onCommit={() => {
-        onCommit(draft)
-        onClose()
-      }}
+      onCommit={commit}
       onCancel={() => {
         onClose()
       }}
@@ -197,7 +221,7 @@ function MultiSelectBody({
   )
 }
 
-function TextBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
+function TextBody({ value, onCommit, onClose, registerOutsideCommit }: SimpleBodyProps): ReactElement {
   const [draft, setDraft] = useState(coerceText(value))
   const ref = useRef<HTMLTextAreaElement>(null)
   const resize = useCallback(() => {
@@ -206,6 +230,8 @@ function TextBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
   }, [])
+  const commit = async (): Promise<void> => { await onCommit(draft); onClose() }
+  useEffect(() => { registerOutsideCommit(() => { void commit().catch(() => {}) }) }, [commit, registerOutsideCommit])
   useEffect(() => {
     const el = ref.current
     if (!el) return
@@ -229,10 +255,9 @@ function TextBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
           resize()
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
-            onCommit(draft)
-            onClose()
+            void commit().catch(() => {})
           } else if (e.key === 'Escape') {
             e.preventDefault()
             onClose()
@@ -241,30 +266,28 @@ function TextBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
       />
       <EditorActionRow
         onCancel={onClose}
-        onCommit={() => {
-          onCommit(draft)
-          onClose()
-        }}
+        onCommit={commit}
       />
     </BodyWrapper>
   )
 }
 
-function NumberBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
+function NumberBody({ value, onCommit, onClose, registerOutsideCommit }: SimpleBodyProps): ReactElement {
   const initial = coerceNumber(value)
   const [draft, setDraft] = useState(initial === null ? '' : String(initial))
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => ref.current?.focus(), [])
 
-  const commit = (): void => {
+  const commit = async (): Promise<void> => {
     if (draft.trim() === '') {
-      onCommit(null)
+      await onCommit(null)
     } else {
       const n = Number(draft)
-      onCommit(Number.isFinite(n) ? n : null)
+      await onCommit(Number.isFinite(n) ? n : null)
     }
     onClose()
   }
+  useEffect(() => { registerOutsideCommit(() => { void commit().catch(() => {}) }) }, [commit, registerOutsideCommit])
 
   return (
     <BodyWrapper>
@@ -275,7 +298,7 @@ function NumberBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commit().catch(() => {})
           else if (e.key === 'Escape') onClose()
         }}
       />
@@ -284,11 +307,12 @@ function NumberBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement
   )
 }
 
-function BooleanBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
+function BooleanBody({ value, onCommit, onClose, registerOutsideCommit }: SimpleBodyProps): ReactElement {
   const current = coerceBoolean(value)
+  useEffect(() => { registerOutsideCommit(onClose) }, [onClose, registerOutsideCommit])
 
-  const pick = (next: boolean | null): void => {
-    onCommit(next)
+  const pick = async (next: boolean | null): Promise<void> => {
+    await onCommit(next)
     onClose()
   }
 
@@ -296,7 +320,7 @@ function BooleanBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElemen
     <div className="flex flex-col gap-1">
       <button
         type="button"
-        onClick={() => pick(true)}
+        onClick={() => { void pick(true).catch(() => {}) }}
         className={cn(
           'w-full rounded-md px-2 py-1 text-left text-sm hover:bg-surface-overlay',
           current ? 'bg-surface-overlay/70 text-maek-red' : 'text-neutral-ink'
@@ -306,7 +330,7 @@ function BooleanBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElemen
       </button>
       <button
         type="button"
-        onClick={() => pick(false)}
+        onClick={() => { void pick(false).catch(() => {}) }}
         className={cn(
           'w-full rounded-md px-2 py-1 text-left text-sm hover:bg-surface-overlay',
           !current && value !== null && value !== undefined
@@ -318,7 +342,7 @@ function BooleanBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElemen
       </button>
       <button
         type="button"
-        onClick={() => pick(null)}
+        onClick={() => { void pick(null).catch(() => {}) }}
         className="w-full rounded-md px-2 py-1 text-left text-sm text-muted-text hover:bg-surface-overlay"
       >
         Clear
@@ -327,15 +351,16 @@ function BooleanBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElemen
   )
 }
 
-function DateBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
+function DateBody({ value, onCommit, onClose, registerOutsideCommit }: SimpleBodyProps): ReactElement {
   const [draft, setDraft] = useState(coerceDateString(value))
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => ref.current?.focus(), [])
 
-  const commit = (): void => {
-    onCommit(draft || '')
+  const commit = async (): Promise<void> => {
+    await onCommit(draft || '')
     onClose()
   }
+  useEffect(() => { registerOutsideCommit(() => { void commit().catch(() => {}) }) }, [commit, registerOutsideCommit])
 
   return (
     <BodyWrapper>
@@ -346,7 +371,7 @@ function DateBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commit().catch(() => {})
           else if (e.key === 'Escape') onClose()
         }}
       />
@@ -355,19 +380,20 @@ function DateBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
   )
 }
 
-function DateRangeBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
+function DateRangeBody({ value, onCommit, onClose, registerOutsideCommit }: SimpleBodyProps): ReactElement {
   const initial = parseDateRange(value)
   const [start, setStart] = useState(initial.start ?? '')
   const [end, setEnd] = useState(initial.end ?? '')
 
-  const commit = (): void => {
+  const commit = async (): Promise<void> => {
     const next: DatabaseDateRangeValue = {
       start: start.trim() === '' ? null : start,
       end: end.trim() === '' ? null : end
     }
-    onCommit(next)
+    await onCommit(next)
     onClose()
   }
+  useEffect(() => { registerOutsideCommit(() => { void commit().catch(() => {}) }) }, [commit, registerOutsideCommit])
 
   const rangeInputClass =
     'flex-1 rounded-md border border-[var(--color-input-border-focus)] bg-[var(--color-input-bg)] px-2 py-1 text-xs text-neutral-ink outline-none'
@@ -381,7 +407,7 @@ function DateRangeBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElem
           value={start}
           onChange={(e) => setStart(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commit().catch(() => {})
             else if (e.key === 'Escape') onClose()
           }}
         />
@@ -392,7 +418,7 @@ function DateRangeBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElem
           value={end}
           onChange={(e) => setEnd(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commit().catch(() => {})
             else if (e.key === 'Escape') onClose()
           }}
         />
@@ -402,19 +428,20 @@ function DateRangeBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElem
   )
 }
 
-function ListBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
+function ListBody({ value, onCommit, onClose, registerOutsideCommit }: SimpleBodyProps): ReactElement {
   const [draft, setDraft] = useState(coerceList(value).join(', '))
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => ref.current?.focus(), [])
 
-  const commit = (): void => {
+  const commit = async (): Promise<void> => {
     const next = draft
       .split(',')
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
-    onCommit(next)
+    await onCommit(next)
     onClose()
   }
+  useEffect(() => { registerOutsideCommit(() => { void commit().catch(() => {}) }) }, [commit, registerOutsideCommit])
 
   return (
     <BodyWrapper>
@@ -426,7 +453,7 @@ function ListBody({ value, onCommit, onClose }: SimpleBodyProps): ReactElement {
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commit().catch(() => {})
           else if (e.key === 'Escape') onClose()
         }}
       />

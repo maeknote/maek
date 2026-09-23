@@ -477,21 +477,21 @@ export function DatabaseKanbanView({ databaseFolderPath }: DatabaseKanbanViewPro
   // Wired into KanbanCardFieldEditor so users can create options inline from
   // a card's chip popover.
   const addColumnOption = useCallback(
-    (colId: string, newOption: string) => {
-      if (!meta) return
+    async (colId: string, newOption: string): Promise<void> => {
+      if (!meta) throw new Error('Database is not ready')
       const col = meta.schema.find((c) => c.id === colId)
-      if (!col) return
+      if (!col) throw new Error('Column not found')
       const existing = col.options ?? []
       if (existing.includes(newOption)) return
       const updatedCol: DatabaseColumnSchema = { ...col, options: [...existing, newOption] }
-      void updateSchema(meta.schema.map((c) => (c.id === colId ? updatedCol : c)))
+      await updateSchema(meta.schema.map((c) => (c.id === colId ? updatedCol : c)))
     },
     [meta, updateSchema]
   )
 
   const handleCardUpdateCell = useCallback(
-    (rowId: string, columnName: string, value: unknown) => {
-      void updateCell(rowId, columnName, value)
+    async (rowId: string, columnName: string, value: unknown): Promise<void> => {
+      await updateCell(rowId, columnName, value)
     },
     [updateCell]
   )
@@ -636,14 +636,6 @@ export function DatabaseKanbanView({ databaseFolderPath }: DatabaseKanbanViewPro
     )
   }
 
-  if (error) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-red-500">{error}</p>
-      </div>
-    )
-  }
-
   if (!meta || !groupColumn || !rootPath) {
     return (
       <div className="flex h-full items-center justify-center text-muted-text">
@@ -654,6 +646,7 @@ export function DatabaseKanbanView({ databaseFolderPath }: DatabaseKanbanViewPro
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {error && <p role="alert" className="px-4 py-1 text-xs text-red-500">{error}</p>}
       <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-muted-text shrink-0">
         <span>
           {filteredRows.length} {filteredRows.length === 1 ? 'card' : 'cards'}

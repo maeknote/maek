@@ -159,7 +159,8 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
 
   const updateCell = useCallback(
     async (rowId: string, columnName: string, value: unknown) => {
-      if (!rootPath || !meta) return
+      if (!rootPath || !meta) throw new Error('Database is not ready')
+      setError(null)
       const result = await databaseApi.databaseUpdateCell(
         rootPath,
         meta.id,
@@ -169,23 +170,26 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
       )
       if (!result.success) {
         setError(result.error)
-        return
+        throw new Error(result.error)
       }
       // Optimistic merge to avoid a full reload flicker.
       setRows((prev) => prev.map((r) => (r.id === result.row.id ? result.row : r)))
+      setError(null)
     },
     [rootPath, meta]
   )
 
   const updateSchema = useCallback(
     async (schema: DatabaseColumnSchema[]) => {
-      if (!rootPath || !meta) return
+      if (!rootPath || !meta) throw new Error('Database is not ready')
+      setError(null)
       const result = await databaseApi.databaseUpdateSchema(rootPath, meta.id, schema)
       if (!result.success) {
         setError(result.error)
-        return
+        throw new Error(result.error)
       }
-      await refreshRegistry(rootPath)
+      const refreshed = await refreshRegistry(rootPath)
+      if (!refreshed.length) throw new Error('Could not refresh database settings')
     },
     [rootPath, meta]
   )

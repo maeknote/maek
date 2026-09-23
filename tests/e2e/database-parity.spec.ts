@@ -59,6 +59,44 @@ test.beforeEach(() => {
   );
 });
 test.afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+test('popup body edits preserve database frontmatter and derived views', async ({ page }) => {
+  await page.goto('/');
+  await page.getByText('Enter folder path', { exact: true }).click();
+  await page.getByRole('textbox', { name: 'Workspace path' }).fill(root);
+  await page.getByRole('button', { name: 'Open', exact: true }).click();
+  await page.locator('[data-path="Projects"]').click();
+  await page.getByText('Task A', { exact: true }).first().hover();
+  await page.getByRole('button', { name: 'Open in center peek' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Database note' });
+  await dialog.locator('.tiptap').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' Saved from popup.');
+  await page.getByRole('button', { name: 'Close note' }).click();
+
+  await expect.poll(() => readFileSync(path.join(root, 'Projects/Task A.md'), 'utf8'))
+    .toContain('Saved from popup.');
+  const saved = readFileSync(path.join(root, 'Projects/Task A.md'), 'utf8');
+  expect(saved).toContain('Status: Todo');
+  expect(saved).toContain('Period:\n  start: 2026-09-14\n  end: 2026-09-18');
+
+  await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+  await expect(page.getByText('Todo', { exact: true })).toBeVisible();
+  await expect(page.getByText('Task A', { exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Original', exact: true }).click();
+  const kanbanEditor = page.locator('textarea').last();
+  await kanbanEditor.fill('Edited from Kanban');
+  await kanbanEditor.press('Enter');
+  await expect.poll(() => readFileSync(path.join(root, 'Projects/Task A.md'), 'utf8'))
+    .toContain('Notes: Edited from Kanban');
+  const kanbanSaved = readFileSync(path.join(root, 'Projects/Task A.md'), 'utf8');
+  expect(kanbanSaved).toContain('Status: Todo');
+  expect(kanbanSaved).toContain('Period:\n  start: 2026-09-14\n  end: 2026-09-18');
+  await page.getByRole('button', { name: 'Timeline', exact: true }).click();
+  await expect(page.getByText('1 scheduled', { exact: true })).toBeVisible();
+});
+
 test("desktop database views, popup editing, and shared dashboard", async ({
   page,
 }) => {
@@ -83,6 +121,9 @@ test("desktop database views, popup editing, and shared dashboard", async ({
   await expect
     .poll(() => readFileSync(path.join(root, "Projects/Task A.md"), "utf8"))
     .toContain("Saved from popup.");
+  const savedPopupNote = readFileSync(path.join(root, "Projects/Task A.md"), "utf8");
+  expect(savedPopupNote).toContain("Status: Todo");
+  expect(savedPopupNote).toContain("Period:\n  start: 2026-09-14\n  end: 2026-09-18");
   for (const name of ["Kanban", "Calendar", "Timeline", "Table"]) {
     await page.getByRole("button", { name, exact: true }).click();
     await expect
@@ -98,6 +139,11 @@ test("desktop database views, popup editing, and shared dashboard", async ({
       .toBe(name.toLowerCase());
     await page.screenshot({ path: `/tmp/maek-${name.toLowerCase()}.png` });
   }
+  await page.getByRole("button", { name: "Kanban", exact: true }).click();
+  await expect(page.getByText("Todo", { exact: true })).toBeVisible();
+  await expect(page.getByText("Task A", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Timeline", exact: true }).click();
+  await expect(page.getByText("1 scheduled", { exact: true })).toBeVisible();
   for (const name of ["Kanban", "Calendar", "Timeline"]) {
     await page.getByRole("button", { name, exact: true }).click();
     if (name === "Kanban") {

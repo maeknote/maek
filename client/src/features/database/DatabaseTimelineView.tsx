@@ -27,7 +27,9 @@ import {
   eachDayOfInterval,
   isToday,
   min as dateMin,
-  max as dateMax
+  max as dateMax,
+  parseISO,
+  isValid
 } from 'date-fns'
 import { GanttChart, Plus, ZoomIn, ZoomOut } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
@@ -105,12 +107,12 @@ function parseDateValue(
 
   if (column.type === 'date-range') {
     const obj = raw as { start?: string | null; end?: string | null }
-    const s = obj?.start ? new Date(obj.start) : null
-    const e = obj?.end ? new Date(obj.end) : null
-    if (s && !isNaN(s.getTime())) {
+    const s = obj?.start ? parseISO(obj.start) : null
+    const e = obj?.end ? parseISO(obj.end) : null
+    if (s && isValid(s)) {
       return {
         start: startOfDay(s),
-        end: e && !isNaN(e.getTime()) ? startOfDay(e) : startOfDay(s)
+        end: e && isValid(e) ? startOfDay(e) : startOfDay(s)
       }
     }
     return null
@@ -118,8 +120,8 @@ function parseDateValue(
 
   // Single date column
   if (typeof raw === 'string') {
-    const d = new Date(raw)
-    if (!isNaN(d.getTime())) {
+    const d = parseISO(raw)
+    if (isValid(d)) {
       return { start: startOfDay(d), end: startOfDay(d) }
     }
   }
@@ -133,6 +135,7 @@ export function DatabaseTimelineView({
   const {
     meta,
     rows,
+    error,
     addRow,
     deleteRow,
     reload,
@@ -710,6 +713,7 @@ export function DatabaseTimelineView({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {error && <p role="alert" className="px-4 py-1 text-xs text-red-500">{error}</p>}
       {/* Toolbar: date-column selector + scheduled count on the left, zoom on the right */}
       <div className="flex items-center justify-between px-4 py-1.5 shrink-0">
         <div className="flex items-center gap-2">

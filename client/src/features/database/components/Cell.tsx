@@ -22,12 +22,12 @@ import { EditorActionRow, MultiSelectOptionList, SelectOptionList } from './cell
 interface CellProps {
   column: DatabaseColumnSchema
   value: unknown
-  onCommit: (nextValue: unknown) => void
+  onCommit: (nextValue: unknown) => void | Promise<void>
   /**
    * Adds a new option to the column's `options` array (select / multi-select only).
    * Wired by the table view so users can create new options inline from the cell editor.
    */
-  onAddOption?: (newOption: string) => void
+  onAddOption?: (newOption: string) => Promise<void>
 }
 
 const INPUT_CLASS =
@@ -47,6 +47,14 @@ function ChipBadge({ label }: { label: string }): ReactElement {
 
 export function Cell({ column, value, onCommit, onAddOption }: CellProps): ReactElement {
   const [isEditing, setIsEditing] = useState(false)
+  const commit = useCallback(async (next: unknown): Promise<boolean> => {
+    try {
+      await onCommit(next)
+      return true
+    } catch {
+      return false
+    }
+  }, [onCommit])
   const startEdit = useCallback(() => {
     setIsEditing(true)
   }, [])
@@ -58,7 +66,7 @@ export function Cell({ column, value, onCommit, onAddOption }: CellProps): React
         <input
           type="checkbox"
           checked={coerceBoolean(value)}
-          onChange={(e) => onCommit(e.target.checked)}
+          onChange={(e) => { void commit(e.target.checked) }}
           className="h-4 w-4 cursor-pointer accent-maek-red"
           aria-label={column.name}
         />
@@ -111,17 +119,17 @@ export function Cell({ column, value, onCommit, onAddOption }: CellProps): React
 
   switch (column.type) {
     case 'number':
-      return <NumberEditor value={value} onCommit={onCommit} close={() => setIsEditing(false)} />
+      return <NumberEditor value={value} onCommit={commit} close={() => setIsEditing(false)} />
     case 'date':
-      return <DateEditor value={value} onCommit={onCommit} close={() => setIsEditing(false)} />
+      return <DateEditor value={value} onCommit={commit} close={() => setIsEditing(false)} />
     case 'date-range':
-      return <DateRangeEditor value={value} onCommit={onCommit} close={() => setIsEditing(false)} />
+      return <DateRangeEditor value={value} onCommit={commit} close={() => setIsEditing(false)} />
     case 'select':
       return (
         <SelectEditor
           column={column}
           value={value}
-          onCommit={onCommit}
+          onCommit={commit}
           onAddOption={onAddOption}
           close={() => setIsEditing(false)}
         />
@@ -131,15 +139,15 @@ export function Cell({ column, value, onCommit, onAddOption }: CellProps): React
         <MultiSelectEditor
           column={column}
           value={value}
-          onCommit={onCommit}
+          onCommit={commit}
           onAddOption={onAddOption}
           close={() => setIsEditing(false)}
         />
       )
     case 'list':
-      return <ListEditor value={value} onCommit={onCommit} close={() => setIsEditing(false)} />
+      return <ListEditor value={value} onCommit={commit} close={() => setIsEditing(false)} />
     default:
-      return <TextEditor value={value} onCommit={onCommit} close={() => setIsEditing(false)} />
+      return <TextEditor value={value} onCommit={commit} close={() => setIsEditing(false)} />
   }
 }
 
@@ -149,14 +157,14 @@ export function Cell({ column, value, onCommit, onAddOption }: CellProps): React
 
 interface EditorProps {
   value: unknown
-  onCommit: (next: unknown) => void
+  onCommit: (next: unknown) => Promise<boolean>
   close: () => void
 }
 
 interface ColumnEditorProps extends EditorProps {
   column: DatabaseColumnSchema
   /** Optional: add a brand-new option to the column when used inside select/multi-select */
-  onAddOption?: (newOption: string) => void
+  onAddOption?: (newOption: string) => Promise<void>
 }
 
 function TextEditor({ value, onCommit, close }: EditorProps): ReactElement {
@@ -181,9 +189,8 @@ function TextEditor({ value, onCommit, close }: EditorProps): ReactElement {
     resize()
   }, [resize])
 
-  const commit = (): void => {
-    onCommit(draft)
-    close()
+  const commit = async (): Promise<void> => {
+    if (await onCommit(draft)) close()
   }
 
   return (
@@ -201,9 +208,9 @@ function TextEditor({ value, onCommit, close }: EditorProps): ReactElement {
           resize()
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
-            commit()
+            void commit()
           } else if (e.key === 'Escape') {
             e.preventDefault()
             close()
@@ -220,14 +227,13 @@ function NumberEditor({ value, onCommit, close }: EditorProps): ReactElement {
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => inputRef.current?.focus(), [])
 
-  const commit = (): void => {
+  const commit = async (): Promise<void> => {
     if (draft.trim() === '') {
-      onCommit(null)
+      if (await onCommit(null)) close()
     } else {
       const n = Number(draft)
-      onCommit(Number.isFinite(n) ? n : null)
+      if (await onCommit(Number.isFinite(n) ? n : null)) close()
     }
-    close()
   }
 
   return (
@@ -239,7 +245,7 @@ function NumberEditor({ value, onCommit, close }: EditorProps): ReactElement {
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commit()
           else if (e.key === 'Escape') close()
         }}
       />
@@ -252,9 +258,8 @@ function DateEditor({ value, onCommit, close }: EditorProps): ReactElement {
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => inputRef.current?.focus(), [])
 
-  const commit = (): void => {
-    onCommit(draft || '')
-    close()
+  const commit = async (): Promise<void> => {
+    if (await onCommit(draft || '')) close()
   }
 
   return (
@@ -266,7 +271,7 @@ function DateEditor({ value, onCommit, close }: EditorProps): ReactElement {
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commit()
           else if (e.key === 'Escape') close()
         }}
       />
@@ -279,13 +284,12 @@ function DateRangeEditor({ value, onCommit, close }: EditorProps): ReactElement 
   const [start, setStart] = useState(initial.start ?? '')
   const [end, setEnd] = useState(initial.end ?? '')
 
-  const commit = (): void => {
+  const commit = async (): Promise<void> => {
     const next: DatabaseDateRangeValue = {
       start: start.trim() === '' ? null : start,
       end: end.trim() === '' ? null : end
     }
-    onCommit(next)
-    close()
+    if (await onCommit(next)) close()
   }
 
   const rangeInputClass =
@@ -300,7 +304,7 @@ function DateRangeEditor({ value, onCommit, close }: EditorProps): ReactElement 
           value={start}
           onChange={(e) => setStart(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commit()
             else if (e.key === 'Escape') close()
           }}
         />
@@ -311,7 +315,7 @@ function DateRangeEditor({ value, onCommit, close }: EditorProps): ReactElement 
           value={end}
           onChange={(e) => setEnd(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commit()
             else if (e.key === 'Escape') close()
           }}
         />
@@ -339,8 +343,7 @@ function SelectEditor({
         options={options}
         current={current}
         onPick={(next) => {
-          onCommit(next)
-          close()
+          void onCommit(next).then((saved) => { if (saved) close() })
         }}
         onAddOption={onAddOption}
       />
@@ -359,13 +362,13 @@ function MultiSelectEditor({
   const [draft, setDraft] = useState<string[]>(coerceList(value))
   const popoverRef = useRef<HTMLDivElement>(null)
   const dismissRefs = useMemo(() => [popoverRef], [])
-  const commitAndClose = useCallback(() => {
-    onCommit(draft)
-    close()
+  const commitAndClose = useCallback(async () => {
+    if (await onCommit(draft)) close()
   }, [draft, onCommit, close])
   useDismissible({
     isOpen: true,
-    onClose: close,
+    onClose: commitAndClose,
+    onEscape: close,
     refs: dismissRefs,
     escapeKey: true
   })
@@ -389,13 +392,12 @@ function ListEditor({ value, onCommit, close }: EditorProps): ReactElement {
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => inputRef.current?.focus(), [])
 
-  const commit = (): void => {
+  const commit = async (): Promise<void> => {
     const next = draft
       .split(',')
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
-    onCommit(next)
-    close()
+    if (await onCommit(next)) close()
   }
 
   return (
@@ -408,7 +410,7 @@ function ListEditor({ value, onCommit, close }: EditorProps): ReactElement {
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) void commit()
           else if (e.key === 'Escape') close()
         }}
       />
@@ -429,7 +431,7 @@ function CellEditorPanel({
 }): ReactElement {
   const panelRef = useRef<HTMLDivElement>(null)
   const dismissRefs = useMemo(() => [panelRef], [])
-  useDismissible({ isOpen: true, onClose: onCancel, refs: dismissRefs })
+  useDismissible({ isOpen: true, onClose: onCommit, onEscape: onCancel, refs: dismissRefs })
 
   return (
     <div

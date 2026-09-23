@@ -34,6 +34,10 @@ export interface FloatingMenuProps {
   position: FloatingMenuPosition | null;
   /** Callback when menu should close */
   onClose: () => void;
+  /** Optional action for outside clicks when dismissal should commit a draft. */
+  onOutsideClick?: () => void;
+  /** Optional distinct Escape behavior, such as cancelling an uncommitted draft. */
+  onEscape?: () => void;
   /** Menu content */
   children: ReactNode;
   /** Additional CSS classes */
@@ -77,6 +81,8 @@ export function FloatingMenu({
   isOpen,
   position,
   onClose,
+  onOutsideClick,
+  onEscape,
   children,
   className,
   anchorRef,
@@ -103,7 +109,8 @@ export function FloatingMenu({
 
   useDismissible({
     isOpen,
-    onClose,
+    onClose: onOutsideClick ?? onClose,
+    onEscape: onEscape ?? onClose,
     refs,
   });
 

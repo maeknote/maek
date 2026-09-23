@@ -9,22 +9,32 @@ import { Plus } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 
 interface AddOptionRowProps {
-  onAdd: (newOption: string) => void
+  onAdd: (newOption: string) => Promise<void>
   existing: string[]
 }
 
 export function AddOptionRow({ onAdd, existing }: AddOptionRowProps): ReactElement {
   const [draft, setDraft] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const submit = (): void => {
+  const submit = async (): Promise<void> => {
     const trimmed = draft.trim()
     if (trimmed === '' || existing.includes(trimmed)) {
       setDraft('')
       return
     }
-    onAdd(trimmed)
-    setDraft('')
+    setSaving(true)
+    setError(null)
+    try {
+      await onAdd(trimmed)
+      setDraft('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -37,7 +47,7 @@ export function AddOptionRow({ onAdd, existing }: AddOptionRowProps): ReactEleme
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             e.preventDefault()
-            submit()
+            void submit()
           } else if (e.key === 'Escape') {
             e.preventDefault()
             setDraft('')
@@ -49,13 +59,14 @@ export function AddOptionRow({ onAdd, existing }: AddOptionRowProps): ReactEleme
       />
       <button
         type="button"
-        onClick={submit}
-        disabled={draft.trim() === ''}
+        onClick={() => { void submit() }}
+        disabled={draft.trim() === '' || saving}
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-text hover:bg-surface-overlay hover:text-neutral-ink disabled:opacity-30"
         aria-label="Add option"
       >
         <Plus className="h-3.5 w-3.5" />
       </button>
+      {error && <span role="alert" className="text-[10px] text-maek-red">{error}</span>}
     </div>
   )
 }
@@ -67,7 +78,7 @@ interface SelectOptionListProps {
   /** Called with the picked option, or '' to clear. */
   onPick: (value: string) => void
   /** Append a brand-new option to the column schema. */
-  onAddOption?: (newOption: string) => void
+  onAddOption?: (newOption: string) => Promise<void>
 }
 
 export function SelectOptionList({
@@ -85,7 +96,6 @@ export function SelectOptionList({
       >
         — Clear
       </button>
-
       {options.length === 0 && (
         <div className="px-2 py-1 text-xs text-muted-text">No options yet</div>
       )}
@@ -106,10 +116,7 @@ export function SelectOptionList({
       {onAddOption && (
         <AddOptionRow
           existing={options}
-          onAdd={(newOption) => {
-            onAddOption(newOption)
-            onPick(newOption)
-          }}
+          onAdd={(newOption) => onAddOption(newOption).then(() => onPick(newOption))}
         />
       )}
     </>
@@ -122,12 +129,12 @@ interface MultiSelectOptionListProps {
   setDraft: (next: string[]) => void
   onCommit: () => void
   onCancel: () => void
-  onAddOption?: (newOption: string) => void
+  onAddOption?: (newOption: string) => Promise<void>
 }
 
 interface EditorActionRowProps {
   onCancel: () => void
-  onCommit: () => void
+  onCommit: () => void | Promise<void>
 }
 
 export function EditorActionRow({ onCancel, onCommit }: EditorActionRowProps): ReactElement {
@@ -143,7 +150,7 @@ export function EditorActionRow({ onCancel, onCommit }: EditorActionRowProps): R
       <button
         type="button"
         className="rounded-md bg-maek-red/10 px-2 py-1 text-xs font-medium text-maek-red hover:bg-maek-red/20"
-        onClick={onCommit}
+        onClick={() => { void Promise.resolve(onCommit()).catch(() => {}) }}
       >
         Done
       </button>
@@ -186,11 +193,9 @@ export function MultiSelectOptionList({
       {onAddOption && (
         <AddOptionRow
           existing={options}
-          onAdd={(newOption) => {
-            onAddOption(newOption)
-            // Auto-include the brand new option in the current selection.
+          onAdd={(newOption) => onAddOption(newOption).then(() => {
             if (!draft.includes(newOption)) setDraft([...draft, newOption])
-          }}
+          })}
         />
       )}
 

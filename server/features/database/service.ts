@@ -982,7 +982,8 @@ function validateCell(
   const date = (v: unknown) =>
     typeof v === "string" &&
     /^\d{4}-\d{2}-\d{2}$/.test(v) &&
-    !Number.isNaN(Date.parse(v + "T00:00:00Z"));
+    !Number.isNaN(Date.parse(v + "T00:00:00Z")) &&
+    new Date(v + "T00:00:00Z").toISOString().slice(0, 10) === v;
   let valid = true;
   switch (column.type) {
     case "number":
@@ -1000,7 +1001,8 @@ function validateCell(
         typeof value === "object" &&
         !Array.isArray(value) &&
         (v.start == null || date(v.start)) &&
-        (v.end == null || date(v.end));
+        (v.end == null || date(v.end)) &&
+        (v.start == null || v.end == null || String(v.start) <= String(v.end));
       break;
     }
     case "list":

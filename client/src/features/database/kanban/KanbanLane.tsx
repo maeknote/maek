@@ -34,8 +34,8 @@ interface KanbanLaneProps {
   onMoveLane: (laneKey: string, direction: 'left' | 'right') => void
   onDeleteLane: (laneKey: string) => void
   onCardContextMenu?: (rowId: string) => (e: MouseEvent) => void
-  onUpdateCell?: (rowId: string, columnName: string, value: unknown) => void
-  onAddColumnOption?: (columnId: string, newOption: string) => void
+  onUpdateCell?: (rowId: string, columnName: string, value: unknown) => Promise<void>
+  onAddColumnOption?: (columnId: string, newOption: string) => Promise<void>
   onRenameRow?: (rowId: string, newTitle: string) => void
   onCardEditingChange?: (rowId: string, isEditing: boolean) => void
 }

@@ -12,6 +12,8 @@ interface UseDismissibleOptions {
   isOpen: boolean;
   /** Callback when the element should be dismissed */
   onClose: () => void;
+  /** Optional distinct Escape action when outside clicks should commit. */
+  onEscape?: () => void;
   /** Refs to elements that should NOT trigger dismiss when clicked */
   refs: RefObject<HTMLElement | null>[];
   /** Whether to listen for Escape key (default: true) */
@@ -37,6 +39,7 @@ interface UseDismissibleOptions {
 export function useDismissible({
   isOpen,
   onClose,
+  onEscape,
   refs,
   escapeKey = true,
   outsideClick = true,
@@ -91,7 +94,7 @@ export function useDismissible({
       document.removeEventListener("mousedown", handleMouseDown);
       iframeListeners.forEach((cleanup) => cleanup());
     };
-  }, [isOpen, onClose, refs, outsideClick]);
+  }, [isOpen, onClose, onEscape, refs, outsideClick]);
 
   // Handle Escape key
   useEffect(() => {
@@ -100,11 +103,11 @@ export function useDismissible({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        (onEscape ?? onClose)();
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, escapeKey]);
+  }, [isOpen, onClose, onEscape, escapeKey]);
 }

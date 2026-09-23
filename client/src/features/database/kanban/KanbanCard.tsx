@@ -32,9 +32,9 @@ interface KanbanCardProps {
   onOpenInPopup: (row: DatabaseRow) => void
   onContextMenu?: (e: MouseEvent) => void
   /** Persist a property value change. */
-  onUpdateCell?: (rowId: string, columnName: string, value: unknown) => void
+  onUpdateCell?: (rowId: string, columnName: string, value: unknown) => Promise<void>
   /** Append a new option to a select / multi-select column. */
-  onAddColumnOption?: (columnId: string, newOption: string) => void
+  onAddColumnOption?: (columnId: string, newOption: string) => Promise<void>
   /** Persist a title (file name) rename. */
   onRenameRow?: (rowId: string, newTitle: string) => void
   /** Notify parent when this card enters or leaves any edit state (so the
