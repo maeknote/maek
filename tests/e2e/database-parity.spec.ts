@@ -174,7 +174,7 @@ test("database popup fills the dialog through the scrollbar and heading rail", a
   expect(geometry.dialogRight - geometry.railRight).toBeLessThanOrEqual(20);
 });
 
-test("timeline pans horizontally over a scheduled bar", async ({ page }) => {
+test("timeline pans horizontally and fills the viewport", async ({ page }) => {
   await page.goto("/");
   await page.getByText("Enter folder path", { exact: true }).click();
   await page.getByRole("textbox", { name: "Workspace path" }).fill(root);
@@ -202,6 +202,20 @@ test("timeline pans horizontally over a scheduled bar", async ({ page }) => {
   await page.getByRole("button", { name: "Zoom out" }).click();
   const monthRange = await scroller.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(monthRange).toBeGreaterThan(200);
+
+  const gridGeometry = await page.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>('[data-testid="timeline-scroll"]');
+    const body = document.querySelector<HTMLElement>('[data-testid="timeline-grid-body"]');
+    const todayLine = document.querySelector<HTMLElement>('[data-testid="timeline-today-line"]');
+    if (!scroller || !body || !todayLine) throw new Error("Timeline grid is incomplete");
+    return {
+      viewportBottom: scroller.getBoundingClientRect().bottom,
+      bodyBottom: body.getBoundingClientRect().bottom,
+      todayLineBottom: todayLine.getBoundingClientRect().bottom,
+    };
+  });
+  expect(gridGeometry.bodyBottom).toBeGreaterThanOrEqual(gridGeometry.viewportBottom - 2);
+  expect(gridGeometry.todayLineBottom).toBeGreaterThanOrEqual(gridGeometry.viewportBottom - 2);
 });
 
 test("keeps the Home label when a workspace rename arrives", async ({ page }) => {

@@ -778,10 +778,10 @@ export function DatabaseTimelineView({
         onDragLeave={handleTimelineDragLeave}
         onDrop={(e) => void handleTimelineDrop(e)}
       >
-        <div style={{ width: totalWidth, position: 'relative' }}>
+        <div className="relative flex min-h-full flex-col" style={{ width: totalWidth }}>
           {/* Time header */}
           <div
-            className="sticky top-0 z-10 bg-surface border-b border-default"
+            className="sticky top-0 z-10 shrink-0 bg-surface border-b border-default"
             style={{ height: HEADER_HEIGHT }}
           >
             {/* Month labels row */}
@@ -824,7 +824,11 @@ export function DatabaseTimelineView({
           </div>
 
           {/* Bars */}
-          <div style={{ position: 'relative' }}>
+          <div
+            data-testid="timeline-grid-body"
+            className="relative flex-1"
+            style={{ minHeight: Math.max(scheduled.length * (ROW_HEIGHT + ROW_GAP), 200) }}
+          >
             {/* Weekend column stripes (sit behind bars). */}
             {headerDays.map((day, i) => {
               const dow = day.getDay()
@@ -922,20 +926,13 @@ export function DatabaseTimelineView({
             {/* Today line */}
             {todayOffset >= 0 && todayOffset <= totalDays && (
               <div
+                data-testid="timeline-today-line"
                 className="absolute top-0 bottom-0 w-px bg-red-500 z-5 pointer-events-none"
                 style={{
-                  left: todayOffset * zoomConfig.dayWidth + zoomConfig.dayWidth / 2,
-                  height: scheduled.length * (ROW_HEIGHT + ROW_GAP) || HEADER_HEIGHT
+                  left: todayOffset * zoomConfig.dayWidth + zoomConfig.dayWidth / 2
                 }}
               />
             )}
-
-            {/* Ensure minimum height */}
-            <div
-              style={{
-                height: Math.max(scheduled.length * (ROW_HEIGHT + ROW_GAP), 200)
-              }}
-            />
           </div>
         </div>
       </div>
