@@ -47,12 +47,12 @@ export function FrontmatterPanel({ tab, onSave }: FrontmatterPanelProps) {
   return (
     <section className="shrink-0 px-8 pb-1 pt-2">
       {/* Header row */}
-      <div className="flex items-center gap-2">
+      <div className="flex min-h-7 items-center gap-2">
         <button
           type="button"
           onClick={handleToggle}
           aria-expanded={tab.frontmatter.expanded}
-          className="flex items-center gap-1.5 rounded-md py-1 pr-2 text-left transition-colors hover:bg-surface-overlay"
+          className="flex h-7 items-center gap-1.5 rounded-md pr-2 text-left transition-colors hover:bg-surface-overlay"
         >
           {tab.frontmatter.expanded ? (
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-tertiary-text" />
