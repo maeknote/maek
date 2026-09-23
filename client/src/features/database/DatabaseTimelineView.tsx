@@ -48,6 +48,7 @@ import { useRowContextMenu } from './components/RowContextMenu'
 import { DateColumnSelector } from './components/DateColumnSelector'
 import { ViewFilterSortToolbar } from './components/ViewFilterSortToolbar'
 import { computeTimelineDragValue, type TimelineDragMode } from './utils/timelineDrag'
+import { timelineHorizontalWheelDelta } from './utils/timelineScroll'
 import { applyFilter } from './utils/filterEvaluator'
 import { deriveDefaultsFromFilter } from './utils/filterDefaults'
 import { applySort } from './utils/rowSort'
@@ -388,6 +389,35 @@ export function DatabaseTimelineView({
     const scrollTarget = todayOffset * zoomConfig.dayWidth - el.clientWidth / 3
     el.scrollLeft = Math.max(0, scrollTarget)
   }, [timelineStart, zoomConfig.dayWidth])
+
+  useEffect(() => {
+    const el = timelineRef.current
+    if (!el) return
+
+    const handleWheel = (event: WheelEvent): void => {
+      const horizontalDelta = timelineHorizontalWheelDelta({
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        deltaMode: event.deltaMode,
+        shiftKey: event.shiftKey,
+        clientHeight: el.clientHeight,
+        scrollHeight: el.scrollHeight
+      })
+      if (horizontalDelta === 0 || el.scrollWidth <= el.clientWidth) return
+
+      const nextScrollLeft = Math.max(
+        0,
+        Math.min(el.scrollLeft + horizontalDelta, el.scrollWidth - el.clientWidth)
+      )
+      if (nextScrollLeft === el.scrollLeft) return
+
+      event.preventDefault()
+      el.scrollLeft = nextScrollLeft
+    }
+
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [dateColumn])
 
   // Scroll to today on mount
   useEffect(() => {
