@@ -127,6 +127,58 @@ describe("real workspace host", () => {
       ),
     ).toBeNull();
   });
+  it("stores and shares hidden-file visibility through explorer-settings.json", async () => {
+    expect(
+      (await request("GET", "/api/workspace/explorer-settings")).json(),
+    ).toEqual({ version: 1, showHiddenFiles: false });
+    expect(
+      (await request("GET", "/api/workspace/dashboard")).json()
+        .explorerSettings,
+    ).toEqual({ version: 1, showHiddenFiles: false });
+
+    expect(
+      (
+        await request("PUT", "/api/workspace/explorer-settings", {
+          version: 1,
+          showHiddenFiles: true,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      JSON.parse(
+        await readFile(
+          path.join(root, ".maek/explorer-settings.json"),
+          "utf8",
+        ),
+      ),
+    ).toEqual({ version: 1, showHiddenFiles: true });
+
+    expect(
+      (await request("GET", "/api/workspace/explorer-settings")).json(),
+    ).toEqual({ version: 1, showHiddenFiles: true });
+    expect(
+      (await request("GET", "/api/workspace/dashboard")).json()
+        .explorerSettings,
+    ).toEqual({ version: 1, showHiddenFiles: true });
+  });
+  it("keeps dot-prefixed files in the tree snapshot for client-side filtering", async () => {
+    await writeFile(path.join(root, ".gitignore"), "node_modules\n");
+    await mkdir(path.join(root, ".codex"));
+    await writeFile(path.join(root, ".codex", "config.md"), "# codex");
+    await writeFile(path.join(root, "note.md"), "# note");
+    const ids = (await request("GET", "/api/tree"))
+      .json()
+      .nodes.map((n: { id: string }) => n.id);
+    expect(ids).not.toContain(".maek");
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        ".gitignore",
+        ".codex",
+        ".codex/config.md",
+        "note.md",
+      ]),
+    );
+  });
   it("preserves folder icons for a folder and its descendants on an app move", async () => {
     await mkdir(path.join(root, "Projects/Alpha"), { recursive: true });
     await mkdir(path.join(root, "Team"), { recursive: true });

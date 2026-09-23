@@ -203,6 +203,7 @@ export class WorkspaceWatchHub {
       "config.json",
       "recentFiles.json",
       "folder-appearance.json",
+      "explorer-settings.json",
       "database.sqlite",
       "database.sqlite-wal",
     ]);

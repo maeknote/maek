@@ -121,7 +121,17 @@ test("opens an app database and switches across all four web views", async ({ pa
   writeFileSync(path.join(root, "Tasks/First.md"), "---\nStatus: To Do\nDate: 2026-09-15\nPeriod:\n  start: 2026-09-15\n  end: 2026-09-17\n---\n\n# First\n");
   await open(page);
   await page.locator('[data-path="Tasks"]').click();
-  await expect(page.getByText("Tasks", { exact: true }).first()).toBeVisible();
+  const databaseName = page.getByRole("textbox", { name: "Database name" });
+  await expect(databaseName).toHaveValue("Tasks");
+  await expect(page.locator(".content-header").getByText("Database", { exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Tasks Database" })).toBeVisible();
+  await databaseName.fill("Tasks.v2");
+  await databaseName.press("Enter");
+  await expect.poll(() => existsSync(path.join(root, "Tasks.v2/.maek-database.json"))).toBe(true);
+  await expect(databaseName).toHaveValue("Tasks.v2");
+  await expect(page.getByRole("tab", { name: "Tasks.v2 Database" })).toBeVisible();
+  await expect(page.locator('[data-path="Tasks.v2"]').getByText("Database", { exact: true })).toBeVisible();
+  expect(JSON.parse(readFileSync(path.join(root, "Tasks.v2/.maek-database.json"), "utf8")).name).toBe("Tasks.v2");
   await expect(page.getByRole("columnheader", { name: "Status" })).toBeVisible();
   await page.getByRole("button", { name: "Board", exact: true }).click();
   await expect(page.getByText("To Do", { exact: true })).toBeVisible();
@@ -348,7 +358,7 @@ test("manifest-backed HTML edits its declared resource through the shared page A
   ).toHaveLength(1);
 });
 
-test("non-markdown files use the compact file toolbar and markdown keeps the large title", async ({
+test("markdown and other files share the compact file toolbar", async ({
   page,
 }) => {
   writeFileSync(path.join(root, "table.csv"), "name,score\nyoon,100\n");
@@ -400,9 +410,9 @@ test("non-markdown files use the compact file toolbar and markdown keeps the lar
   expect(box!.x + box!.width).toBeLessThanOrEqual(1440);
   expect(box!.y + box!.height).toBeLessThanOrEqual(1000);
 
-  // Markdown keeps the existing large editor title (no "File name" field).
+  // Markdown shares the compact file toolbar and retains its copy action.
   await editNote(page);
-  await expect(page.getByRole("textbox", { name: "File name" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "File name" })).toHaveValue("기존 노트");
   await expect(page.getByRole("button", { name: "Copy note" })).toBeVisible();
 });
 

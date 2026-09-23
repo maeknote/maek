@@ -8,10 +8,12 @@ import {
 import { getDisplayName, toFileName } from "../utils/displayName";
 
 export interface FileRenameProps {
-  /** Current on-disk file name including extension. */
+  /** Current file or database name. */
   fileName: string;
-  /** Persist the new full file name (including extension). */
+  /** Persist the new name (including the extension for files). */
   onRename: (newFileName: string) => Promise<void>;
+  /** Database folder names can contain dots without treating them as extensions. */
+  preserveExtension?: boolean;
 }
 
 export interface FileRename {
@@ -30,12 +32,11 @@ export interface FileRename {
 }
 
 /**
- * Shared rename behaviour for file titles. Preserves the original extension,
- * reverts empty or unchanged input to the display name, and disables editing
- * while a rename is being persisted.
+ * Shared rename behaviour for file and database titles. File extensions stay
+ * fixed; database names remain whole even when they contain dots.
  */
-export function useFileRename({ fileName, onRename }: FileRenameProps): FileRename {
-  const displayName = getDisplayName(fileName);
+export function useFileRename({ fileName, onRename, preserveExtension = true }: FileRenameProps): FileRename {
+  const displayName = preserveExtension ? getDisplayName(fileName) : fileName;
   const [value, setValue] = useState(displayName);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -45,8 +46,8 @@ export function useFileRename({ fileName, onRename }: FileRenameProps): FileRena
 
   // Sync when the underlying file changes (tab switch, external rename).
   useEffect(() => {
-    setValue(getDisplayName(fileName));
-  }, [fileName]);
+    setValue(preserveExtension ? getDisplayName(fileName) : fileName);
+  }, [fileName, preserveExtension]);
 
   const handleSubmit = useCallback(async () => {
     if (skipNextCommit.current) {
@@ -62,7 +63,7 @@ export function useFileRename({ fileName, onRename }: FileRenameProps): FileRena
       return;
     }
 
-    const newFileName = toFileName(trimmed, fileName);
+    const newFileName = preserveExtension ? toFileName(trimmed, fileName) : trimmed;
     setIsSubmitting(true);
     try {
       await onRename(newFileName);
@@ -72,7 +73,7 @@ export function useFileRename({ fileName, onRename }: FileRenameProps): FileRena
     } finally {
       setIsSubmitting(false);
     }
-  }, [value, displayName, fileName, onRename]);
+  }, [value, displayName, fileName, onRename, preserveExtension]);
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {

@@ -15,6 +15,7 @@ import {
   Mail,
 } from "lucide-react";
 import { useStore, schedulePersistence } from "@renderer/features/workspace";
+import { useExplorerSettings } from "@renderer/features/explorer";
 import { Button } from "../../shared/components";
 import { basename } from "../../lib/pathUtils";
 import {
@@ -293,6 +294,8 @@ function WorkspacePage({ onClose }: { onClose: () => void }) {
   const workspaces = useStore((s) => s.workspaces);
   const openWorkspace = useStore((s) => s.openWorkspace);
   const removeWorkspace = useStore((s) => s.removeWorkspace);
+  const showHiddenFiles = useExplorerSettings((s) => s.showHiddenFiles);
+  const setShowHiddenFiles = useExplorerSettings((s) => s.setShowHiddenFiles);
 
   return (
     <div className="flex flex-col gap-7">
@@ -321,6 +324,38 @@ function WorkspacePage({ onClose }: { onClose: () => void }) {
         >
           <FolderOpen size={15} /> Open folder…
         </Button>
+      </section>
+
+      <section>
+        <SectionTitle>File tree</SectionTitle>
+        <label className="flex items-center justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block text-sm text-neutral-ink">
+              Show hidden files and folders
+            </span>
+            <span className="block text-xs text-muted-text mt-0.5">
+              Display entries whose name starts with a dot. Managed and
+              dependency folders like .maek, .git, and node_modules stay hidden.
+            </span>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showHiddenFiles}
+            aria-label="Show hidden files and folders"
+            disabled={!workspace}
+            onClick={() => void setShowHiddenFiles(!showHiddenFiles)}
+            className={`relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              showHiddenFiles ? "bg-maek-red" : "bg-border-gray"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                showHiddenFiles ? "translate-x-5" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </label>
       </section>
 
       <section>

@@ -10,8 +10,8 @@ import { databaseApi } from '@renderer/features/database/api'
 //     · Data cells are inline-editable
 //   - Bottom (tfoot): per-column aggregations + a "+ New row" full-width button
 //
-// The database name is rendered/edited by the editor's TitleBar above this
-// component, so this view only owns the table and its immediate affordances.
+// DatabaseView renders the editable database name above this component, so
+// this view only owns the table and its immediate affordances.
 
 import {
   useCallback,

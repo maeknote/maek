@@ -7,6 +7,7 @@ import type {
   RecentFilesData,
   MaekWorkspaceConfig,
   FolderAppearanceData,
+  ExplorerSettingsData,
 } from "../../shared/workspace-settings";
 import { conflict } from "../core/errors";
 const repository = new WorkspaceMetadataRepository();
@@ -78,8 +79,18 @@ export async function readRecents(ws: Workspace): Promise<RecentFilesData> {
   }
   return result;
 }
-export function recentList(ws: Workspace, data: RecentFilesData) {
-  return Object.entries(data.entries)
+const EXPLORER_SETTINGS_FILE = "explorer-settings.json";
+
+/** Coerce arbitrary parsed JSON into a valid ExplorerSettingsData. */
+export function normalizeExplorerSettings(value: unknown): ExplorerSettingsData {
+  const showHiddenFiles =
+    !!value &&
+    typeof value === "object" &&
+    (value as { showHiddenFiles?: unknown }).showHiddenFiles === true;
+  return { version: 1, showHiddenFiles };
+}
+
+export function recentList(ws: Workspace, data: RecentFilesData) {  return Object.entries(data.entries)
     .map(([p, v]) => ({
       path: path.relative(ws.root, path.resolve(ws.root, p)),
       lastOpened: v.lastOpenedAt,
@@ -151,6 +162,8 @@ export async function dashboard(ws: Workspace): Promise<DashboardState> {
   } catch (e) {
     recentsError = String(e);
   }
+  const explorer = await read<unknown>(ws, EXPLORER_SETTINGS_FILE, null);
+  const explorerSettings = normalizeExplorerSettings(explorer.value);
   return {
     config: config.value,
     rawConfig: config.raw,
@@ -162,6 +175,8 @@ export async function dashboard(ws: Workspace): Promise<DashboardState> {
     recentsError,
     folderAppearance: appearance.value,
     folderAppearanceError: appearance.error,
+    explorerSettings,
+    explorerSettingsError: explorer.error,
   };
 }
 export async function saveConfig(

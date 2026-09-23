@@ -94,9 +94,8 @@ interface FilePaneProps {
 /**
  * Unified renderer for a single editor/viewer pane. Both the primary pane and
  * the split pane use this so their headers and per-file actions stay in sync.
- * The header is a large TitleBar for markdown editors and a compact
- * ViewerToolbar for every other file kind (HTML, image, PDF, text, CSV,
- * unsupported).
+ * Every file kind uses the compact ViewerToolbar; TitleBar adds the markdown
+ * copy action to that shared header.
  */
 export function FilePane({
   pane,

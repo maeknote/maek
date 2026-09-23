@@ -17,6 +17,16 @@ export interface FolderAppearanceData {
   version: 1;
   folders: Record<string, { icon: string; iconColor: string }>;
 }
+export interface ExplorerSettingsData {
+  version: 1;
+  /**
+   * When true, the file tree shows entries whose name (at any path segment)
+   * begins with a dot. Fixed excludes such as `.maek`, `.git`, and
+   * `node_modules` stay hidden regardless. Defaults to false when the file is
+   * absent.
+   */
+  showHiddenFiles: boolean;
+}
 export interface DashboardState {
   config: MaekWorkspaceConfig;
   rawConfig: string | null;
@@ -33,4 +43,6 @@ export interface DashboardState {
   recentsError: string | null;
   folderAppearance: FolderAppearanceData;
   folderAppearanceError: string | null;
+  explorerSettings: ExplorerSettingsData;
+  explorerSettingsError: string | null;
 }

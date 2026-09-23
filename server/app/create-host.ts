@@ -865,6 +865,39 @@ export function createHost(options: HostOptions = {}) {
       });
     });
   }
+  const explorerSettings = z.object({
+    version: z.number().default(1),
+    showHiddenFiles: z.boolean().default(false),
+  });
+  app.get("/api/workspace/explorer-settings", async (req) => {
+    const ws = wsFor(req);
+    try {
+      const parsed = explorerSettings.parse(
+        JSON.parse(
+          await readFile(
+            await metadata.path(ws, "explorer-settings.json"),
+            "utf8",
+          ),
+        ),
+      );
+      return { version: 1, showHiddenFiles: parsed.showHiddenFiles };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        return { version: 1, showHiddenFiles: false };
+      throw error;
+    }
+  });
+  app.put("/api/workspace/explorer-settings", async (req) => {
+    const ws = wsFor(req);
+    const data = explorerSettings.parse(req.body);
+    return serial(ws.root, async () => {
+      await metadata.writeJson(ws, "explorer-settings.json", {
+        version: 1,
+        showHiddenFiles: data.showHiddenFiles,
+      });
+      return { ok: true };
+    });
+  });
   app.get("/api/workspaces/events", async (req, reply) => {
     const { workspace } = z.object({ workspace: z.string() }).parse(req.query);
     const ws = getWorkspace(workspace);

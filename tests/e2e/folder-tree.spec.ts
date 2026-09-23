@@ -28,7 +28,7 @@ async function open(page: Page) {
   await expect(page.locator('[data-path="Folder"]')).toBeVisible();
 }
 
-test("file rows drop format icons while folder and database icons remain", async ({
+test("file rows show muted extensions without format icons", async ({
   page,
 }) => {
   // A custom folder icon via the app-shared appearance file.
@@ -101,7 +101,7 @@ test("a folder toggles exactly once even if a refresh lands mid-click", async ({
   await expect(child).toBeVisible();
 });
 
-test("a database folder opens on row click and toggles only via the chevron", async ({
+test("a database appears as a file-like tree row and opens on click", async ({
   page,
 }) => {
   const now = Date.now();
@@ -135,14 +135,14 @@ test("a database folder opens on row click and toggles only via the chevron", as
   const dbFolder = page.locator('[data-path="Tasks"]');
   const dbChild = page.locator('[data-path="Tasks/First.md"]');
 
-  // A row click opens the database view instead of expanding the folder.
+  await expect(dbFolder.getByText("Database", { exact: true })).toBeVisible();
+  await expect(dbFolder.locator("svg")).toHaveCount(0);
+
+  // The database opens directly; its rows belong to the database view.
   await dbFolder.click();
   await expect(page.getByRole("columnheader", { name: "Status" })).toBeVisible();
   await expect(dbChild).toHaveCount(0);
-
-  // The chevron (first cell of the row) expands the folder without opening it.
-  await dbFolder.locator("span").first().click();
-  await expect(dbChild).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Tasks Database" })).toBeVisible();
 });
 
 test("Enter starts a rename and commits it once, preserving focus through a refresh", async ({

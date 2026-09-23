@@ -32,6 +32,7 @@ import {
 } from "../../shared/components";
 import { useHoverMenu } from "../../shared/hooks";
 import { useStore, schedulePersistence } from "@renderer/features/workspace";
+import { FileNameLabel, isTabDirty } from "@renderer/features/editor";
 import { api, toBase64 } from "@renderer/shared/api";
 import type { FileNode } from "@shared/workspace";
 import type { DatabaseMeta } from "@shared/database";
@@ -39,10 +40,10 @@ import type { FolderAppearance } from "./utils/folderAppearance";
 import { cn } from "../../lib/utils";
 import { collectDropFiles } from "./importDrop";
 import { useFolderAppearance } from "./stores/folderAppearanceStore";
+import { useExplorerSettings } from "./stores/explorerSettingsStore";
+import { isHiddenTreePath } from "./utils/hiddenPath";
 import { FolderCustomizeSubmenu } from "./components/FolderCustomizeSubmenu";
-import { FileNameLabel } from "../editor/components/FileNameLabel";
 import { FOLDER_ICON_MAP, getFolderIconColorValue } from "./utils/folderAppearance";
-import { isTabDirty } from "../editor/utils/frontmatter";
 import {
   edgeScrollDelta,
   isSelfOrDescendantDrop,
@@ -70,9 +71,8 @@ interface Props {
  * (which is what previously wiped the rename input and re-ran clicks).
  */
 interface TreeContextValue {
-  databaseFolders: Set<string>;
+  databaseNames: Map<string, string>;
   appearances: Record<string, FolderAppearance>;
-  browseFolders: Set<string>;
   onRowClick: (node: NodeApi<FileNode>, event: React.MouseEvent) => void;
   onChevronClick: (node: NodeApi<FileNode>, event: React.MouseEvent) => void;
   onRowDoubleClick: (node: NodeApi<FileNode>) => void;
@@ -94,7 +94,7 @@ function useTreeContext(): TreeContextValue {
  */
 function Node({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
   const {
-    databaseFolders,
+    databaseNames,
     appearances,
     onRowClick,
     onChevronClick,
@@ -102,7 +102,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
     onContextMenu,
   } = useTreeContext();
   const isDir = node.data.isDir;
-  const isDatabase = isDir && databaseFolders.has(node.data.id);
+  const isDatabase = isDir && databaseNames.has(node.data.id);
   const appearance = appearances[node.data.id];
 
   // Strip react-arborist's auto-injected paddingLeft so the depth guide spans
@@ -165,13 +165,10 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
       <span
         className="w-4 h-4 flex items-center justify-center shrink-0"
         onClick={(e) => {
-          // The chevron toggles a folder regardless of row-click behaviour. For
-          // database folders this is the ONLY way to expand/collapse, because a
-          // plain row click opens the database instead.
-          if (node.isInternal) onChevronClick(node, e);
+          if (node.isInternal && !isDatabase) onChevronClick(node, e);
         }}
       >
-        {node.isInternal && (
+        {node.isInternal && !isDatabase && (
           <ChevronRight
             className={cn(
               "w-3 h-3 transition-transform",
@@ -180,10 +177,8 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
           />
         )}
       </span>
-      {node.isInternal ? (
-        isDatabase ? (
-          <Table className="w-4 h-4 mr-2 shrink-0 text-maek-red" />
-        ) : appearance ? (
+      {node.isInternal && !isDatabase ? (
+        appearance ? (
           <span className="mr-2 flex items-center justify-center">
             {(() => {
               const IconComponent =
@@ -200,12 +195,15 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
       ) : null}
       {node.isEditing ? (
         <RenameInput node={node} />
+      ) : isDatabase ? (
+        <FileNameLabel
+          fileName={databaseNames.get(node.data.id) ?? node.data.name}
+          typeLabel="Database"
+          className="min-w-0"
+        />
       ) : node.isInternal ? (
         <span
-          className={cn(
-            "truncate",
-            !appearance && !isDatabase ? "" : "ml-1",
-          )}
+          className={cn("truncate", appearance ? "ml-1" : "")}
         >
           {node.data.name}
         </span>
@@ -321,6 +319,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     groupId?: string;
   } | null>(null);
   const { appearances, load } = useFolderAppearance();
+  const showHiddenFiles = useExplorerSettings((s) => s.showHiddenFiles);
 
   const updateDropIndex = useCallback((index: number | null) => {
     dropIndexRef.current = index;
@@ -436,6 +435,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   useEffect(() => {
     if (workspace?.wsId) {
       void load();
+      void useExplorerSettings.getState().load();
     }
   }, [workspace?.wsId, load]);
 
@@ -449,7 +449,6 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const [clipboard, setClipboard] = useState<string[]>([]);
   const [selection, setSelection] = useState<FileNode[]>([]);
   const [pendingEdit, setPendingEdit] = useState<string | null>(null);
-  const [browseFolders] = useState<string[]>([]);
   const [databases, setDatabases] = useState<DatabaseMeta[]>([]);
 
   // The database registry only changes when the workspace loads, its manifests
@@ -492,17 +491,22 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     };
   }, [workspace?.wsId]);
 
-  const databaseFolders = useMemo(
-    () => new Set(databases.map((d) => d.folderPath)),
+  const databaseNames = useMemo(
+    () => new Map(databases.map((d) => [d.folderPath, d.name])),
     [databases],
   );
-  const browseFolderSet = useMemo(() => new Set(browseFolders), [browseFolders]);
 
   const data = useMemo(() => {
-    const map = new Map(
-      nodes.map((n) => [
+    const visible = showHiddenFiles
+      ? nodes
+      : nodes.filter((n) => !isHiddenTreePath(n.id));
+    const map = new Map<string, FileNode>(
+      visible.map((n) => [
         n.id,
-        { ...n, ...(n.isDir ? { children: [] as FileNode[] } : {}) },
+        {
+          ...n,
+          children: n.isDir && !databaseNames.has(n.id) ? [] : undefined,
+        },
       ]),
     );
     const roots: FileNode[] = [];
@@ -511,7 +515,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       else roots.push(n);
     }
     return roots;
-  }, [nodes]);
+  }, [nodes, databaseNames, showHiddenFiles]);
 
   // Number of visible Open Tabs workspaces; drives the anchor-preservation shift.
   const tabCount = useMemo(
@@ -571,9 +575,17 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         useStore.getState().setError("This file is no longer in the folder tree.");
         return;
       }
+      if (!showHiddenFiles && isHiddenTreePath(id)) {
+        useStore
+          .getState()
+          .setError(
+            "This file is hidden. Turn on Show hidden files and folders in Settings to reveal it in the folder tree.",
+          );
+        return;
+      }
       setPendingReveal({ id });
     },
-    [nodes],
+    [nodes, showHiddenFiles],
   );
   useEffect(() => {
     const api = tree.current;
@@ -730,9 +742,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       node.select();
       if (node.data.isDir) {
         const database = databases.find((d) => d.folderPath === node.data.id);
-        if (database && !browseFolders.includes(node.data.id)) {
-          // Database folder: a row click opens the database. Expansion is only
-          // available via the chevron.
+        if (database) {
           useStore.getState().openDatabase(database.folderPath, database.name);
         } else {
           // Ordinary folder: a row click toggles open/closed.
@@ -743,11 +753,11 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         void useStore.getState().openFile(node.data.id, { preview: true });
       }
     },
-    [databases, browseFolders],
+    [databases],
   );
   const onChevronClick = useCallback(
     (node: NodeApi<FileNode>, event: React.MouseEvent) => {
-      // Stop the row click so a database folder toggles instead of opening.
+      // Stop the row click so an ordinary folder toggles only once.
       event.stopPropagation();
       node.toggle();
     },
@@ -766,18 +776,16 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
 
   const treeContextValue = useMemo<TreeContextValue>(
     () => ({
-      databaseFolders,
+      databaseNames,
       appearances,
-      browseFolders: browseFolderSet,
       onRowClick,
       onChevronClick,
       onRowDoubleClick,
       onContextMenu: onNodeContextMenu,
     }),
     [
-      databaseFolders,
+      databaseNames,
       appearances,
-      browseFolderSet,
       onRowClick,
       onChevronClick,
       onRowDoubleClick,
@@ -908,7 +916,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         }
       }}
     >
-      <div className="h-[52px] px-3 pt-2 pb-1 flex items-center gap-1 shrink-0">
+      <div className="h-12 px-3 py-2 flex items-center gap-1 shrink-0">
         <div className="flex-1 min-w-0">
           <FolderSelector
             currentFolderName={workspace?.name ?? null}
@@ -1014,7 +1022,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                       <div
                         role="tab"
                       aria-selected={group.id === activeViewGroupId}
-                      aria-label={split ? `Split view: ${groupTabs.map((tab) => tab!.name).join(" and ")}` : primary.name}
+                      aria-label={split ? `Split view: ${groupTabs.map((tab) => tab!.name).join(" and ")}` : primary.viewKind === "database" ? `${primary.name} Database` : primary.name}
                       data-tab-id={primary.id}
                       data-view-group-id={group.id}
                       tabIndex={0}
@@ -1061,7 +1069,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                             <FileNameLabel fileName={groupTabs[1]!.name} className={group.active === "right" ? "font-semibold" : ""} />
                           </span>
                         </>
-                      ) : <FileNameLabel fileName={primary.name} className="flex-1 min-w-0" title={primary.isEphemeral ? `${primary.name} (Preview)` : primary.name} />}
+                      ) : <FileNameLabel fileName={primary.name} typeLabel={primary.viewKind === "database" ? "Database" : undefined} className="flex-1 min-w-0" title={primary.isEphemeral ? `${primary.name} (Preview)` : primary.viewKind === "database" ? `${primary.name} Database` : primary.name} />}
                       {!split && tabs.some(
                         (other) => other.id !== primary.id && other.name === primary.name,
                       ) && (
@@ -1241,7 +1249,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                 // Root is always a valid destination.
                 if (!parentNode || parentNode.id === ROOT_ID) return false;
                 // Files can never receive a drop; only folders.
-                if (!parentNode.data.isDir) return true;
+                if (!parentNode.data.isDir || databaseNames.has(parentNode.id)) return true;
                 // Reject dropping a node into itself or its own subtree.
                 return isSelfOrDescendantDrop(
                   parentNode.id,
