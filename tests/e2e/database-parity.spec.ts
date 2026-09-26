@@ -220,6 +220,59 @@ test("database popup fills the dialog through the scrollbar and heading rail", a
   expect(geometry.dialogRight - geometry.railRight).toBeLessThanOrEqual(20);
 });
 
+for (const empty of [false, true]) {
+  test(`timeline focuses today after delayed initial rows (${empty ? 'empty' : 'past dates'})`, async ({ page }) => {
+    const manifestPath = path.join(root, 'Projects/.maek-database.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    manifest.activeViewId = 'timeline';
+    manifest.views.find((view: { id: string }) => view.id === 'timeline').config.zoom = 'month';
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    const rowPath = path.join(root, 'Projects/Task A.md');
+    const rowContent = '---\nPeriod:\n  start: 2020-01-01\n  end: 2020-01-03\nNotes: Original\n---\n';
+    if (empty) rmSync(rowPath);
+    else writeFileSync(rowPath, rowContent);
+
+    let releaseRows!: () => void;
+    const rowsReady = new Promise<void>((resolve) => { releaseRows = resolve; });
+    await page.route('**/api/databases/command', async (route) => {
+      if (route.request().postDataJSON().action === 'sync') await rowsReady;
+      await route.continue();
+    });
+    await page.goto('/');
+    await page.getByText('Enter folder path', { exact: true }).click();
+    await page.getByRole('textbox', { name: 'Workspace path' }).fill(root);
+    await page.getByRole('button', { name: 'Open', exact: true }).click();
+    await page.locator('[data-path="Projects"]').click();
+    const scroller = page.getByTestId('timeline-scroll');
+    try {
+      await expect(scroller).toBeVisible();
+      await expect(page.getByText('Month', { exact: true })).toBeVisible();
+    } finally {
+      releaseRows();
+    }
+    await expect(page.getByText(`${empty ? 0 : 1} scheduled`, { exact: true })).toBeVisible();
+    await expect.poll(() => scroller.evaluate((element) => {
+      const today = element.querySelector<HTMLElement>('[data-testid="timeline-today-line"]')!;
+      // The marker includes half a day (4px at Month zoom).
+      return Math.abs(today.getBoundingClientRect().left - element.getBoundingClientRect().left - element.clientWidth / 3 - 4);
+    })).toBeLessThan(2);
+
+    if (!empty) {
+      const panned = await scroller.evaluate((element) => {
+        element.scrollLeft -= 160;
+        return element.scrollLeft;
+      });
+      const refreshed = page.waitForResponse((response) =>
+        response.url().endsWith('/api/databases/command') && response.request().postDataJSON().action === 'sync');
+      writeFileSync(rowPath, rowContent.replace('Original', 'Updated'));
+      await refreshed;
+      await expect(scroller).toHaveJSProperty('scrollLeft', panned);
+      await page.getByRole('button', { name: 'Today', exact: true }).click();
+      await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeGreaterThan(panned);
+    }
+  });
+}
+
 test("timeline pans horizontally and fills the viewport", async ({ page }) => {
   await page.goto("/");
   await page.getByText("Enter folder path", { exact: true }).click();

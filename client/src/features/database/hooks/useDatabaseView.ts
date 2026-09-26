@@ -15,6 +15,8 @@ interface DatabaseViewState {
   meta: DatabaseMeta | null
   rows: DatabaseRow[]
   isLoading: boolean
+  /** The current database has completed at least one successful row load, even if empty. */
+  hasLoadedRows: boolean
   error: string | null
 }
 
@@ -70,6 +72,7 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
 
   const [rows, setRows] = useState<DatabaseRow[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [loadedRowsFor, setLoadedRowsFor] = useState<{ rootPath: string; databaseId: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Gate for onDatabaseRowsChanged — set to true during active kanban drag so
   // watcher-triggered refetches don't clobber optimistic local state.
@@ -83,6 +86,7 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
       const syncResult = await databaseApi.databaseSync(rootPath, meta.id)
       if (syncResult.success) {
         setRows(syncResult.rows)
+        setLoadedRowsFor({ rootPath, databaseId: meta.id })
       } else {
         setError(syncResult.error)
       }
@@ -245,6 +249,10 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
     meta,
     rows,
     isLoading,
+    hasLoadedRows:
+      loadedRowsFor !== null &&
+      loadedRowsFor.rootPath === rootPath &&
+      loadedRowsFor.databaseId === meta?.id,
     error,
     reload,
     addRow,

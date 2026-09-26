@@ -77,6 +77,7 @@ const ZOOM_CONFIGS: Record<ZoomLevel, ZoomConfig> = {
 
 const ROW_HEIGHT = 32
 const ROW_GAP = 2
+const GRID_FADE_LENGTH = 64
 const HEADER_HEIGHT = 48
 const TIMELINE_PADDING_DAYS = 365
 const EDGE_HANDLE_WIDTH = 6
@@ -135,6 +136,7 @@ export function DatabaseTimelineView({
   const {
     meta,
     rows,
+    hasLoadedRows,
     error,
     addRow,
     deleteRow,
@@ -153,6 +155,7 @@ export function DatabaseTimelineView({
   const [drag, setDrag] = useState<DragState | null>(null)
   const [unscheduledDragRowId, setUnscheduledDragRowId] = useState<string | null>(null)
   const [isTimelineDropActive, setIsTimelineDropActive] = useState(false)
+  const [dropDayIndex, setDropDayIndex] = useState<number | null>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const autoScrollKeyRef = useRef<string | null>(null)
   // Tracks whether the most recently completed pointer interaction was a drag,
@@ -415,15 +418,19 @@ export function DatabaseTimelineView({
     return () => el.removeEventListener('wheel', handleWheel)
   }, [dateColumn])
 
-  // Center once per view and zoom level. Row refreshes can recompute the date
-  // range, but must not snap a user's horizontal pan back to today.
+  // Wait for the initial rows and persisted settings to establish the date
+  // range before marking the view as centered. Center once per view and zoom
+  // level; later row refreshes must not snap a user's pan back to today.
   useEffect(() => {
-    if (!meta || !dateColumn) return
-    const key = `${meta.id}:${dateColumn.id}:${zoom}`
+    if (
+      !meta || !dateColumn || !hasLoadedRows ||
+      hydratedForId !== meta.id || !timelineRef.current
+    ) return
+    const key = `${rootPath}:${meta.id}:${dateColumn.id}:${zoom}`
     if (autoScrollKeyRef.current === key) return
     autoScrollKeyRef.current = key
     scrollToToday()
-  }, [meta, dateColumn, zoom, scrollToToday])
+  }, [rootPath, meta, dateColumn, zoom, hasLoadedRows, hydratedForId, scrollToToday])
 
   const handleRowClick = useCallback(
     (row: DatabaseRow) => {
@@ -635,6 +642,7 @@ export function DatabaseTimelineView({
   const handleUnscheduledDragEnd = useCallback(() => {
     setUnscheduledDragRowId(null)
     setIsTimelineDropActive(false)
+    setDropDayIndex(null)
     resumeWatcher()
   }, [resumeWatcher])
 
@@ -644,19 +652,25 @@ export function DatabaseTimelineView({
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
       setIsTimelineDropActive(true)
+      const el = e.currentTarget
+      const x = e.clientX - el.getBoundingClientRect().left + el.scrollLeft
+      const dayIndex = Math.floor(x / zoomConfig.dayWidth)
+      setDropDayIndex(dayIndex >= 0 && dayIndex < totalDays ? dayIndex : null)
     },
-    [unscheduledDragRowId]
+    [unscheduledDragRowId, zoomConfig.dayWidth, totalDays]
   )
 
   const handleTimelineDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
     setIsTimelineDropActive(false)
+    setDropDayIndex(null)
   }, [])
 
   const handleTimelineDrop = useCallback(
     async (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault()
       setIsTimelineDropActive(false)
+      setDropDayIndex(null)
       if (!dateColumn) return
 
       const rowId = unscheduledDragRowId ?? e.dataTransfer.getData(ROW_DRAG_MIME)
@@ -710,6 +724,12 @@ export function DatabaseTimelineView({
   }
 
   const todayOffset = differenceInCalendarDays(new Date(), timelineStart)
+  // Fade only date guides, never the rows or the full-height interaction area.
+  const gridFadeStart = (scheduled.length + 1) * (ROW_HEIGHT + ROW_GAP)
+  const gridMask = unscheduledDragRowId !== null
+    ? 'none'
+    : `linear-gradient(to bottom, black ${gridFadeStart}px, transparent ${gridFadeStart + GRID_FADE_LENGTH}px)`
+  const gridGuideStyle = { maskImage: gridMask, WebkitMaskImage: gridMask }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -841,10 +861,21 @@ export function DatabaseTimelineView({
                 <div
                   key={`weekend-${i}`}
                   className="absolute top-0 bottom-0 bg-black/[0.04] dark:bg-white/[0.04] pointer-events-none"
-                  style={{ left: i * zoomConfig.dayWidth, width: zoomConfig.dayWidth }}
+                  style={{
+                    left: i * zoomConfig.dayWidth,
+                    width: zoomConfig.dayWidth,
+                    ...gridGuideStyle
+                  }}
                 />
               )
             })}
+            {isTimelineDropActive && dropDayIndex !== null && (
+              <div
+                aria-hidden="true"
+                className="absolute top-0 bottom-0 bg-maek-red/10 ring-1 ring-inset ring-maek-red/30 pointer-events-none"
+                style={{ left: dropDayIndex * zoomConfig.dayWidth, width: zoomConfig.dayWidth }}
+              />
+            )}
             {scheduled.map(({ row, start, end }, i) => {
               const isDragging = drag?.rowId === row.id
               const renderStart = isDragging && drag.preview ? drag.preview.start : start
@@ -933,7 +964,8 @@ export function DatabaseTimelineView({
                 data-testid="timeline-today-line"
                 className="absolute top-0 bottom-0 w-px bg-red-500 z-5 pointer-events-none"
                 style={{
-                  left: todayOffset * zoomConfig.dayWidth + zoomConfig.dayWidth / 2
+                  left: todayOffset * zoomConfig.dayWidth + zoomConfig.dayWidth / 2,
+                  ...gridGuideStyle
                 }}
               />
             )}
