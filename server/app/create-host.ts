@@ -669,6 +669,27 @@ export function createHost(options: HostOptions = {}) {
     split: z.object({ left: filePath.nullable(), right: filePath.nullable(), active: z.enum(["left", "right"]), ratio: z.number().min(0.25).max(0.75) }).optional(),
     viewGroups: z.array(viewGroup).max(200).optional(),
     activeViewGroupId: z.string().min(1).max(256).nullable().optional(),
+    spreadsheetViews: z.record(z.string().max(1024), z.object({
+      headerMode: z.boolean(),
+      columnWidths: z.record(z.string().max(16), z.number().min(40).max(2000))
+        .refine((widths) => Object.keys(widths).length <= 200).optional(),
+      frozenRows: z.number().int().min(0).max(50_000).optional(),
+      frozenColumns: z.number().int().min(0).max(200).optional(),
+      formulaBarHeight: z.number().int().min(36).max(144).optional(),
+      filters: z.record(
+        z.string().max(16),
+        z.object({
+          values: z.array(z.string().max(1024)).max(5000).optional(),
+          empty: z.boolean().optional(),
+          nonEmpty: z.boolean().optional(),
+          contains: z.string().max(1024).optional(),
+          numeric: z.object({
+            op: z.enum([">", ">=", "<", "<=", "=", "!="]),
+            value: z.number(),
+          }).optional(),
+        }).strict(),
+      ).refine((filters) => Object.keys(filters).length <= 200).optional(),
+    }).strict()).refine((views) => Object.keys(views).length <= 1000).optional(),
   });
   const uiStateFallback = {
     activeTabId: null,

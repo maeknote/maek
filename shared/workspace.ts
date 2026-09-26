@@ -73,6 +73,30 @@ export interface UiState {
   /** v2 browser-local tab composition. `split` remains for migration from v1. */
   viewGroups?: ViewGroup[];
   activeViewGroupId?: string | null;
+  spreadsheetViews?: Record<
+    string,
+    {
+      headerMode: boolean;
+      columnWidths?: Record<string, number>;
+      /** Number of document rows frozen at the top (default 0). */
+      frozenRows?: number;
+      /** Number of data columns frozen at the left (default 0). */
+      frozenColumns?: number;
+      /** Formula bar height in px (default 36). */
+      formulaBarHeight?: number;
+      /** Per-data-column filter conditions, keyed by column index as string. */
+      filters?: Record<
+        string,
+        {
+          values?: string[];
+          empty?: boolean;
+          nonEmpty?: boolean;
+          contains?: string;
+          numeric?: { op: ">" | ">=" | "<" | "<=" | "=" | "!="; value: number };
+        }
+      >;
+    }
+  >;
 }
 export interface Change {
   type: "add" | "change" | "unlink" | "addDir" | "unlinkDir" | "rename";

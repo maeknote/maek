@@ -1,1 +1,1 @@
-export { default as SpreadsheetEditor } from "./SpreadsheetEditor";
+export { default, default as SpreadsheetEditor } from "./SpreadsheetEditor";

@@ -10,7 +10,7 @@ import {
   Search,
   Columns2,
 } from "lucide-react";
-import { useStore, schedulePersistence, type Tab, FilePaneHost, isFileBackedTab, WorkspaceDashboard } from "@renderer/features/workspace";
+import { useStore, schedulePersistence, type Tab, FilePaneHost, isFileBackedTab, WorkspaceDashboard, flushEditBuffer } from "@renderer/features/workspace";
 import { api } from "@renderer/shared/api";
 import { Explorer } from "@renderer/features/explorer";
 import { FolderKanbanView } from "@renderer/features/database/kanban/FolderKanbanView";
@@ -198,9 +198,14 @@ function AppContent() {
   }, [state.workspace, tab, state.activeViewGroupId]);
   async function saveCopy(t: Tab) {
     try {
+      // Flush the in-progress edit into the store first (without saving the
+      // original file), then re-read the latest tab so the copy captures the
+      // most recent input rather than a stale snapshot.
+      await flushEditBuffer(t.editorSessionId);
+      const latest = state.tabs.find((x) => x.id === t.id) ?? t;
       const copy = await api<FileNode>("/api/files", "POST", {
-        dir: t.id.split("/").slice(0, -1).join("/"),
-        name: t.name.replace(/(\.md|\.csv)$/i, " copy$1"),
+        dir: latest.id.split("/").slice(0, -1).join("/"),
+        name: latest.name.replace(/(\.md|\.csv)$/i, " copy$1"),
         kind: "file",
       });
       const base = await api<{ hash: string; mtimeMs: number }>(
@@ -208,7 +213,7 @@ function AppContent() {
       );
       await api("/api/files/content", "PUT", {
         path: copy.id,
-        content: getTabFileContent(t),
+        content: getTabFileContent(latest),
         baseHash: base.hash,
         baseMtimeMs: base.mtimeMs,
       });

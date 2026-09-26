@@ -94,6 +94,18 @@ export interface TabItem {
    * Used to distinguish "user actually edited" from "Tiptap normalized the markdown".
    */
   diskNormalizedBody: string;
+  /**
+   * Runtime, path-independent identifier for this tab's editor session. Assigned
+   * once when the tab is created and preserved across renames so that view
+   * caches, edit buffers, and workers stay attached to the same logical editor.
+   */
+  editorSessionId: string;
+  /**
+   * Runtime flag: the view has an unconfirmed in-progress edit (draft or queued
+   * command) not yet reflected in bodyContent. Makes the tab dirty so save,
+   * close, and conflict handling do not lose the input. Never persisted.
+   */
+  pendingEdit?: boolean;
 }
 
 export interface TabGroup {

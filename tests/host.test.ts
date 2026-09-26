@@ -446,6 +446,37 @@ describe("real workspace host", () => {
       [],
     );
   });
+  it("round-trips extended spreadsheet view settings and accepts legacy entries", async () => {
+    // New-shape entry with frozen rows/columns, formula bar height, and filters.
+    const ui = {
+      activeTabId: "a.csv",
+      scrollPositions: {},
+      expanded: [],
+      theme: "light",
+      sidebarWidth: 280,
+      spreadsheetViews: {
+        "a.csv": {
+          headerMode: true,
+          columnWidths: { "1": 140 },
+          frozenRows: 1,
+          frozenColumns: 2,
+          formulaBarHeight: 72,
+          filters: {
+            "1": { values: ["10", "20"], contains: "x", numeric: { op: ">=", value: 5 } },
+            "2": { empty: true },
+          },
+        },
+        // Legacy-shape entry: only the original fields, must still validate.
+        "b.csv": { headerMode: false },
+      },
+    };
+    expect(
+      (await request("PUT", "/api/workspace/ui-state", ui)).statusCode,
+    ).toBe(200);
+    expect(
+      (await request("GET", "/api/workspace/ui-state")).json().spreadsheetViews,
+    ).toEqual(ui.spreadsheetViews);
+  });
   it("reads only web-supported tabs from a version-4 root document as relative paths", async () => {
     await writeFile(
       path.join(root, ".maek/tabs.json"),

@@ -16,6 +16,7 @@ import {
   validateFrontmatterYaml,
 } from "@renderer/features/editor";
 import { api, ApiError, setHostWorkspace } from "@renderer/shared/api";
+import { flushEditBuffer, disposeEditBuffer, anyPendingEdits } from "./editBuffers";
 import { queryClient } from "@renderer/app/query-client";
 import { resolveTheme, systemPrefersDark } from "@renderer/lib/preferences";
 import { removeWorkspaceFromList } from "@renderer/lib/workspaceList";
@@ -48,6 +49,7 @@ interface State {
   expanded: string[];
   theme: "system" | "light" | "dark";
   sidebarWidth: number;
+  spreadsheetViews: NonNullable<UiState["spreadsheetViews"]>;
   split: { left: string | null; right: string | null; active: "left" | "right"; ratio: number };
   recentFiles: { path: string; lastOpened: number; openCount?: number }[];
   openWorkspace: (path?: string) => Promise<void>;
@@ -93,6 +95,7 @@ interface State {
   updateFrontmatterRaw: (id: string, raw: string) => void;
   toggleFrontmatterExpanded: (id: string) => void;
   setFrontmatterViewMode: (id: string, mode: FrontmatterViewMode) => void;
+  setSpreadsheetView: (id: string, settings: Partial<NonNullable<UiState["spreadsheetViews"]>[string]>) => void;
   persist: () => Promise<void>;
   setError: (message: string) => void;
 }
@@ -101,6 +104,8 @@ const saves = new Map<string, Promise<boolean>>();
 let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
 let events: EventSource | null = null;
 let sessionEpoch = 0;
+/** Monotonic counter for path-independent editor-session ids assigned in makeTab. */
+let nextEditorSession = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let reconnectAttempt = 0;
 let workspaceOpenEpoch = 0;
@@ -340,6 +345,7 @@ function makeVirtualTab(
     isEphemeral: false,
     kanbanFolderPath,
     databaseFolderPath: viewKind === "database" ? kanbanFolderPath : undefined,
+    editorSessionId: `session-${Date.now().toString(36)}-${(nextEditorSession++).toString(36)}`,
     file: VIRTUAL_FILE,
     initialContent: "",
     status: "idle",
@@ -410,6 +416,7 @@ function remapTabIdForRename(id: string, source: string, dest: string): string {
 }
 
 export function makeTab(id: string, file: FileContent): Tab {
+  const editorSessionId = `session-${Date.now().toString(36)}-${(nextEditorSession++).toString(36)}`;
   if (file.kind === "sheet") {
     const content = file.content ?? "";
     const frontmatter = splitFrontmatter("").frontmatter;
@@ -427,6 +434,7 @@ export function makeTab(id: string, file: FileContent): Tab {
       previewFormat: null,
       previewNonce: 0,
       isEphemeral: false,
+      editorSessionId,
       file,
       status: "idle",
       generation: 0,
@@ -452,6 +460,7 @@ export function makeTab(id: string, file: FileContent): Tab {
       file.kind === "editor" || file.kind === "unsupported" ? null : file.kind,
     previewNonce: 0,
     isEphemeral: false,
+    editorSessionId,
     file,
     status: "idle",
     generation: 0,
@@ -501,6 +510,7 @@ export const useStore = create<State>((set, get) => ({
   expanded: [],
   theme: "system",
   sidebarWidth: 300,
+  spreadsheetViews: {},
   recentFiles: [],
   setError: (message) => set({ error: message }),
   removeWorkspace(path) {
@@ -658,6 +668,7 @@ export const useStore = create<State>((set, get) => ({
         expanded: ui.expanded,
         theme: ui.theme,
         sidebarWidth: ui.sidebarWidth,
+        spreadsheetViews: ui.spreadsheetViews ?? {},
         split: activeViewGroup
           ? groupSplit(activeViewGroup)
           : { left: preferredActive, right: null, active: "left", ratio: 0.5 },
@@ -1192,6 +1203,12 @@ export const useStore = create<State>((set, get) => ({
       await inFlight;
       return get().save(id);
     }
+    // Flush any unconfirmed in-progress edit (e.g. an open cell/formula draft)
+    // into the store before deciding whether the tab is dirty, so the latest
+    // input is never lost by the early return below. saveAll, closeTab, split
+    // close, and workspace switch all funnel through here.
+    const preTab = get().tabs.find((t) => t.id === id);
+    if (preTab) await flushEditBuffer(preTab.editorSessionId);
     const tab = get().tabs.find((t) => t.id === id);
     if (!tab || !isTabDirty(tab)) return true;
     if (tab.status === "conflict") return false;
@@ -1264,6 +1281,8 @@ export const useStore = create<State>((set, get) => ({
   },
   async closeTab(id) {
     if (!(await get().save(id))) return;
+    const closing = get().tabs.find((t) => t.id === id);
+    if (closing) disposeEditBuffer(closing.editorSessionId);
     set((s) => {
       const tabs = s.tabs.filter((t) => t.id !== id);
       const viewGroups = s.viewGroups.flatMap((group): ViewGroup[] => {
@@ -1318,6 +1337,8 @@ export const useStore = create<State>((set, get) => ({
         queryKey: ["workspace-file", workspace.wsId, id],
       });
       const file = await fileQuery(workspace, id);
+      const previous = get().tabs.find((t) => t.id === id);
+      if (previous) disposeEditBuffer(previous.editorSessionId);
       patchTab(id, (t) => ({
         ...makeTab(id, file),
         generation: t.generation + 1,
@@ -1373,6 +1394,9 @@ export const useStore = create<State>((set, get) => ({
         },
         scrollPositions: Object.fromEntries(
           Object.entries(s.scrollPositions).map(([p, v]) => [replace(p), v]),
+        ),
+        spreadsheetViews: Object.fromEntries(
+          Object.entries(s.spreadsheetViews).map(([p, view]) => [replace(p), view]),
         ),
         expanded: s.expanded.map(replace),
         recentFiles: s.recentFiles.map((f) => ({
@@ -1469,6 +1493,9 @@ export const useStore = create<State>((set, get) => ({
       scrollPositions: Object.fromEntries(
         Object.entries(s.scrollPositions).map(([p, v]) => [replace(p), v]),
       ),
+      spreadsheetViews: Object.fromEntries(
+        Object.entries(s.spreadsheetViews).map(([p, view]) => [replace(p), view]),
+      ),
       expanded: s.expanded.map(replace),
       recentFiles: s.recentFiles.map((f) => ({ ...f, path: replace(f.path) })),
     }));
@@ -1510,6 +1537,20 @@ export const useStore = create<State>((set, get) => ({
       frontmatter: { ...t.frontmatter, viewMode },
     }));
   },
+  setSpreadsheetView(id, settings) {
+    set((s) => {
+      const previous = s.spreadsheetViews[id] ?? { headerMode: false };
+      // Merge partial settings so independent view changes (header toggle,
+      // column widths, frozen boundaries, filters, formula-bar height) do not
+      // clobber one another.
+      const merged = { ...previous, ...settings };
+      return { spreadsheetViews: Object.fromEntries([
+        ...Object.entries(s.spreadsheetViews).filter(([key]) => key !== id).slice(-999),
+        [id, merged],
+      ]) };
+    });
+    later();
+  },
   async persist() {
     const s = get();
     if (!s.workspace || !s.ready) return;
@@ -1525,6 +1566,7 @@ export const useStore = create<State>((set, get) => ({
       split: s.split,
       viewGroups: s.viewGroups,
       activeViewGroupId: s.activeViewGroupId,
+      spreadsheetViews: s.spreadsheetViews,
     };
     try {
       const writes: Promise<unknown>[] = [
@@ -1554,6 +1596,7 @@ window.addEventListener("blur", () => {
 });
 window.addEventListener("beforeunload", (e) => {
   if (
+    anyPendingEdits() ||
     useStore.getState().tabs.some((t) => isTabDirty(t) || t.status === "saving")
   ) {
     e.preventDefault();

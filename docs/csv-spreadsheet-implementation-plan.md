@@ -1,10 +1,77 @@
 # CSV 스프레드시트 구현 계획
 
-상태: 구현 완료 (2026-09-15)
-기술 선택: `react-data-grid` + `papaparse`
-저장 포맷: CSV만 지원
+상태: 구현 완료 + 시트 개선 반영 (2026-09-24)
+기술 선택: `react-data-grid` + `papaparse` + `hyperformula`
+저장 포맷: CSV만 지원 (원본 문자열·수식 문자열 저장, 계산 결과로 덮어쓰지 않음)
 
-구현 결과: CSV 파일 종류·생성·탭 복원·충돌 저장 경로, Worker 파싱, React Data Grid 편집기, 범위 선택과 TSV 클립보드, 행·열 작업, undo/redo, 정렬·필터·찾기·통계, 크기 정책과 테스트가 적용되었다. 성능 목표의 시간 수치는 실제 대형 fixture 벤치마크가 추가되기 전까지 목표값으로 유지한다.
+구현 결과: CSV 파일 종류·생성·탭 복원·충돌 저장 경로, 지속 Worker 파싱·계산, React Data Grid 편집기, 다중 범위 선택과 TSV·앱 내부 클립보드, 행·열 작업, 명령 단위 undo/redo, 정렬·열별 필터·찾기바꾸기·통계, 채우기, 행·열 고정, 수식 계산(HyperFormula), 화면 설정 브라우저별 저장, 크기 정책과 테스트가 적용되었다. 성능 목표의 시간 수치는 실제 대형 fixture 벤치마크가 추가되기 전까지 목표값으로 유지한다.
+
+## 0. 시트 개선(2026-09) 반영 요약
+
+초기 구현 이후 다음을 개선했다. 이 문서의 이후 절 중 경로·범위 설명이 아래와 다르면 이 절을 우선한다.
+
+- 상태 분리: 문서(CSV 문자열·행순서·fieldCount·dialect), 계산(revision별 수식 결과·오류, 저장 안 함), 화면(필터·열너비·고정경계·수식줄 높이), 상호작용(선택·편집초안)로 분리했다.
+- 수식: `=`로 시작하는 셀만 계산 결과를 표시하고 원본 수식 문자열을 CSV에 저장한다. 순수 숫자·숫자 계산 결과만 우측 정렬하며 `00123`·날짜·전화번호형 문자열은 변환하지 않는다.
+- 수식 참조 변환: 행·열 삽입/삭제·정렬은 HyperFormula(`addRows`/`removeRows`/`addColumns`/`removeColumns`/`setRowOrder`)로 참조를 갱신하고 변경된 수식만 문서에 병합한다(`formula-engine.ts`). 복사·채우기의 상대 참조는 목적지 오프셋으로 조정한다.
+- 다중 선택: 단일 직사각형에서 `activeCell`/`anchor`/`ranges` 다중 범위 모델로 교체했다. Cmd/Ctrl 추가·제거, Shift 확장, 겹침 중복 제거, 필터 시 실제 표시 행에만 적용된다.
+- 가상 그리드: 최소 100행×26열을 조작 가능하게 표시하되 가상 셀은 실제 값을 입력할 때만 문서 행/필드로 실체화된다. 빈 그리드 탐색만으로 파일이 변경되지 않는다.
+- 헤더 모드: 첫 행을 화면에서 제거하지 않고 데이터 위치에 남긴 채 배경·굵기로 표시하며 필터·정렬·정리 기본 제외한다.
+- 편집 초안·저장: 셀 편집기와 수식줄이 같은 초안을 쓰고, Workspace 편집 버퍼 API(`flushEditBuffer`)로 저장·닫기·복사본·워크스페이스 전환 전에 최신 입력을 확정한다. `pendingEdit`가 dirty·이탈 경고에 반영된다.
+- 지속 계산: 세션마다 계산 Worker/HyperFormula를 유지하고 요청에 revision을 태그해 오래된 응답이 최신 화면을 덮지 않게 한다(`calc-engine.ts`).
+- 클립보드: 외부 TSV와 별도로 앱 내부 payload 토큰을 기록해, 문자열이 같다는 이유만으로 내부 복사로 오판하지 않는다. 내부 붙여넣기는 수식 참조를 조정하고 값만 붙여넣기를 지원한다.
+- 채우기·고정: 축 방향 채우기(단일 반복·숫자/날짜 간격·패턴 반복, 수식 상대참조 조정)를 단일 undo로 적용한다. 고정 열은 RDG `frozen`, 고정 행은 `topSummaryRows`+`renderSummaryCell`로 하나의 그리드에서 렌더링한다.
+- 화면 설정: `frozenRows`/`frozenColumns`/`formulaBarHeight`/`filters`를 기존 `headerMode`/`columnWidths`와 함께 브라우저별 `.maek` UI 상태(`spreadsheetViews`)에 저장한다. 기존 ui.json은 새 필드 없이도 읽힌다.
+
+### 실제 프런트엔드 구조(개선 후)
+
+```text
+client/src/features/spreadsheet/
+  SpreadsheetEditor.tsx        탭 연결·조립(툴바+수식줄+그리드+상태바), 클립보드 이벤트
+  sheet-session.ts             useSheetSession: 문서·revision·선택·명령·계산·이력 통합
+  transaction.ts               SheetCommand·runTransaction(검증→직렬화→byte검증, no-op)
+  history.ts                   SheetHistory(명령 단위 undo/redo, 100명령·20MiB 제한)
+  coordinates.ts               가상 그리드 크기, 표시 행, RDG↔문서 좌표
+  selection.ts                 다중 범위 선택 모델과 해석(필터·중복 제거)
+  filtering.ts                 열별 필터 조건과 표시 행 계산
+  sorting.ts                   정렬 비교·행 permutation
+  search.ts                    찾기·리터럴 바꾸기
+  cleanup.ts                   trim·빈행·중복 제거(대상·미리보기)
+  fill.ts                      채우기 시리즈 추론
+  clipboard.ts                 TSV + 앱 내부 payload
+  display.ts                   표시 규칙(수식 결과·숫자 정렬·오류)
+  calc-engine.ts               지속 계산 Worker 클라이언트(revision 관리)
+  formula-engine.ts            HyperFormula 기반 구조 변경 참조 병합
+  formulas.ts / formulas.worker.ts  HyperFormula 계산
+  csv-codec.ts / csv.worker.ts      Papa Parse 파싱·직렬화
+  model.ts                     문서 모델·크기 검증(shared/csv 공용)
+  commands.ts                  원본 데이터 편집 연산(setCell/clearRange 등)
+  spreadsheet.css              테마·선택·고정·편집 스타일
+  components/
+    SpreadsheetGrid.tsx        RDG 어댑터(다중선택·고정·헤더·가상셀)
+    FormulaBar.tsx             A1 이름상자 + 원본 수식 편집
+    SheetToolbar.tsx           undo/redo + Edit/Data/View 메뉴 + 찾기
+    SheetStatusBar.tsx         선택 통계·표시/전체 행·계산 상태
+    ColumnFilterMenu.tsx       열별 필터 메뉴
+    FindReplacePanel.tsx       찾기·바꾸기 패널
+```
+
+공용 모듈: `shared/csv.ts`(클라이언트·서버 공통 제한·dialect 판별), `client/src/features/workspace/model/editBuffers.ts`(편집 버퍼 API).
+
+### 검증 결과(개선 후)
+
+- `npm test`: 292 단위 테스트 통과(신규: spreadsheet-commands, spreadsheet-selection, spreadsheet-data-tools, spreadsheet-formulas, spreadsheet-calc, edit-buffers).
+- `npm run check`: 타입 검사 0 오류 + feature 경계 OK.
+- `npm run build`: production 번들 성공.
+- `npm run test:e2e`: `tests/e2e/spreadsheet.spec.ts` 3개 통과(셀 편집·저장·undo/redo, 수식 계산·원본 보존, `00123` 보존). 기존 `workspace.spec.ts`의 일부 실패는 개선 전 HEAD에서도 재현되는 선재 이슈로 이 작업과 무관하다.
+
+### 미구현/후속 항목
+
+- 정렬·정리·채우기 적용 전 미리보기 다이얼로그, 수식 자동완성(FormulaSuggestions)과 참조 클릭 삽입/색상 강조는 후속 작업으로 남긴다. 현재는 메뉴에서 직접 실행한다.
+- remove-blank/remove-duplicate의 삭제 행에 대한 HyperFormula 참조 병합은 정렬·행삽입/삭제 경로에만 적용되어 있고, 정리 명령은 평문 문서로 반영한다.
+- 채우기 핸들 드래그 UI 대신 Edit 메뉴의 Fill down/right로 제공한다.
+- `formula-references.ts` 정규식 변환은 복사·채우기 상대참조에 아직 사용하며, HyperFormula 기반으로 완전 대체 후 제거 검토 대상이다.
+
+---
 
 ## 1. 목표
 

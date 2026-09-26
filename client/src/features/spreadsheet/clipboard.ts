@@ -3,6 +3,28 @@ import { normalizeRange, type CellRange } from "./selection";
 
 const quoteTsv = (value: string) => /[\t\r\n"]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
 
+/**
+ * Internal clipboard payload. Copies made inside the grid record the source
+ * origin and raw values so a same-document paste can adjust formula references
+ * and offer value-only paste. Internal-ness is verified by this token + payload
+ * held in memory, never by mere clipboard-string equality.
+ */
+export const INTERNAL_CLIPBOARD_TOKEN = "maek-sheet-clip-v1";
+
+export interface InternalClipboard {
+  token: typeof INTERNAL_CLIPBOARD_TOKEN;
+  /** The exact TSV text placed on the system clipboard, for a sanity match. */
+  text: string;
+  /** Top-left document coordinate of the copied range. */
+  origin: { row: number; column: number };
+  /** Raw cell/formula strings of the copied range. */
+  raw: string[][];
+  /** Calculated (display) values, for value-only paste. */
+  values: string[][];
+  /** Whether this copy is a pending cut (deferred source deletion). */
+  cut: boolean;
+}
+
 export function rangeToTsv(document: SpreadsheetDocument, range: CellRange): string {
   const { top, bottom, left, right } = normalizeRange(range);
   const lines: string[] = [];
@@ -21,7 +43,9 @@ export function parseTsv(text: string): string[][] {
     const char = text[index]!;
     if (char === '"') {
       if (quoted && text[index + 1] === '"') { value += '"'; index++; }
-      else quoted = !quoted;
+      else if (quoted) quoted = false;
+      else if (value === "") quoted = true;
+      else value += char;
     } else if (char === "\t" && !quoted) {
       rows.at(-1)!.push(value); value = "";
     } else if ((char === "\n" || char === "\r") && !quoted) {

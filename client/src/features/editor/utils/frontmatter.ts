@@ -83,6 +83,7 @@ export function createEmptyTabOpenPayload(): TabOpenPayload {
 }
 
 export function isTabDirty(tab: TabItem): boolean {
+  if (tab.pendingEdit) return true;
   if (tab.viewKind === "spreadsheet") {
     return tab.bodyContent !== tab.savedBodyContent;
   }

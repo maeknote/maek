@@ -1,21 +1,74 @@
 .csv-editor { display: flex; flex: 1; min-height: 0; flex-direction: column; background: var(--color-background); }
-.csv-toolbar { display: flex; min-height: 42px; flex-wrap: wrap; align-items: center; gap: 4px; border-bottom: 1px solid var(--color-structure-line); padding: 5px 10px; background: var(--color-warm-vellum); }
-.csv-toolbar button { display: inline-flex; height: 28px; align-items: center; gap: 2px; border-radius: 6px; padding: 0 7px; color: var(--color-neutral-ink); }
+
+/* Command bar (undo/redo, Edit/Data/View menus). Single non-wrapping row. */
+.csv-toolbar { display: flex; height: 36px; flex-wrap: nowrap; align-items: center; gap: 4px; overflow: hidden; border-bottom: 1px solid var(--color-structure-line); padding: 0 10px; background: var(--color-warm-vellum); }
+.csv-toolbar button { display: inline-flex; height: 26px; align-items: center; gap: 3px; border-radius: 6px; padding: 0 7px; color: var(--color-neutral-ink); font-size: 12px; white-space: nowrap; }
 .csv-toolbar button:hover:not(:disabled) { background: var(--color-overlay-bg); }
 .csv-toolbar button:disabled { opacity: .35; }
-.csv-toolbar-separator { height: 20px; width: 1px; margin: 0 4px; background: var(--color-structure-line); }
-.csv-toggle, .csv-search { display: inline-flex; height: 28px; align-items: center; gap: 6px; border-radius: 6px; color: var(--color-muted-text); font-size: 12px; }
-.csv-toggle { padding: 0 5px; }
-.csv-search { border: 1px solid var(--color-structure-line); padding: 0 7px; background: var(--color-background); }
-.csv-search input { width: 110px; border: 0; outline: 0; background: transparent; color: var(--color-neutral-ink); }
+.csv-menu-button { font-weight: 500; }
+.csv-toolbar-separator { height: 18px; width: 1px; margin: 0 4px; background: var(--color-structure-line); }
+
+/* Formula bar: A1 name box + raw formula/value input. */
+.csv-formula-bar { display: flex; align-items: stretch; gap: 0; border-bottom: 1px solid var(--color-structure-line); background: var(--color-background); }
+.csv-name-box { display: inline-flex; width: 72px; flex-shrink: 0; align-items: center; justify-content: center; border-right: 1px solid var(--color-structure-line); color: var(--color-muted-text); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.csv-formula-input { flex: 1; min-width: 0; border: 0; outline: 0; padding: 0 10px; background: transparent; color: var(--color-neutral-ink); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; resize: none; }
+
 .csv-grid-wrap { flex: 1; min-height: 0; padding: 8px; }
-.csv-grid { height: 100%; border: 1px solid var(--color-structure-line); border-radius: 8px; overflow: hidden; --rdg-background-color: var(--color-background); --rdg-header-background-color: var(--color-warm-vellum); --rdg-row-hover-background-color: var(--color-overlay-bg); --rdg-border-color: var(--color-structure-line); --rdg-color: var(--color-neutral-ink); }
+/* Grid: uses Maek theme tokens rather than the rdg-light preset. */
+.csv-grid { height: 100%; border: 1px solid var(--color-structure-line); border-radius: 8px; overflow: auto;
+  --rdg-background-color: var(--color-background);
+  --rdg-header-background-color: var(--color-warm-vellum);
+  --rdg-row-hover-background-color: var(--color-overlay-bg);
+  --rdg-border-color: var(--color-structure-line);
+  --rdg-color: var(--color-neutral-ink);
+  --rdg-selection-color: var(--color-maek-red);
+  color-scheme: light dark;
+}
 .csv-grid .rdg-cell { padding: 0; }
-.csv-cell-value { height: 100%; overflow: hidden; padding: 6px 8px; text-overflow: ellipsis; white-space: nowrap; }
-.csv-cell-editor { width: 100%; height: 100%; border: 2px solid var(--color-maek-red); outline: none; padding: 4px 7px; background: var(--color-background); color: var(--color-neutral-ink); }
-.csv-range-selected { background: color-mix(in srgb, var(--color-maek-red) 12%, transparent) !important; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-maek-red) 35%, transparent); }
+.csv-cell-value { height: 100%; overflow: hidden; padding: 5px 8px; text-overflow: ellipsis; white-space: nowrap; }
+.csv-cell-value.csv-numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.csv-cell-value.csv-error { color: var(--color-maek-red); }
+.csv-cell-editor { width: 100%; height: 100%; border: 2px solid var(--color-maek-red); outline: none; padding: 3px 6px; background: var(--color-background); color: var(--color-neutral-ink); }
+
+/* Selection: light fill for ranges, a distinct outline for the active cell. */
+.csv-range-selected { background: color-mix(in srgb, var(--color-maek-red) 12%, transparent) !important; }
+.csv-active-cell { box-shadow: inset 0 0 0 2px var(--color-maek-red); }
+/* Header row (header mode): background + weight, still editable in place. */
+.csv-header-cell { background: var(--color-warm-vellum); font-weight: 600; }
+
 .csv-row-number { display: flex; align-items: center; justify-content: flex-end; padding-right: 9px !important; background: var(--color-warm-vellum); color: var(--color-muted-text); font-variant-numeric: tabular-nums; }
-.csv-statusbar { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid var(--color-structure-line); padding: 0 12px; color: var(--color-muted-text); font-size: 11px; }
+
+.csv-statusbar { display: flex; min-height: 26px; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid var(--color-structure-line); padding: 0 12px; color: var(--color-muted-text); font-size: 11px; }
+.csv-statusbar button { color: var(--color-maek-red); }
+.csv-status-error button { color: var(--color-maek-red); }
+.csv-status-ok { color: var(--color-muted-text); }
+
 .csv-banner { border-bottom: 1px solid var(--color-structure-line); padding: 6px 12px; color: var(--color-muted-text); font-size: 12px; }
 .csv-banner-error { color: var(--color-maek-red); }
 .csv-loading { display: flex; flex: 1; align-items: center; justify-content: center; color: var(--color-muted-text); }
+
+/* Column header filter button. */
+.csv-header-label { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; height: 100%; }
+.csv-header-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.csv-header-filter { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; color: var(--color-muted-text); opacity: .5; }
+.csv-header-filter:hover { background: var(--color-overlay-bg); opacity: 1; }
+.csv-header-filter-active { color: var(--color-maek-red); opacity: 1; }
+
+/* Find & replace panel. */
+.csv-find-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border-bottom: 1px solid var(--color-structure-line); padding: 5px 10px; background: var(--color-warm-vellum); font-size: 12px; }
+.csv-find-input { height: 24px; min-width: 120px; border: 1px solid var(--color-structure-line); border-radius: 6px; padding: 0 7px; background: var(--color-background); color: var(--color-neutral-ink); }
+.csv-find-count { min-width: 40px; color: var(--color-muted-text); text-align: center; }
+.csv-find-panel button { height: 24px; border-radius: 6px; padding: 0 7px; color: var(--color-neutral-ink); }
+.csv-find-panel button:hover:not(:disabled) { background: var(--color-overlay-bg); }
+.csv-find-panel button:disabled { opacity: .35; }
+.csv-find-option { display: inline-flex; align-items: center; gap: 3px; color: var(--color-muted-text); }
+.csv-find-note { color: var(--color-muted-text); font-size: 11px; }
+
+/* Column filter menu. */
+.csv-filter-menu { display: flex; flex-direction: column; gap: 6px; padding: 8px; min-width: 220px; }
+.csv-filter-search, .csv-filter-contains { height: 26px; border: 1px solid var(--color-structure-line); border-radius: 6px; padding: 0 7px; background: var(--color-background); color: var(--color-neutral-ink); }
+.csv-filter-values { max-height: 220px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.csv-filter-value { display: flex; align-items: center; gap: 6px; padding: 2px 4px; font-size: 12px; }
+.csv-filter-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.csv-filter-actions button { height: 26px; border-radius: 6px; padding: 0 10px; color: var(--color-neutral-ink); }
+.csv-filter-actions button:hover { background: var(--color-overlay-bg); }

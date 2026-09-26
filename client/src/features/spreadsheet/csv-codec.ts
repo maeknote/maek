@@ -6,6 +6,7 @@ import {
   type CsvDialect,
   type SpreadsheetDocument,
 } from "./model";
+import { detectDelimiter, detectNewline, stripBom } from "@shared/csv";
 
 export interface CsvParseResult {
   document: SpreadsheetDocument;
@@ -13,34 +14,15 @@ export interface CsvParseResult {
   warnings: string[];
 }
 
-function detectDelimiter(source: string): CsvDialect["delimiter"] {
-  const counts = new Map<CsvDialect["delimiter"], number>([[",", 0], ["\t", 0], [";", 0]]);
-  let quoted = false;
-  for (let index = 0; index < Math.min(source.length, 64_000); index++) {
-    const char = source[index]!;
-    if (char === '"') {
-      if (quoted && source[index + 1] === '"') index++;
-      else quoted = !quoted;
-    } else if (!quoted && (char === "\n" || char === "\r")) {
-      if ([...counts.values()].some(Boolean)) break;
-    } else if (!quoted && counts.has(char as CsvDialect["delimiter"])) {
-      const delimiter = char as CsvDialect["delimiter"];
-      counts.set(delimiter, counts.get(delimiter)! + 1);
-    }
-  }
-  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ",";
-}
-
 function isFatal(error: ParseError): boolean {
   return error.code === "MissingQuotes" || error.code === "TooFewFields" || error.code === "TooManyFields";
 }
 
 export function parseCsv(raw: string): CsvParseResult {
-  const bom = raw.startsWith("\uFEFF");
-  const source = bom ? raw.slice(1) : raw;
+  const { source, bom } = stripBom(raw);
   const dialect: CsvDialect = {
     delimiter: detectDelimiter(source),
-    newline: source.includes("\r\n") ? "\r\n" : "\n",
+    newline: detectNewline(source),
     bom,
   };
   const parsed = Papa.parse<string[]>(source, {

@@ -548,7 +548,7 @@ test("folder context menu creates a note, folder and database under that folder"
     .toBe(true);
 });
 
-test.skip("creates and edits a CSV spreadsheet with undo and autosave", async ({ page }) => {
+test("creates and edits a CSV spreadsheet with undo and autosave", async ({ page }) => {
   await open(page);
   await page.locator('[data-path="Folder"]').click({ button: "right" });
   await page.getByRole("menuitem", { name: "New CSV", exact: true }).click();

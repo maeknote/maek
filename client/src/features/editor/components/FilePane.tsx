@@ -27,7 +27,7 @@ import { TitleBar } from "./TitleBar";
 import { ViewerToolbar } from "./ViewerToolbar";
 
 const SpreadsheetEditor = lazy(
-  () => import("../../spreadsheet/SpreadsheetEditor"),
+  () => import("../../spreadsheet"),
 );
 
 

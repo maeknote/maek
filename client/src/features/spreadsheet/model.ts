@@ -1,15 +1,18 @@
-export const CSV_LIMITS = {
-  rows: 50_000,
-  columns: 200,
-  fields: 500_000,
-  cellChars: 100_000,
-} as const;
+import {
+  CSV_EDIT_LIMITS,
+  checkCsvShape,
+  utf8ByteLength,
+  type CsvDialect as SharedCsvDialect,
+} from "@shared/csv";
 
-export interface CsvDialect {
-  delimiter: "," | "\t" | ";";
-  newline: "\n" | "\r\n";
-  bom: boolean;
-}
+/**
+ * Shared editing limits, re-exported under the historical `CSV_LIMITS` name.
+ * `bytes` was previously only enforced on the server; it is now part of the
+ * common contract so client commands can validate serialized size too.
+ */
+export const CSV_LIMITS = CSV_EDIT_LIMITS;
+
+export type CsvDialect = SharedCsvDialect;
 
 export interface SpreadsheetRow {
   id: string;
@@ -59,12 +62,22 @@ export function documentShape(document: SpreadsheetDocument) {
   };
 }
 
-export function validateDocument(document: SpreadsheetDocument): string | null {
-  const shape = documentShape(document);
-  if (shape.rows > CSV_LIMITS.rows) return `CSV exceeds ${CSV_LIMITS.rows.toLocaleString()} rows`;
-  if (shape.columns > CSV_LIMITS.columns) return `CSV exceeds ${CSV_LIMITS.columns} columns`;
-  if (shape.fields > CSV_LIMITS.fields) return `CSV exceeds ${CSV_LIMITS.fields.toLocaleString()} fields`;
-  if (document.rows.some((row) => row.cells.some((cell) => cell.length > CSV_LIMITS.cellChars)))
-    return `A cell exceeds ${CSV_LIMITS.cellChars.toLocaleString()} characters`;
-  return null;
+/** The longest cell in the document, used for the per-cell character limit. */
+export function longestCell(document: SpreadsheetDocument): number {
+  let longest = 0;
+  for (const row of document.rows)
+    for (const cell of row.cells) if ((cell?.length ?? 0) > longest) longest = cell?.length ?? 0;
+  return longest;
 }
+
+export function validateDocument(
+  document: SpreadsheetDocument,
+  options: { bytes?: number } = {},
+): string | null {
+  return checkCsvShape(documentShape(document), {
+    bytes: options.bytes,
+    maxCellChars: longestCell(document),
+  });
+}
+
+export { utf8ByteLength };
