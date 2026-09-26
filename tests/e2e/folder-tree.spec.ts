@@ -81,6 +81,34 @@ test("an ordinary folder toggles open and closed on a single row click", async (
   await expect(child).toBeVisible();
 });
 
+test("Cmd toggles individual rows and Shift selects a visible range without opening rows", async ({ page }) => {
+  await open(page);
+  const folder = page.locator('[data-path="Folder"]');
+  const target = page.locator('[data-path="Target"]');
+  const file = page.locator('[data-path="top.md"]');
+  const selected = (row: typeof folder) => row.locator("..");
+
+  await file.click();
+  await expect(selected(file)).toHaveAttribute("aria-selected", "true");
+  await target.click({ modifiers: ["Meta"] });
+  await expect(selected(file)).toHaveAttribute("aria-selected", "true");
+  await expect(selected(target)).toHaveAttribute("aria-selected", "true");
+  await expect(selected(target)).toHaveAttribute("aria-expanded", "false");
+  await target.click({ modifiers: ["Meta"] });
+  await expect(selected(target)).toHaveAttribute("aria-selected", "false");
+
+  await folder.click({ modifiers: ["Shift"] });
+  await expect(selected(folder)).toHaveAttribute("aria-selected", "true");
+  await expect(selected(target)).toHaveAttribute("aria-selected", "true");
+  await expect(selected(file)).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator('[data-path="Folder/note.md"]')).toHaveCount(0);
+
+  await target.click({ modifiers: ["Meta"] });
+  await expect(selected(target)).toHaveAttribute("aria-selected", "false");
+  await expect(selected(folder)).toHaveAttribute("aria-selected", "true");
+  await expect(selected(file)).toHaveAttribute("aria-selected", "true");
+});
+
 test("a folder toggles exactly once even if a refresh lands mid-click", async ({
   page,
 }) => {
@@ -209,6 +237,52 @@ test("dragging a file into a folder moves it and shows no sibling insertion line
     .toBe(true);
   expect(existsSync(path.join(root, "top.md"))).toBe(false);
   await expect(page.locator('[data-path="Target/top.md"]')).toBeVisible();
+});
+
+test("drop hint follows the real destination on consecutive drags", async ({ page }) => {
+  writeFileSync(path.join(root, "second.md"), "# Second\n");
+  await open(page);
+  const target = page.locator('[data-path="Target"]');
+  const dragToTarget = async (sourcePath: string, checkEdge: boolean) => {
+    const sourceBox = await page.locator(`[data-path="${sourcePath}"]`).boundingBox();
+    const targetBox = await target.boundingBox();
+    if (!sourceBox || !targetBox) throw new Error("drag rows are missing");
+    await page.mouse.move(sourceBox.x + 30, sourceBox.y + sourceBox.height / 2);
+    await page.mouse.down();
+    if (checkEdge) {
+      await page.mouse.move(targetBox.x + 20, targetBox.y + 2, { steps: 8 });
+      await expect(page.locator('[data-drop-target="root"]')).toBeVisible();
+      await expect(target.getByTestId("folder-drop-highlight")).toHaveCount(0);
+    }
+    await page.mouse.move(targetBox.x + 20, targetBox.y + targetBox.height / 2, { steps: 8 });
+    await expect(target.getByTestId("folder-drop-highlight")).toBeVisible();
+    await expect(page.locator('[data-drop-target="root"]')).toHaveCount(0);
+    await page.mouse.up();
+    await expect(target.getByTestId("folder-drop-highlight")).toHaveCount(0);
+  };
+
+  await dragToTarget("top.md", true);
+  await expect.poll(() => existsSync(path.join(root, "Target/top.md"))).toBe(true);
+  await dragToTarget("second.md", false);
+  await expect.poll(() => existsSync(path.join(root, "Target/second.md"))).toBe(true);
+});
+
+test("dragging a multi-selection moves every selected file and clears the old paths", async ({ page }) => {
+  writeFileSync(path.join(root, "second.md"), "# Second\n");
+  await open(page);
+  const first = page.locator('[data-path="top.md"]');
+  const second = page.locator('[data-path="second.md"]');
+  const target = page.locator('[data-path="Target"]');
+
+  await first.click();
+  await second.click({ modifiers: ["Meta"] });
+  await expect(first.locator("..")).toHaveAttribute("aria-selected", "true");
+  await expect(second.locator("..")).toHaveAttribute("aria-selected", "true");
+  await second.dragTo(target, { targetPosition: { x: 20, y: 14 } });
+
+  await expect.poll(() => existsSync(path.join(root, "Target/top.md"))).toBe(true);
+  await expect.poll(() => existsSync(path.join(root, "Target/second.md"))).toBe(true);
+  await expect(page.getByRole("treeitem", { selected: true })).toHaveCount(0);
 });
 
 test("dropping a folder onto itself is rejected", async ({ page }) => {

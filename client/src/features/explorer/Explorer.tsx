@@ -57,6 +57,7 @@ import { clamp, maxTreeOffset } from "./utils/unifiedScroll";
 
 const ROW_HEIGHT = 28;
 const ROOT_ID = "__REACT_ARBORIST_INTERNAL_ROOT__";
+type DropTarget = { kind: "root" } | { kind: "folder"; id: string } | null;
 
 interface Props {
   onSearch: () => void;
@@ -73,6 +74,7 @@ interface Props {
 interface TreeContextValue {
   databaseNames: Map<string, string>;
   appearances: Record<string, FolderAppearance>;
+  dropTarget: DropTarget;
   onRowClick: (node: NodeApi<FileNode>, event: React.MouseEvent) => void;
   onChevronClick: (node: NodeApi<FileNode>, event: React.MouseEvent) => void;
   onRowDoubleClick: (node: NodeApi<FileNode>) => void;
@@ -96,6 +98,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
   const {
     databaseNames,
     appearances,
+    dropTarget,
     onRowClick,
     onChevronClick,
     onRowDoubleClick,
@@ -127,11 +130,11 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
       onDoubleClick={() => onRowDoubleClick(node)}
       onContextMenu={(e) => onContextMenu(node, e)}
     >
-      {/* Drop target highlight overlay: react-arborist marks the resolved drop
-          parent with willReceiveDrop. We paint the folder and its visible
-          subtree instead of drawing a sibling insertion line. */}
-      {node.willReceiveDrop && (
+      {/* Highlight the actual destination, including drops resolved from an
+          insertion position on a child or at a folder edge. */}
+      {dropTarget?.kind === "folder" && dropTarget.id === node.id && (
         <div
+          data-testid="folder-drop-highlight"
           className="absolute pointer-events-none z-10"
           style={{
             top: 0,
@@ -294,7 +297,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const tabAutoScrollFrame = useRef<number | null>(null);
   const tabAutoScrollSpeed = useRef(0);
   const [pendingReveal, setPendingReveal] = useState<{ id: string } | null>(null);
-  const [rootDropActive, setRootDropActive] = useState(false);
+  const [dropTarget, setDropTarget] = useState<DropTarget>(null);
   const saveStatus = tabs.some((tab) => tab.status === "saving")
     ? "Saving"
     : tabs.some(isTabDirty) ? "Unsaved" : null;
@@ -738,8 +741,12 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   // Row-click and chevron handlers are stable and read live data at call time,
   // so the context value they live in never invalidates node instances.
   const onRowClick = useCallback(
-    (node: NodeApi<FileNode>, _event: React.MouseEvent) => {
-      node.select();
+    (node: NodeApi<FileNode>, event: React.MouseEvent) => {
+      // The default row also calls handleClick. Own it here so selection runs
+      // once, before the preview/toggle side effect, with modifiers intact.
+      event.stopPropagation();
+      node.handleClick(event);
+      if (event.metaKey || event.ctrlKey || event.shiftKey) return;
       if (node.data.isDir) {
         const database = databases.find((d) => d.folderPath === node.data.id);
         if (database) {
@@ -778,6 +785,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     () => ({
       databaseNames,
       appearances,
+      dropTarget,
       onRowClick,
       onChevronClick,
       onRowDoubleClick,
@@ -786,6 +794,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     [
       databaseNames,
       appearances,
+      dropTarget,
       onRowClick,
       onChevronClick,
       onRowDoubleClick,
@@ -798,6 +807,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   // the logical tree range so a tree drag can never scroll back into Open Tabs.
   const autoScrollFrame = useRef<number | null>(null);
   const autoScrollSpeed = useRef(0);
+  const dropTargetFrame = useRef<number | null>(null);
   const stopAutoScroll = useCallback(() => {
     autoScrollSpeed.current = 0;
     if (autoScrollFrame.current !== null) {
@@ -830,19 +840,37 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     // native "Files" (Finder) import drop is handled separately below.
     const el = filesViewportRef.current;
     if (!el) return;
-    const onDragOver = (event: DragEvent) => {
+    const clearDropTarget = () => {
+      if (dropTargetFrame.current !== null) {
+        cancelAnimationFrame(dropTargetFrame.current);
+        dropTargetFrame.current = null;
+      }
+      setDropTarget(null);
+    };
+    const onDragHover = (event: DragEvent) => {
       if (event.dataTransfer?.types.includes("Files")) return; // Finder import
-      // Highlight the whole Files area when the resolved drop destination is
-      // the root (no folder under the cursor). willReceiveDrop already paints
-      // folder destinations, so only the root case needs this.
-      const api = tree.current;
-      if (api) {
-        const destination = api.dragDestinationParent;
-        setRootDropActive(
-          api.dragNodes.length > 0 &&
-            (!destination || destination.id === ROOT_ID) &&
-            api.canDrop(),
-        );
+      // The HTML5 backend can skip dragover on a quick row crossing, but it
+      // dispatches hover on dragenter too. Its dragover hover runs in an RAF,
+      // so read the destination one frame later than that backend callback.
+      if (dropTargetFrame.current === null) {
+        dropTargetFrame.current = requestAnimationFrame(() => {
+          dropTargetFrame.current = requestAnimationFrame(() => {
+            dropTargetFrame.current = null;
+            const api = tree.current;
+            const destination = api?.dragDestinationParent;
+            const next: DropTarget = !api || api.dragNodes.length === 0 || !api.canDrop()
+              ? null
+              : destination && destination.id !== ROOT_ID
+                ? { kind: "folder", id: destination.id }
+                : { kind: "root" };
+            setDropTarget((current) =>
+              current?.kind === next?.kind &&
+              (current?.kind !== "folder" || (next?.kind === "folder" && current.id === next.id))
+                ? current
+                : next,
+            );
+          });
+        });
       }
       const rect = el.getBoundingClientRect();
       const delta = edgeScrollDelta(event.clientY, {
@@ -866,23 +894,25 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         event.clientY > rect.bottom
       ) {
         stopAutoScroll();
-        setRootDropActive(false);
+        clearDropTarget();
       }
     };
     const clearDrag = () => {
       stopAutoScroll();
-      setRootDropActive(false);
+      clearDropTarget();
     };
-    el.addEventListener("dragover", onDragOver);
+    el.addEventListener("dragenter", onDragHover);
+    el.addEventListener("dragover", onDragHover);
     el.addEventListener("dragleave", onDragLeave);
-    el.addEventListener("drop", clearDrag);
-    el.addEventListener("dragend", clearDrag);
+    document.addEventListener("drop", clearDrag);
+    document.addEventListener("dragend", clearDrag);
     return () => {
-      el.removeEventListener("dragover", onDragOver);
+      el.removeEventListener("dragenter", onDragHover);
+      el.removeEventListener("dragover", onDragHover);
       el.removeEventListener("dragleave", onDragLeave);
-      el.removeEventListener("drop", clearDrag);
-      el.removeEventListener("dragend", clearDrag);
-      stopAutoScroll();
+      document.removeEventListener("drop", clearDrag);
+      document.removeEventListener("dragend", clearDrag);
+      clearDrag();
     };
   }, [filesViewportRef, runAutoScroll, stopAutoScroll, workspace?.wsId]);
 
@@ -1184,9 +1214,10 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
               this visible viewport, not the full logical spacer. */}
           <div
             ref={filesViewportRef}
+            data-drop-target={dropTarget?.kind === "root" ? "root" : undefined}
             className={cn(
               "sticky",
-              rootDropActive &&
+              dropTarget?.kind === "root" &&
                 "outline outline-2 -outline-offset-2 outline-[color-mix(in_srgb,var(--color-maek-red)_50%,transparent)] bg-[color-mix(in_srgb,var(--color-maek-red)_5%,transparent)]",
             )}
             style={{ top: headerStackHeight, height: treeViewportHeight }}
@@ -1230,7 +1261,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                 // Move every dragged item, then save + refresh exactly once.
                 const targetDir =
                   parentId === ROOT_ID || !parentId ? "" : parentId;
-                setRootDropActive(false);
+                setDropTarget(null);
                 stopAutoScroll();
                 await run(async () => {
                   if (!(await useStore.getState().saveAll())) return;
@@ -1243,6 +1274,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
                     useStore.getState().applyMoveToState(id, dest);
                   }
                   await useStore.getState().refresh();
+                  tree.current?.deselectAll();
                 });
               }}
               disableDrop={({ parentNode, dragNodes }) => {
