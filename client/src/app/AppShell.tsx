@@ -312,21 +312,23 @@ function AppContent() {
       ) : (
         <div className="w-screen h-screen overflow-hidden bg-surface flex text-neutral-ink">
           {!collapsed && (
-              <aside
-                className="relative h-full overflow-hidden bg-warm-vellum shrink-0"
+              <div
+                className="relative h-full shrink-0"
                 style={{ width: `min(${state.sidebarWidth}px, 70vw)` }}
               >
-                <Explorer
-                  onSearch={() => setSearch(true)}
-                  onSettings={() => setSettings(true)}
-                  onCollapse={() => setCollapsed(true)}
-                  onQuit={() => setShowQuitConfirm(true)}
-                />
+                <aside className="h-full w-full overflow-hidden bg-warm-vellum">
+                  <Explorer
+                    onSearch={() => setSearch(true)}
+                    onSettings={() => setSettings(true)}
+                    onCollapse={() => setCollapsed(true)}
+                    onQuit={() => setShowQuitConfirm(true)}
+                  />
+                </aside>
                 <div
                   role="separator"
                   aria-label="Resize sidebar"
                   aria-orientation="vertical"
-                  className="absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize touch-none"
+                  className="absolute -right-1.5 top-0 z-10 h-full w-3 cursor-col-resize touch-none"
                   onPointerDown={(e) => {
                     e.currentTarget.setPointerCapture(e.pointerId);
                   }}
@@ -350,7 +352,7 @@ function AppContent() {
                     schedulePersistence();
                   }}
                 />
-              </aside>
+              </div>
           )}
           {collapsed && (
             <aside
