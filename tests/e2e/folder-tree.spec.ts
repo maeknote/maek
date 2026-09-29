@@ -81,6 +81,30 @@ test("an ordinary folder toggles open and closed on a single row click", async (
   await expect(child).toBeVisible();
 });
 
+test("deeply nested files do not scroll the sidebar sideways", async ({ page }) => {
+  const parts = Array.from({ length: 25 }, (_, i) => `d${i}`);
+  const nested = path.join(root, ...parts);
+  mkdirSync(nested, { recursive: true });
+  writeFileSync(path.join(nested, "a-very-long-file-name.md"), "# Deep\n");
+  await open(page);
+
+  for (let i = 0; i < parts.length; i++) {
+    await page.locator(`[data-path="${parts.slice(0, i + 1).join("/")}"]`).click();
+  }
+  const file = page.locator(`[data-path="${parts.join("/")}/a-very-long-file-name.md"]`);
+  await expect(file).toBeVisible();
+
+  await file.hover();
+  await page.mouse.wheel(400, 0);
+  const horizontalOffsets = await page.evaluate(() => ({
+    sidebar: document.querySelector<HTMLElement>(
+      '[data-testid="explorer-content-scroll"]',
+    )!.scrollLeft,
+    tree: document.querySelector<HTMLElement>(".unified-tree-outer")!.scrollLeft,
+  }));
+  expect(horizontalOffsets).toEqual({ sidebar: 0, tree: 0 });
+});
+
 test("Cmd toggles individual rows and Shift selects a visible range without opening rows", async ({ page }) => {
   await open(page);
   const folder = page.locator('[data-path="Folder"]');

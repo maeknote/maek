@@ -156,8 +156,8 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
           }}
         />
       )}
-      {/* Depth guide lines: inline spans that create indent + vertical line */}
-      {Array.from({ length: node.level }).map((_, i) => (
+      {/* Cap the visible indent so deeply nested names remain in the sidebar. */}
+      {Array.from({ length: Math.min(node.level, 10) }).map((_, i) => (
         <span
           key={i}
           aria-hidden
@@ -1001,7 +1001,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
         <div
           ref={sidebarScrollRef}
           data-testid="explorer-content-scroll"
-          className="explorer-content-scroll flex-1 min-h-0 overflow-y-auto"
+          className="explorer-content-scroll flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
           onScroll={onSidebarScroll}
         >
           {visibleViewGroups.length > 0 && (

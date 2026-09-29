@@ -23,7 +23,8 @@ import { wheelDeltaPixels } from "../utils/unifiedScroll";
  *   - Wheel gestures over the tree are forwarded to the shared scroller (the
  *     nearest ancestor with `data-testid="explorer-content-scroll"`), so the
  *     user never scrolls the tree in isolation.
- *   - `overflow-x: auto` is preserved for deeply indented paths.
+ *   - Horizontal overflow is clipped so deeply indented paths cannot pan the
+ *     sidebar sideways.
  *
  * This wraps the package's exported `ListOuterElement` (rather than replacing
  * it) so the drop cursor (`DropContainer`) and empty-area click-to-deselect stay
@@ -49,7 +50,7 @@ export const UnifiedTreeOuter = forwardRef<
   const mergedStyle: React.CSSProperties = {
     ...(style as React.CSSProperties),
     overflowY: "auto",
-    overflowX: "auto",
+    overflowX: "hidden",
     // Hide the tree's own scrollbar; the shared container owns the visible one.
     scrollbarWidth: "none",
   };
