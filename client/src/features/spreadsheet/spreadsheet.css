@@ -25,7 +25,7 @@
   color-scheme: light dark;
 }
 .csv-grid .rdg-cell { padding: 0; }
-.csv-cell-value { height: 100%; overflow: hidden; padding: 5px 8px; text-overflow: ellipsis; white-space: nowrap; }
+.csv-cell-value { user-select: none; height: 100%; overflow: hidden; padding: 5px 8px; text-overflow: ellipsis; white-space: nowrap; }
 .csv-cell-value.csv-numeric { text-align: right; font-variant-numeric: tabular-nums; }
 .csv-cell-value.csv-error { color: var(--color-maek-red); }
 .csv-cell-editor { width: 100%; height: 100%; border: 2px solid var(--color-maek-red); outline: none; padding: 3px 6px; background: var(--color-background); color: var(--color-neutral-ink); }

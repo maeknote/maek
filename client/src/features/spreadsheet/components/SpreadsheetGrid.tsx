@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DataGrid,
   type Column,
@@ -85,15 +85,24 @@ export function SpreadsheetGrid({ session, ariaLabel }: { session: SheetSession;
   // Refs holding the latest dynamic data so column renderers can read fresh
   // values without being part of the `columns` memo deps. Rebuilding the column
   // array on every keystroke would remount the open cell editor (detaching it
-  // mid-edit), so columns depend only on structural values.
+  // mid-edit), so draft changes do not invalidate columns.
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const displayRef = useRef(display);
   displayRef.current = display;
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
-  const filteredRef = useRef(filtered);
-  filteredRef.current = filtered;
+  useEffect(() => {
+    const stop = () => { dragging.current = false; };
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
+    return () => {
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
+    };
+  }, []);
 
   const [columnWidths, setColumnWidths] = useState<ColumnWidths>(() => {
     const map = new Map<string, { type: "resized" | "measured"; width: number }>();
@@ -152,6 +161,10 @@ export function SpreadsheetGrid({ session, ariaLabel }: { session: SheetSession;
         });
         return;
       }
+      const range = current.ranges[0];
+      if (current.ranges.length === 1 && range?.kind === "cell" &&
+          range.anchor.rowIdx === documentIndex && range.anchor.colIdx === dataColumn &&
+          range.focus.rowIdx === documentIndex && range.focus.colIdx === dataColumn) return;
       setSelection(singleSelection(position));
     },
     [session, setSelection],
@@ -179,8 +192,15 @@ export function SpreadsheetGrid({ session, ariaLabel }: { session: SheetSession;
           className={`csv-cell-value${cell?.numeric ? " csv-numeric" : ""}${cell?.isError ? " csv-error" : ""}`}
           data-sheet-cell={`${row.documentIndex}:${dataColumn}`}
           title={cell?.isError ? "Formula error" : text}
-          onPointerEnter={() => {
-            if (dragging.current && !filteredRef.current) {
+          onMouseDown={(event) => {
+            // Summary rows do not receive RDG's onCellMouseDown callback.
+            if (event.button !== 0 || !topSummaryRows.some((item) => item.documentIndex === row.documentIndex)) return;
+            applySelectionAt(row.documentIndex, dataColumn, { shift: event.shiftKey, meta: event.metaKey || event.ctrlKey });
+            dragging.current = true;
+          }}
+          onPointerEnter={(event) => {
+            if (!(event.buttons & 1)) dragging.current = false;
+            if (dragging.current) {
               const current = sessionRef.current.selection;
               sessionRef.current.setSelection({
                 ...current,
@@ -212,6 +232,10 @@ export function SpreadsheetGrid({ session, ariaLabel }: { session: SheetSession;
           classes.push("csv-active-cell");
         return classes.join(" ") || undefined;
       },
+      summaryCellClass: (row) => {
+        const index = (row as unknown as GridRow).documentIndex;
+        return selectionContains(selectionRef.current, index, dataColumn) ? "csv-range-selected" : undefined;
+      },
       renderCell: ({ row }) => renderSheetCell(row, dataColumn),
       renderHeaderCell: ({ column }) => {
         const active = hasActiveClause(sessionRef.current.filters[dataColumn] ?? {});
@@ -241,11 +265,10 @@ export function SpreadsheetGrid({ session, ariaLabel }: { session: SheetSession;
       editable: !session.readonlyReason,
     }));
     return [rowNumber, ...dataColumns];
-    // Columns depend only on structural values; dynamic per-render data
-    // (selection, display, filters, session methods) is read via refs so the
-    // open cell editor is never remounted mid-edit by an unrelated re-render.
+    // RDG memoizes cells: selection must invalidate columns to repaint ranges.
+    // Draft keystrokes do not change selection, keeping the cell editor stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [document, gridShape.columnCount, headerMode, frozenColumns, readonlyReasonKey]);
+  }, [document, gridShape.columnCount, headerMode, frozenColumns, readonlyReasonKey, selection, topSummaryRows]);
 
   const stopDragging = useCallback(() => {
     dragging.current = false;
@@ -254,7 +277,7 @@ export function SpreadsheetGrid({ session, ariaLabel }: { session: SheetSession;
   if (!document) return <div className="csv-loading">Loading CSV…</div>;
 
   return (
-    <div className="csv-grid-wrap" onPointerUp={stopDragging} onPointerLeave={stopDragging}>
+    <div className="csv-grid-wrap" onPointerUp={stopDragging}>
       <DataGrid<GridRow>
         ref={gridRef}
         aria-label={ariaLabel ?? "Spreadsheet"}
@@ -274,6 +297,7 @@ export function SpreadsheetGrid({ session, ariaLabel }: { session: SheetSession;
           session.updateView({ columnWidths: persisted });
         }}
         onCellMouseDown={({ column, row }, event) => {
+          if (event.button !== 0) return;
           if (!column.key.startsWith("c")) return;
           const dataColumn = Number(column.key.slice(1));
           if (!Number.isInteger(dataColumn)) return;
@@ -293,7 +317,7 @@ export function SpreadsheetGrid({ session, ariaLabel }: { session: SheetSession;
         onActivePositionChange={({ row, column }) => {
           // Sync single-cell navigation (arrow keys, clicks) into the model so
           // the formula bar and active-cell outline follow RDG's own cursor.
-          if (!row || !column || !column.key.startsWith("c")) return;
+          if (dragging.current || !row || !column || !column.key.startsWith("c")) return;
           const dataColumn = Number(column.key.slice(1));
           if (!Number.isInteger(dataColumn)) return;
           const position = { rowIdx: row.documentIndex, colIdx: dataColumn };

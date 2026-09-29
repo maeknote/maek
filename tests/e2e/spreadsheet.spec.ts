@@ -73,3 +73,26 @@ test("preserves leading-zero strings verbatim", async ({ page }) => {
   await expect(page.getByRole("grid", { name: "zeros.csv" })).toBeVisible();
   await expect(page.locator('[data-sheet-cell="0:0"]')).toContainText("00123");
 });
+
+test("drag selects a cell rectangle and releases outside the grid", async ({ page }) => {
+  await open(page);
+  await page.locator('[data-path="data.csv"]').click();
+  const start = page.locator('[data-sheet-cell="1:0"]');
+  const end = page.locator('[data-sheet-cell="2:1"]');
+  const from = await start.boundingBox();
+  const to = await end.boundingBox();
+  if (!from || !to) throw new Error("Cells must be visible");
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 10 });
+  await expect(page.locator('.csv-range-selected')).toHaveCount(4);
+  await expect(page.locator('.csv-statusbar')).toContainText('Count 4');
+  await page.mouse.move(0, 0);
+  await page.mouse.up();
+  await start.hover();
+  await expect(page.locator('.csv-range-selected')).toHaveCount(4);
+  await page.keyboard.press('Delete');
+  await expect(start).toHaveText('');
+  await expect(end).toHaveText('');
+  await expect(page.locator('[data-sheet-cell="0:0"]')).toHaveText('name');
+});
