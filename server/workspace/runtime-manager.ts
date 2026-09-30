@@ -11,9 +11,10 @@ export class WorkspaceRuntime {
     workspace: Workspace,
     ignored: (relativePath: string) => boolean,
     onDirectoryRename?: (source: string, destination: string) => Promise<void>,
+    isDatabaseChangeRelevant?: () => boolean,
   ) {
     this.files = new WorkspaceFileIndex(workspace);
-    this.watcher = new WorkspaceWatchHub(workspace, ignored, onDirectoryRename);
+    this.watcher = new WorkspaceWatchHub(workspace, ignored, onDirectoryRename, isDatabaseChangeRelevant);
     this.unsubscribe = this.watcher.subscribe((event) => {
       if (event.event === "rescan") this.files.invalidate();
       if (event.event === "change") {
@@ -43,6 +44,7 @@ export class WorkspaceRuntimeManager {
     private readonly onDirectoryRename?: (
       workspace: Workspace,
     ) => (source: string, destination: string) => Promise<void>,
+    private readonly isDatabaseChangeRelevant?: (workspace: Workspace) => boolean,
   ) {}
 
   get(workspace: Workspace): WorkspaceRuntime {
@@ -52,6 +54,7 @@ export class WorkspaceRuntimeManager {
         workspace,
         this.ignored,
         this.onDirectoryRename?.(workspace),
+        this.isDatabaseChangeRelevant ? () => this.isDatabaseChangeRelevant!(workspace) : undefined,
       );
       this.runtimes.set(workspace.root, runtime);
     }

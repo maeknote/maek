@@ -60,7 +60,10 @@ export function DatabaseView({ folderPath }: { folderPath: string }) {
       }
     }
     void refresh();
-    const changed = () => {
+    const changed = (event: Event) => {
+      const change = (event as CustomEvent<{ path?: string; type?: string }>).detail;
+      if (change && !change.path?.endsWith('/.maek-database.json') && change.path !== '.maek-database.json'
+        && !['addDir', 'unlinkDir', 'rename'].includes(change.type ?? '') && change.path !== '.maek/database.sqlite') return;
       clearTimeout(timer);
       timer = setTimeout(() => void refresh(), 200);
     };

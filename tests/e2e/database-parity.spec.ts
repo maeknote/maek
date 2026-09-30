@@ -97,7 +97,7 @@ test('popup body edits preserve database frontmatter and derived views', async (
   await expect(page.getByText('1 scheduled', { exact: true })).toBeVisible();
 });
 
-test("desktop database views, popup editing, and shared dashboard", async ({
+test("desktop database views, popup editing, and Home", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -162,32 +162,9 @@ test("desktop database views, popup editing, and shared dashboard", async ({
   await expect(
     page.getByRole("button", { name: "Table", exact: true }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Home Close Home" }).click();
-  await expect(
-    page.getByText("Maek Workspace Settings", { exact: true }),
-  ).toBeVisible();
-  await page
-    .getByLabel("Description", { exact: true })
-    .fill("Shared dashboard description");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect
-    .poll(
-      () =>
-        JSON.parse(readFileSync(path.join(root, ".maek/config.json"), "utf8"))
-          .description,
-    )
-    .toBe("Shared dashboard description");
-  await page.screenshot({ path: "/tmp/maek-dashboard.png" });
-  await page
-    .getByRole("button", { name: "Clear Saved Tabs", exact: true })
-    .click();
-  await expect
-    .poll(
-      () =>
-        JSON.parse(readFileSync(path.join(root, ".maek/tabs.json"), "utf8"))
-          .tabs,
-    )
-    .toEqual([]);
+  await page.getByRole("tab", { name: "Home", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Start writing", exact: true })).toBeVisible();
+  await page.screenshot({ path: "/tmp/maek-home.png" });
   expect(errors).toEqual([]);
 });
 
@@ -322,7 +299,7 @@ test("keeps the Home label when a workspace rename arrives", async ({ page }) =>
   await page.getByText("Enter folder path", { exact: true }).click();
   await page.getByRole("textbox", { name: "Workspace path" }).fill(root);
   await page.getByRole("button", { name: "Open", exact: true }).click();
-  const dashboard = page.getByRole("tab", { name: "Home Close Home" });
+  const dashboard = page.getByRole("tab", { name: "Home", exact: true });
   await expect(dashboard).toBeVisible();
   renameSync(path.join(root, "Projects/Task A.md"), path.join(root, "Projects/Renamed.md"));
   await expect(dashboard).toBeVisible();

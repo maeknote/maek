@@ -501,3 +501,10 @@ export type DatabaseManifest = Omit<
   "folderPath" | "viewType" | "viewConfig" | "viewState"
 >;
 export type DatabaseViewConfig = DatabaseViewDefinition["config"];
+
+/** Metadata-only commands omit rows; row commands return the authoritative snapshot. */
+export interface DatabaseCommandResponse {
+  database: DatabaseMeta;
+  rows?: DatabaseRow[];
+  row?: DatabaseRow;
+}

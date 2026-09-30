@@ -84,6 +84,21 @@ describe('splitFrontmatterFile / composeMarkdownFile — unmodified round-trip',
     const next = recomposeSplitFile(split, '새 본문\n')
     expect(next).toBe('---\ntitle: a   # 주석\nkeys:\n  - x\n---\n\n새 본문\n')
   })
+
+  for (const lineEnding of ['\n', '\r\n'] as const) {
+    it(`separates the first body from a frontmatter-only file (${JSON.stringify(lineEnding)})`, () => {
+      const split = splitFrontmatterFile(`---${lineEnding}status: Todo${lineEnding}---`)
+      const saved = recomposeSplitFile(split, '# 새 본문')
+      expect(splitFrontmatterFile(saved).frontmatterRaw).toBe('status: Todo')
+      expect(splitFrontmatterFile(saved).body).toBe('# 새 본문')
+    })
+    it(`separates newly added frontmatter from an existing body (${JSON.stringify(lineEnding)})`, () => {
+      const split = splitFrontmatterFile('# 원래 본문')
+      const saved = composeMarkdownFile('status: Todo', split.body, lineEnding, split.bodySeparator)
+      expect(splitFrontmatterFile(saved).frontmatterRaw).toBe('status: Todo')
+      expect(splitFrontmatterFile(saved).body).toBe('# 원래 본문')
+    })
+  }
 })
 
 describe('patchYamlField', () => {

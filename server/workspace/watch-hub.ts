@@ -26,6 +26,7 @@ export class WorkspaceWatchHub {
   private ready = false;
   private metadataReady: Promise<void> = Promise.resolve();
   private closing: Promise<void> | undefined;
+  private directoryRenames: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly workspace: Workspace,
@@ -40,6 +41,7 @@ export class WorkspaceWatchHub {
       source: string,
       destination: string,
     ) => Promise<void>,
+    private readonly isDatabaseChangeRelevant?: () => boolean,
   ) {}
 
   subscribe(subscriber: Subscriber, lastEventId?: number): () => void {
@@ -165,9 +167,12 @@ export class WorkspaceWatchHub {
             // appearance store already pointing at the new paths. An
             // app-initiated move already remapped the keys, so this second run
             // is an idempotent no-op.
-            void this.onDirectoryRename(existing, relativePath)
+            // Parent and child directory events can arrive together. Their
+            // metadata remaps must not read and overwrite the same snapshot.
+            this.directoryRenames = this.directoryRenames
+              .then(() => this.onDirectoryRename!(existing, relativePath))
               .catch(() => {})
-              .finally(emitRename);
+              .then(emitRename);
           } else {
             emitRename();
           }
@@ -224,11 +229,12 @@ export class WorkspaceWatchHub {
       if (!["add", "change", "unlink"].includes(type)) return;
       const name = path.basename(absolutePath);
       if (!names.has(name)) return;
-      pending.add(name);
+      pending.add(name === "database.sqlite-wal" ? "database.sqlite" : name);
       clearTimeout(this.tabsDebounce);
       this.tabsDebounce = setTimeout(() => {
         if (this.ready)
           for (const changed of pending) {
+            if (changed === "database.sqlite" && this.isDatabaseChangeRelevant?.() === false) continue;
             if (changed === "tabs.json") this.emit("tabs-session-changed", {});
             else
               this.emit("change", {
@@ -252,6 +258,7 @@ export class WorkspaceWatchHub {
       clearTimeout(this.tabsDebounce);
       this.subscribers.clear();
       await Promise.all([this.watcher?.close(), this.tabsWatcher?.close()]);
+      await this.directoryRenames;
       this.watcher = undefined;
       this.tabsWatcher = undefined;
     })();

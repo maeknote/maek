@@ -69,6 +69,8 @@ import {
   updateCell as updateDatabaseCell,
   updateManifest,
   databaseCommand,
+  closeDatabaseWorkspace,
+  hasExternalDatabaseChange,
   convertFolder,
   databaseFolderMoved,
 } from "../features/database/service";
@@ -78,6 +80,7 @@ import type {
   DatabaseViewType,
 } from "../../shared/database";
 import { registerCustomPages } from "../features/custom-pages";
+import { registerEditorState } from "../features/editor";
 
 const run = promisify(execFile);
 const filePath = RelPath.refine(
@@ -127,6 +130,7 @@ export interface HostOptions {
 export function createHost(options: HostOptions = {}) {
   const app = Fastify({ logger: false, bodyLimit: 48 * 1024 * 1024 });
   const streams = new Set<() => Promise<void>>();
+  const databaseRoots = new Set<string>();
   const metadata = new WorkspaceMetadataRepository();
   const locks = new Map<string, Promise<unknown>>();
   async function serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -139,6 +143,7 @@ export function createHost(options: HostOptions = {}) {
       if (locks.get(key) === next) locks.delete(key);
     }
   }
+  registerEditorState(app, metadata, serial);
   // An external (Finder) folder rename recognized by the watcher must remap
   // folder-appearance keys before the client reloads. Run the remap under the
   // same per-workspace serial lock the appearance PUT uses so the two writers
@@ -149,6 +154,7 @@ export function createHost(options: HostOptions = {}) {
       serial(ws.root, () => moveFolderAppearance(ws, source, destination)).then(
         () => {},
       ),
+    (ws) => hasExternalDatabaseChange(ws.root),
   );
   registerCustomPages(app, {
     serial,
@@ -169,6 +175,7 @@ export function createHost(options: HostOptions = {}) {
   app.addHook("preClose", async () => {
     await Promise.all([...streams].map((close) => close()));
     await runtimes.close();
+    for (const root of databaseRoots) closeDatabaseWorkspace(root);
   });
   app.addHook("onRequest", async (req, reply) => {
     const host = req.headers.host ?? "";
@@ -201,8 +208,11 @@ export function createHost(options: HostOptions = {}) {
       .code(mapped.status)
       .send({ error: mapped.code, message: mapped.message });
   });
-  const wsFor = (req: { headers: Record<string, unknown> }) =>
-    getWorkspace(z.string().parse(req.headers["x-workspace-id"]));
+  const wsFor = (req: { headers: Record<string, unknown> }) => {
+    const ws = getWorkspace(z.string().parse(req.headers["x-workspace-id"]));
+    databaseRoots.add(ws.root);
+    return ws;
+  };
   const sessionFor = (req: { headers: Record<string, unknown> }) =>
     z
       .string()
@@ -231,7 +241,10 @@ export function createHost(options: HostOptions = {}) {
   });
   app.post("/api/databases/command", async (req) => {
     const ws = wsFor(req);
-    return mutateTree(ws, () => databaseCommand(ws, req.body));
+    const action = (req.body as { action?: string })?.action;
+    return ["add-row", "insert-row", "delete-row", "rename-row"].includes(action ?? "")
+      ? mutateTree(ws, () => databaseCommand(ws, req.body))
+      : serial(ws.root, () => databaseCommand(ws, req.body));
   });
   app.get("/api/workspace/dashboard", async (req) =>
     serial(wsFor(req).root, () => dashboard(wsFor(req))),

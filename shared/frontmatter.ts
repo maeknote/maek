@@ -98,7 +98,12 @@ export function composeMarkdownFile(
 
   const block = `${FRONTMATTER_FENCE}${lineEnding}${frontmatterRaw}${lineEnding}${FRONTMATTER_FENCE}`
 
-  if (bodySeparator !== undefined) return `${block}${bodySeparator}${body}`
+  if (bodySeparator !== undefined) {
+    // A frontmatter-only file has no separator. Once it gains a body the
+    // closing fence must still occupy its own line.
+    const separator = body && bodySeparator === '' ? `${lineEnding}${lineEnding}` : bodySeparator
+    return `${block}${separator}${body}`
+  }
 
   const normalizedBody = body.replace(/^\r?\n+/, '')
   if (!normalizedBody) return block

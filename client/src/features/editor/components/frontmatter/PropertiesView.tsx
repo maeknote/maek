@@ -42,7 +42,7 @@ export function PropertiesView({
       const yaml = serializePropertiesToYaml(updatedProperties, tab.frontmatter.raw);
       updateFrontmatterRaw(tab.id, yaml);
     },
-    [tab.id, updateFrontmatterRaw],
+    [tab.id, tab.frontmatter.raw, updateFrontmatterRaw],
   );
 
   const handleKeyChange = useCallback(
@@ -92,6 +92,7 @@ export function PropertiesView({
     (event: KeyboardEvent<HTMLDivElement>) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
+        event.stopPropagation();
         onSave();
       }
     },

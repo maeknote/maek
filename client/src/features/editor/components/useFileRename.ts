@@ -82,6 +82,7 @@ export function useFileRename({ fileName, onRename, preserveExtension = true }: 
         inputRef.current?.blur();
       } else if (e.key === "Escape") {
         e.preventDefault();
+        e.stopPropagation();
         skipNextCommit.current = true;
         setValue(displayName);
         inputRef.current?.blur();

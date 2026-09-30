@@ -1,4 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DatabaseFileSnapshots } from "../server/features/database/fileSnapshots";
+import { hasExternalDatabaseChange } from "../server/features/database/service";
+import Database from "better-sqlite3";
 import {
   mkdtemp,
   mkdir,
@@ -44,8 +47,58 @@ beforeEach(async () => {
   };
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   await app.close();
   await rm(root, { recursive: true, force: true });
+});
+describe("persistent heading presentation state", () => {
+  it("survives session changes, merges note patches and isolates browser profiles", async () => {
+    const profile = "01800000-0000-4000-8000-000000000001";
+    const stateRequest = (session: string, method: "GET" | "PUT", payload?: Record<string, unknown>, browser = profile) =>
+      app.inject({ method, url: "/api/workspace/editor-state", headers: {
+        ...headers, "x-client-session-id": session, "x-client-profile-id": browser,
+      }, ...(payload === undefined ? {} : { payload }) });
+    expect((await stateRequest("first", "GET")).json()).toEqual({ collapsedHeadings: {} });
+    await stateRequest("first", "PUT", { collapsedHeadings: { "a.md": ["h1:A:0"] } });
+    await stateRequest("second", "PUT", { collapsedHeadings: { "b.md": ["h1:B:0"] } });
+    expect((await stateRequest("restart", "GET")).json()).toEqual({ collapsedHeadings: {
+      "a.md": ["h1:A:0"], "b.md": ["h1:B:0"],
+    } });
+    expect((await stateRequest("restart", "GET", undefined, "01800000-0000-4000-8000-000000000002")).json())
+      .toEqual({ collapsedHeadings: {} });
+    await stateRequest("second", "PUT", { collapsedHeadings: { "a.md": [] } });
+    expect((await stateRequest("restart", "GET")).json().collapsedHeadings).toEqual({ "b.md": ["h1:B:0"] });
+  });
+});
+
+describe("database loading regression", () => {
+  it("syncs once and changes views without reading notes", async () => {
+    const db = (await request("POST", "/api/databases", { parent: "", name: "Board", viewType: "table" })).json();
+    await writeFile(path.join(root, "Board/note.md"), "---\nStatus: Todo\n---\nBody");
+    const reads = vi.spyOn(DatabaseFileSnapshots.prototype, "get");
+    const synced = await request("POST", "/api/databases/command", { databaseId: db.id, action: "sync" });
+    expect(synced.statusCode).toBe(200);
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(hasExternalDatabaseChange(root)).toBe(true);
+    reads.mockClear();
+    const switched = await request("POST", "/api/databases/command", {
+      databaseId: db.id, action: "active-view", viewId: db.views[1].id, expectedUpdatedAt: db.updatedAt,
+    });
+    expect(switched.statusCode).toBe(200);
+    expect(switched.json()).not.toHaveProperty("rows");
+    expect(reads).not.toHaveBeenCalled();
+    expect(hasExternalDatabaseChange(root)).toBe(false);
+    await request("POST", "/api/databases/command", {
+      databaseId: db.id, action: "reorder", rowIds: synced.json().rows.map((row: { id: string }) => row.id),
+    });
+    expect(hasExternalDatabaseChange(root)).toBe(true);
+    expect(hasExternalDatabaseChange(root)).toBe(false);
+    const external = new Database(path.join(root, ".maek/database.sqlite"));
+    try {
+      external.prepare("UPDATE database_rows SET sort_order=7").run();
+      expect(hasExternalDatabaseChange(root)).toBe(true);
+    } finally { external.close(); }
+  });
 });
 const request = (
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",

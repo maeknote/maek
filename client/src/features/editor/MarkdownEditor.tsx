@@ -21,7 +21,7 @@ const markdown = (editor: Editor) =>
   (
     editor.storage as unknown as { markdown: { getMarkdown: () => string } }
   ).markdown.getMarkdown();
-export function MarkdownEditor({ tab }: { tab: Tab }) {
+export function MarkdownEditor({ tab, onSave }: { tab: Tab; onSave?: () => Promise<unknown> }) {
   const restoring = useStore((s) => s.restoring);
   const scroll = useRef<HTMLDivElement>(null);
   const notePath = tab.id;
@@ -150,19 +150,15 @@ export function MarkdownEditor({ tab }: { tab: Tab }) {
         useStore.getState().scrollPositions[notePath] ?? 0;
     }
   }, [editor, notePath]);
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        void useStore.getState().save(notePath);
-      }
-    };
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, [notePath]);
   if (!editor) return null;
   return (
-    <div className="maek-editor-pane">
+    <div className="maek-editor-pane" onKeyDown={(event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        event.stopPropagation();
+        void (onSave ? onSave() : useStore.getState().save(notePath));
+      }
+    }}>
       <input
         ref={imageInput}
         type="file"

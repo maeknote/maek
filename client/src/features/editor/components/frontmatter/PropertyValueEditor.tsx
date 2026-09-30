@@ -1,4 +1,4 @@
-import { useCallback, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { X } from "lucide-react";
 import { cn } from "@renderer/lib/utils";
 import type { PropertyValueType } from "../../utils/yamlProperties";
@@ -71,6 +71,7 @@ function NumberEditor({
   onChange: (v: number) => void;
 }) {
   const [localValue, setLocalValue] = useState(String(value));
+  useEffect(() => setLocalValue(String(value)), [value]);
 
   const handleBlur = useCallback(() => {
     const parsed = parseFloat(localValue);
@@ -82,6 +83,7 @@ function NumberEditor({
       type="text"
       inputMode="numeric"
       value={localValue}
+      data-edit-pending={localValue !== String(value)}
       onChange={(e) => setLocalValue(e.target.value)}
       onBlur={handleBlur}
       onKeyDown={(e) => {

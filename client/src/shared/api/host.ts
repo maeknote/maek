@@ -6,6 +6,9 @@ export const browserSessionId =
   sessionStorage.getItem("oh-my-maek:browser-session") ??
   crypto.randomUUID();
 sessionStorage.setItem(sessionKey, browserSessionId);
+const profileKey = "maek:browser-profile";
+export const browserProfileId = localStorage.getItem(profileKey) ?? crypto.randomUUID();
+localStorage.setItem(profileKey, browserProfileId);
 export function setHostWorkspace(ws: WorkspaceRef) {
   workspace = ws;
 }
@@ -24,14 +27,17 @@ export async function api<T>(
   body?: unknown,
   ws = workspace,
   signal?: AbortSignal,
+  options?: { keepalive?: boolean },
 ): Promise<T> {
   const response = await fetch(url, {
     method,
     signal,
+    keepalive: options?.keepalive,
     headers: {
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(ws ? { "X-Workspace-Id": ws.wsId } : {}),
       "X-Client-Session-Id": browserSessionId,
+      "X-Client-Profile-Id": browserProfileId,
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });

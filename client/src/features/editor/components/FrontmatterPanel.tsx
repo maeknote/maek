@@ -1,4 +1,5 @@
-import { useCallback, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, type KeyboardEvent } from "react";
+import { registerEditBuffer } from "@renderer/features/workspace";
 import { AlertTriangle } from "lucide-react";
 import type { TabItem } from "../types";
 import { useTabStore } from "../stores/tabStore";
@@ -10,6 +11,15 @@ interface FrontmatterPanelProps {
 }
 
 export function FrontmatterPanel({ tab, onSave }: FrontmatterPanelProps) {
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => registerEditBuffer(tab.editorSessionId, {
+    flush: async () => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && panel.current?.contains(active)) active.blur();
+    },
+    discard: () => {},
+    hasPending: () => Boolean(panel.current?.querySelector('[data-edit-pending="true"]')),
+  }), [tab.editorSessionId]);
   const { updateFrontmatterRaw, setFrontmatterViewMode } = useTabStore();
   const isInvalid = Boolean(tab.frontmatter.validationError);
   const storedMode = tab.frontmatter.viewMode ?? "properties";
@@ -19,6 +29,7 @@ export function FrontmatterPanel({ tab, onSave }: FrontmatterPanelProps) {
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
+        event.stopPropagation();
         onSave();
       }
     },
@@ -32,7 +43,7 @@ export function FrontmatterPanel({ tab, onSave }: FrontmatterPanelProps) {
   if (!tab.frontmatter.expanded) return null;
 
   return (
-    <section className="shrink-0 px-8 pb-1 pt-2">
+    <section ref={panel} className="shrink-0 px-8 pb-1 pt-2">
       <div className="mt-1">
         {viewMode === "properties" ? (
           <PropertiesView

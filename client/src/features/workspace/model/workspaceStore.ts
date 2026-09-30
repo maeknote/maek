@@ -14,10 +14,11 @@ import {
   isTabDirty,
   getTabFileContent,
   validateFrontmatterYaml,
+  loadHeadingState, flushHeadingState, remapHeadingState,
 } from "@renderer/features/editor";
 import { api, ApiError, setHostWorkspace } from "@renderer/shared/api";
-import { flushEditBuffer, disposeEditBuffer, anyPendingEdits } from "./editBuffers";
-import { queryClient } from "@renderer/app/query-client";
+import { flushEditBuffer, disposeEditBuffer, anyPendingEdits, hasPendingEdit } from "./editBuffers";
+import { queryClient } from "@renderer/shared/query-client";
 import { resolveTheme, systemPrefersDark } from "@renderer/lib/preferences";
 import { removeWorkspaceFromList } from "@renderer/lib/workspaceList";
 
@@ -649,6 +650,8 @@ export const useStore = create<State>((set, get) => ({
       const activeTabId = activeViewGroup
         ? groupActiveTabId(activeViewGroup)
         : preferredActive;
+      await loadHeadingState(ws);
+      if (!isCurrent()) return;
       set({
         workspace: ws,
         nodes: tree.nodes,
@@ -1209,6 +1212,10 @@ export const useStore = create<State>((set, get) => ({
     // close, and workspace switch all funnel through here.
     const preTab = get().tabs.find((t) => t.id === id);
     if (preTab) await flushEditBuffer(preTab.editorSessionId);
+    // Flushing yields. Another caller may have started saving in that gap,
+    // including the previous save's recursive dirty-draft follow-up.
+    const afterFlush = saves.get(id);
+    if (afterFlush) { await afterFlush; return get().save(id); }
     const tab = get().tabs.find((t) => t.id === id);
     if (!tab || !isTabDirty(tab)) return true;
     if (tab.status === "conflict") return false;
@@ -1364,6 +1371,7 @@ export const useStore = create<State>((set, get) => ({
     }
     const epoch = sessionEpoch;
     if (event.type === "rename" && event.source) {
+      if (get().workspace) remapHeadingState(get().workspace!, event.source, event.path);
       const source = event.source,
         dest = event.path;
       const replace = (p: string): string => remapTabIdForRename(p, source, dest);
@@ -1422,6 +1430,7 @@ export const useStore = create<State>((set, get) => ({
       later();
       return;
     }
+    if (event.type.startsWith("unlink") && get().workspace) remapHeadingState(get().workspace!, event.path);
     set((s) => ({
       nodes: event.node
         ? [...s.nodes.filter((n) => n.id !== event.path), event.node].sort(
@@ -1463,7 +1472,7 @@ export const useStore = create<State>((set, get) => ({
         if (epoch !== sessionEpoch) return;
         const latest = get().tabs.find((t) => t.id === tab.id);
         if (!latest || (file.hash && file.hash === latest.file.hash)) continue;
-        if (isTabDirty(latest))
+        if (isTabDirty(latest) || hasPendingEdit(latest.editorSessionId))
           patchTab(tab.id, (t) => ({
             ...t,
             status: "conflict",
@@ -1480,6 +1489,7 @@ export const useStore = create<State>((set, get) => ({
     }
   },
   applyMoveToState(source, dest) {
+    if (get().workspace) remapHeadingState(get().workspace!, source, dest);
     const replace = (p: string): string => remapTabIdForRename(p, source, dest);
     set((s) => ({
       tabs: s.tabs.map((t) => remapTabForRename(t, source, dest)),
@@ -1581,6 +1591,7 @@ export const useStore = create<State>((set, get) => ({
         writes.push(api("/api/workspace/tabs", "PUT", rootTabs, s.workspace));
         tabsDirty = false;
       }
+      writes.push(flushHeadingState(s.workspace));
       await Promise.all(writes);
     } catch (e) {
       set({ error: "Session could not be saved: " + String(e) });
@@ -1620,3 +1631,7 @@ export async function clearSharedTabs() {
   await api('/api/workspace/reset','POST',{action:'tabs'});
   useStore.setState(s=>({tabs:s.tabs.filter(t=>t.viewKind==='workspace-settings'),activeTabId:s.tabs.find(t=>t.viewKind==='workspace-settings')?.id??null}));
 }
+
+window.addEventListener("maek:editor-state-error", (event) => {
+  useStore.getState().setError("Heading state could not be saved: " + (event as CustomEvent<string>).detail);
+});

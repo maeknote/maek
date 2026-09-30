@@ -30,6 +30,8 @@ import {
 import { sha256, flooredMtime } from "../../core/fs/readFile";
 import { writeFile } from "../../core/fs/writeFile";
 import { conflict } from "../../core/errors";
+import { workspaceTarget } from "../../workspace/filesystem";
+import { DatabaseFileSnapshots } from "./fileSnapshots";
 
 interface RawRow {
   id:string; database_id:string; file_name:string; yaml_data:string; file_mtime:number;
@@ -41,6 +43,41 @@ interface RawDatabase {
 }
 const MANIFEST = ".maek-database.json";
 const dbs = new Map<string, Database.Database>();
+const externalVersions = new Map<string, number>();
+const changedRowRoots = new Set<string>();
+export function hasExternalDatabaseChange(root: string): boolean {
+  const database = dbs.get(root);
+  if (!database) return true;
+  // SQLite data_version changes for commits on other connections, but not
+  // commits made by this connection (view settings and our own row index).
+  const version = database.pragma("data_version", { simple: true }) as number;
+  const previous = externalVersions.get(root);
+  externalVersions.set(root, version);
+  const rowsChanged = changedRowRoots.delete(root);
+  return rowsChanged || previous !== version;
+}
+const fileSnapshots = new Map<string, DatabaseFileSnapshots>();
+export function closeDatabaseWorkspace(root: string) {
+  fileSnapshots.delete(root);
+  dbs.get(root)?.close();
+  dbs.delete(root);
+  externalVersions.delete(root);
+  changedRowRoots.delete(root);
+}
+
+async function findDatabase(ws: Workspace, id: string): Promise<DatabaseMeta | undefined> {
+  const registry = dbs.get(ws.root)?.prepare("SELECT folder_path FROM databases WHERE id=?").get(id) as { folder_path: string } | undefined;
+  if (registry) {
+    const folder = await workspaceTarget(ws, registry.folder_path);
+    const manifest = await readManifest(folder);
+    if (manifest?.id === id) {
+      const meta = { ...manifest, folderPath: registry.folder_path };
+      upsertMeta(openDb(ws), meta);
+      return projectMeta(meta);
+    }
+  }
+  return (await listDatabases(ws)).find((meta) => meta.id === id);
+}
 
 function openDb(ws: Workspace) {
   const cached = dbs.get(ws.root);
@@ -76,6 +113,7 @@ function openDb(ws: Workspace) {
       "ALTER TABLE database_rows ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
     );
   dbs.set(ws.root, db);
+  externalVersions.set(ws.root, db.pragma("data_version", { simple: true }) as number);
   return db;
 }
 const viewName: Record<DatabaseViewType, string> = {
@@ -535,26 +573,37 @@ export async function rows(
   const byName = new Map(existing.map((r) => [r.file_name, r]));
   const keep = new Set<string>();
   const hashes = new Map<string, string>();
-  for (const e of files) {
+  const cache = fileSnapshots.get(ws.root) ?? new DatabaseFileSnapshots();
+  fileSnapshots.set(ws.root, cache);
+  let cursor = 0;
+  const snapshots = new Map<string, Awaited<ReturnType<DatabaseFileSnapshots["get"]>>>();
+  await Promise.all(Array.from({ length: Math.min(8, files.length) }, async () => {
+    while (cursor < files.length) {
+      const file = files[cursor++]!;
+      const abs = await workspaceTarget(ws, path.posix.join(meta.folderPath, file.name));
+      snapshots.set(file.name, await cache.get(abs));
+    }
+  }));
+  cache.retain(folder, new Set(files.map((file) => path.join(folder, file.name))));
+  const initialOrder = Math.max(-1, ...existing.map((r) => r.sort_order));
+  let changed = false;
+  db.transaction(() => { for (const e of files) {
     keep.add(e.name);
-    const abs = path.join(folder, e.name),
-      s = await stat(abs),
-      buf = await readFile(abs),
-      raw = buf.toString("utf8"),
-      yaml = parseYamlData(splitFrontmatterFile(raw).frontmatterRaw),
-      old = byName.get(e.name);
-    hashes.set(e.name, sha256(buf));
+    const snapshot = snapshots.get(e.name)!,
+      yaml = snapshot.yaml, old = byName.get(e.name);
+    hashes.set(e.name, snapshot.hash);
     if (
       old &&
-      old.file_mtime === flooredMtime(s.mtimeMs) &&
+      old.file_mtime === snapshot.mtime &&
       old.yaml_data === JSON.stringify(yaml)
     )
       continue;
+    changed = true;
     const now = Date.now(),
       id = old?.id ?? randomUUID(),
       order =
         old?.sort_order ??
-        Math.max(-1, ...existing.map((r) => r.sort_order)) + keep.size;
+        initialOrder + keep.size;
     db.prepare(
       `INSERT INTO database_rows(id,database_id,file_name,yaml_data,file_mtime,created_at,updated_at,sort_order) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(database_id,file_name) DO UPDATE SET yaml_data=excluded.yaml_data,file_mtime=excluded.file_mtime,updated_at=excluded.updated_at`,
     ).run(
@@ -562,15 +611,19 @@ export async function rows(
       meta.id,
       e.name,
       JSON.stringify(yaml),
-      flooredMtime(s.mtimeMs),
+      snapshot.mtime,
       old?.created_at ?? now,
       now,
       order,
     );
   }
   for (const r of existing)
-    if (!keep.has(r.file_name))
+    if (!keep.has(r.file_name)) {
+      changed = true;
       db.prepare("DELETE FROM database_rows WHERE id=?").run(r.id);
+    }
+  })();
+  if (changed) changedRowRoots.add(ws.root);
   return (
     db
       .prepare(
@@ -641,6 +694,7 @@ export async function updateCell(
   db.prepare(
     "UPDATE database_rows SET yaml_data=?,file_mtime=?,updated_at=? WHERE id=?",
   ).run(JSON.stringify(data), result.mtimeMs, Date.now(), rowId);
+  changedRowRoots.add(ws.root);
   return result;
 }
 export async function addRow(
@@ -674,6 +728,7 @@ export function reorderRows(ws: Workspace, meta: DatabaseMeta, ids: string[]) {
         .run(i, Date.now(), id, meta.id),
     ),
   )();
+  if (ids.length) changedRowRoots.add(ws.root);
 }
 export async function renameRow(
   ws: Workspace,
@@ -708,6 +763,7 @@ export async function renameRow(
   db.prepare(
     "UPDATE database_rows SET file_name=?,updated_at=? WHERE id=?",
   ).run(safe, Date.now(), rowId);
+  changedRowRoots.add(ws.root);
   return safe;
 }
 
@@ -757,12 +813,13 @@ export async function databaseCommand(ws: Workspace, input: unknown) {
         .optional(),
     })
     .parse(input);
-  let meta = (await listDatabases(ws)).find((m) => m.id === d.databaseId);
+  let meta = await findDatabase(ws, d.databaseId);
   if (!meta)
     throw Object.assign(new Error("Database not found"), { statusCode: 404 });
-  const { workspaceTarget } = await import("../../workspace/filesystem");
   await workspaceTarget(ws, meta.folderPath);
-  let currentRows = await rows(ws, meta);
+  const viewOnly = ["active-view", "create-view", "update-view", "delete-view"].includes(d.action);
+  let currentRows = viewOnly ? [] : await rows(ws, meta);
+  if (d.action === "sync") return { database: meta, rows: currentRows, row: undefined };
   const requireRow = (id: string | undefined) => {
     const row = currentRows.find((r) => r.id === id);
     if (!row)
@@ -784,7 +841,8 @@ export async function databaseCommand(ws: Workspace, input: unknown) {
   let changedRowId = d.rowId;
   if (d.expectedRowHash) {
     const row = requireRow(d.rowId ?? d.rowMove?.rowId);
-    if (row.hash !== d.expectedRowHash)
+    const absolute = await workspaceTarget(ws, row.path);
+    if (sha256(await readFile(absolute)) !== d.expectedRowHash)
       throw conflict(
         "changed",
         "This row changed outside this view. Reload and retry.",
@@ -895,6 +953,7 @@ export async function databaseCommand(ws: Workspace, input: unknown) {
     }
     meta = await updateManifest(ws, meta.folderPath, next);
   }
+  if (viewOnly) return { database: projectMeta(meta), row: undefined };
   currentRows = await rows(ws, meta);
   return {
     database: projectMeta(meta),

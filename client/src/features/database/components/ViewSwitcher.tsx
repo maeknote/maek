@@ -138,7 +138,7 @@ export function ViewSwitcher({
   }, [menuView, onDeleteView, views.length])
 
   return (
-    <div className="flex items-center gap-0.5 px-3 pb-0.5 pt-1.5">
+    <div role="group" aria-label="Database views" className="flex items-center gap-0.5 px-3 pb-0.5 pt-1.5">
       <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
         {views.map((view) => {
           const isActive = view.id === activeViewId

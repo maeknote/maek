@@ -1,12 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileText, X } from "lucide-react";
 import { api } from "@renderer/shared/api";
-import { makeTab, useStore } from "@renderer/features/workspace";
+import { makeTab, useStore, disposeEditBuffer } from "@renderer/features/workspace";
 import type { FileContent } from "@shared/workspace";
-import { MarkdownEditor } from "../../editor/MarkdownEditor";
-import { TitleBar } from "../../editor/components/TitleBar";
-import { FrontmatterPanel } from "../../editor/components/FrontmatterPanel";
+import { MarkdownEditor, TitleBar, FrontmatterPanel } from "@renderer/features/editor";
 export function NotePopupModal({
   relativePath,
   onClose,
@@ -21,6 +19,10 @@ export function NotePopupModal({
 }) {
   const tab = useStore((s) => s.tabs.find((t) => t.id === relativePath));
   const [error, setError] = useState("");
+  const renameTask = useRef<Promise<void> | null>(null);
+  const currentPath = useRef(relativePath);
+  const ownedSession = useRef<string | null>(null);
+  currentPath.current = relativePath;
   useEffect(() => {
     let cancelled = false;
     const workspace = useStore.getState().workspace;
@@ -38,47 +40,56 @@ export function NotePopupModal({
             setError("This file cannot be edited as a note.");
             return;
           }
-          useStore.setState((s) =>
-            s.tabs.some((t) => t.id === relativePath)
-              ? s
-              : {
-                  tabs: [
-                    ...s.tabs,
-                    { ...makeTab(relativePath, file), isPopup: true },
-                  ],
-                },
-          );
+          useStore.setState((s) => {
+            if (s.tabs.some((t) => t.id === relativePath)) return s;
+            const created = { ...makeTab(relativePath, file), isPopup: true };
+            ownedSession.current = created.editorSessionId;
+            return { tabs: [...s.tabs, created] };
+          });
         })
         .catch((e) => {
           if (!cancelled) setError(String(e));
         });
     return () => {
       cancelled = true;
-      // Keep failed drafts in the store. Never discard a note before save succeeds.
-      if (!existing)
-        void useStore
-          .getState()
-          .save(relativePath)
-          .then((saved) => {
-            if (saved)
-              useStore.setState((s) => ({
-                tabs: s.tabs.filter((t) => t.id !== relativePath || !t.isPopup),
-              }));
-          });
     };
   }, [relativePath]);
+  useEffect(() => () => {
+    // A rename keeps the same editor session. Remove only the popup-owned
+    // draft on final unmount, after saving at its current path succeeds.
+    const owned = useStore.getState().tabs.find(t => t.editorSessionId === ownedSession.current && t.isPopup);
+    if (!owned) return;
+    void useStore.getState().save(owned.id).then(saved => {
+      if (!saved) return;
+      disposeEditBuffer(owned.editorSessionId);
+      useStore.setState(state => ({ tabs: state.tabs.filter(t => t.editorSessionId !== owned.editorSessionId || !t.isPopup) }));
+    });
+  }, []);
   async function save() {
-    const saved = await useStore.getState().save(relativePath);
+    const saved = await useStore.getState().save(currentPath.current);
     if (saved) onSaved?.();
     return saved;
   }
   async function close() {
-    if (await save()) onClose();
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+    try {
+      await renameTask.current;
+      const saved = await useStore.getState().save(currentPath.current);
+      if (saved) { onSaved?.(); onClose(); }
+    } catch (e) { setError(String(e)); }
   }
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
       onKeyDown={(event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+          event.preventDefault();
+          event.stopPropagation();
+          const active = document.activeElement;
+          if (active instanceof HTMLElement) active.blur();
+          void Promise.resolve(renameTask.current).then(() => save()).catch(e => setError(String(e)));
+        }
         if (event.key === "Escape") {
           event.stopPropagation();
           void close();
@@ -111,10 +122,14 @@ export function NotePopupModal({
           <>
             <TitleBar
               tab={tab}
-              onRename={async (name) => {
-                if (!(await save()))
-                  throw new Error("Save the note before renaming");
-                await onRename?.(name);
+              onRename={(name) => {
+                const task = (async () => {
+                  if (!(await save())) throw new Error("Save the note before renaming");
+                  await onRename?.(name);
+                })();
+                renameTask.current = task;
+                void task.finally(() => { if (renameTask.current === task) renameTask.current = null; }).catch(() => {});
+                return task;
               }}
               actions={
                 <button
@@ -136,7 +151,7 @@ export function NotePopupModal({
               <FrontmatterPanel tab={tab} onSave={() => void save()} />
             )}
             <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
-              <MarkdownEditor tab={tab} />
+              <MarkdownEditor tab={tab} onSave={save} />
             </div>
           </>
         )}

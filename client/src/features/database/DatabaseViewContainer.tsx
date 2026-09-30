@@ -3,11 +3,11 @@ import { databaseApi } from '@renderer/features/database/api'
  * DatabaseViewContainer - Routes to the active view (Table, Kanban, Timeline, Calendar)
  * and provides a view switcher in the header.
  *
- * Each child view manages its own data loading via useDatabaseView. The container
- * only owns the active view id state and persists it to SQLite via view IPC.
+ * Child views share row snapshots via useDatabaseView. The container selects
+ * the requested view immediately and persists the selection through the API.
  */
 
-import { useCallback, useMemo, useState, type ReactElement } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { DatabaseCustomViewType } from '@shared/database'
 import { useWorkspaceStore } from '@renderer/features/database/workspaceStore'
@@ -42,6 +42,8 @@ export function DatabaseViewContainer({
     return databases.find((d) => d.folderPath === relative) ?? null
   }, [rootPath, databaseFolderPath, databases])
 
+  const switchIntent = useRef(0)
+  const savedViewId = useRef<string | null>(null)
   const [switchingToViewId, setSwitchingToViewId] = useState<string | null>(null)
   const activeViewDefinition =
     meta?.views.find((view) => view.id === (switchingToViewId ?? meta.activeViewId)) ??
@@ -62,15 +64,20 @@ export function DatabaseViewContainer({
   const handleViewChange = useCallback(
     async (viewId: string) => {
       if (!rootPath || !meta || meta.activeViewId === viewId) return
+      const intent = ++switchIntent.current
+      savedViewId.current ??= meta.activeViewId
       setSwitchingToViewId(viewId)
-      try {
-        const result = await databaseApi.databaseSetActiveView(rootPath, meta.id, viewId)
-        if (result.success) {
-          replaceDatabaseInStore(meta.id, result.database)
-        }
-      } finally {
-        setSwitchingToViewId(null)
+      useWorkspaceStore.getState().setPendingView(meta.id, viewId)
+      const result = await databaseApi.databaseSetActiveView(rootPath, meta.id, viewId)
+      if (result.success) savedViewId.current = result.database.activeViewId
+      if (intent !== switchIntent.current) return
+      useWorkspaceStore.getState().setPendingView(meta.id, null)
+      if (result.success) replaceDatabaseInStore(meta.id, result.database)
+      else {
+        const current = useWorkspaceStore.getState().databases.find(database => database.id === meta.id)
+        if (current) replaceDatabaseInStore(meta.id, { ...current, activeViewId: savedViewId.current! })
       }
+      setSwitchingToViewId(null)
     },
     [rootPath, meta, replaceDatabaseInStore]
   )
@@ -127,37 +134,29 @@ export function DatabaseViewContainer({
         onDeleteView={handleDeleteView}
       />
       <div className="flex-1 overflow-hidden">
-        {switchingToViewId ? (
-          <div className="flex h-full items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-text" />
-          </div>
-        ) : (
-          <>
-            {activeView === 'table' && (
-              <DatabaseTableView
-                key={activeViewDefinition?.id}
-                databaseFolderPath={databaseFolderPath}
-              />
-            )}
-            {activeView === 'kanban' && (
-              <DatabaseKanbanView
-                key={activeViewDefinition?.id}
-                databaseFolderPath={databaseFolderPath}
-              />
-            )}
-            {activeView === 'calendar' && (
-              <DatabaseCalendarView
-                key={activeViewDefinition?.id}
-                databaseFolderPath={databaseFolderPath}
-              />
-            )}
-            {activeView === 'timeline' && (
-              <DatabaseTimelineView
-                key={activeViewDefinition?.id}
-                databaseFolderPath={databaseFolderPath}
-              />
-            )}
-          </>
+        {activeView === 'table' && (
+          <DatabaseTableView
+            key={activeViewDefinition?.id}
+            databaseFolderPath={databaseFolderPath}
+          />
+        )}
+        {activeView === 'kanban' && (
+          <DatabaseKanbanView
+            key={activeViewDefinition?.id}
+            databaseFolderPath={databaseFolderPath}
+          />
+        )}
+        {activeView === 'calendar' && (
+          <DatabaseCalendarView
+            key={activeViewDefinition?.id}
+            databaseFolderPath={databaseFolderPath}
+          />
+        )}
+        {activeView === 'timeline' && (
+          <DatabaseTimelineView
+            key={activeViewDefinition?.id}
+            databaseFolderPath={databaseFolderPath}
+          />
         )}
       </div>
     </div>

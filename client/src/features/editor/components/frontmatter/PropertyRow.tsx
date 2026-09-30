@@ -50,6 +50,7 @@ export function PropertyRow({
   const [showTypeMenu, setShowTypeMenu] = useState(false);
   const typeRef = useRef<HTMLButtonElement>(null);
   const revertTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const skipKeyBlur = useRef(false);
 
   useEffect(() => {
     setLocalKey(property.key);
@@ -71,6 +72,7 @@ export function PropertyRow({
   }, [property.key]);
 
   const handleKeyBlur = useCallback(() => {
+    if (skipKeyBlur.current) { skipKeyBlur.current = false; return; }
     const trimmed = localKey.trim();
     if (trimmed === property.key) {
       setKeyError(false);
@@ -97,8 +99,12 @@ export function PropertyRow({
   const handleKeyKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter") {
+        e.preventDefault();
         e.currentTarget.blur();
       } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        skipKeyBlur.current = true;
         setLocalKey(property.key);
         setKeyError(false);
         e.currentTarget.blur();
@@ -132,12 +138,14 @@ export function PropertyRow({
   );
 
   return (
-    <div className="group flex min-h-[32px] items-center gap-1 rounded-md transition-colors hover:bg-surface-overlay">
+    <div role="group" aria-label={property.key} className="group flex min-h-[32px] items-center gap-1 rounded-md transition-colors hover:bg-surface-overlay">
       {/* Key input */}
       <div className="w-[35%] shrink-0">
         <input
           type="text"
+          aria-label="Property name"
           value={localKey}
+          data-edit-pending={localKey !== property.key}
           onChange={(e) => {
             setLocalKey(e.target.value);
             setKeyError(false);

@@ -1,13 +1,11 @@
 import { databaseApi } from '@renderer/features/database/api'
-// useDatabaseView - Loads meta + rows for a database folder and exposes mutations.
-//
-// Flow:
-//   1. Resolve the DatabaseMeta by matching the folder path against workspaceStore.databases
-//   2. On mount (and when the meta changes), trigger `database:sync` which reconciles
-//      the SQLite index against the disk state (mtime comparison) and returns fresh rows
-//   3. Expose mutation helpers that write to the markdown file first, then refresh
+// Views share one server snapshot for each workspace/database.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { queryClient } from '@renderer/shared/query-client'
+import { useStore } from '@renderer/features/workspace'
+import { databaseRowsKey, suspendDatabaseRows, resumeDatabaseRows } from '../rowsQuery'
 import type { DatabaseColumnSchema, DatabaseMeta, DatabaseRow } from '@shared/database'
 import { useWorkspaceStore } from '@renderer/features/database/workspaceStore'
 
@@ -35,7 +33,7 @@ interface DatabaseViewApi extends DatabaseViewState {
   reorderRows: (orderedRowIds: string[]) => Promise<void>
   /** Replace local rows with an authoritative snapshot (used after atomic drops). */
   applyAuthoritativeRows: (rows: DatabaseRow[]) => void
-  /** Ignore onDatabaseRowsChanged refetches until resumeWatcher() is called. */
+  /** Ignore file-watcher refetches until resumeWatcher() is called. */
   suspendWatcher: () => void
   resumeWatcher: () => void
 }
@@ -70,55 +68,34 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
     return registeredDatabases.find((d) => d.folderPath === relative) ?? null
   }, [rootPath, databaseFolderPath, registeredDatabases])
 
-  const [rows, setRows] = useState<DatabaseRow[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [loadedRowsFor, setLoadedRowsFor] = useState<{ rootPath: string; databaseId: string } | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  // Gate for onDatabaseRowsChanged — set to true during active kanban drag so
-  // watcher-triggered refetches don't clobber optimistic local state.
-  const watcherSuspendedRef = useRef(false)
-
+  const workspace = useStore((state) => state.workspace)
+  const databaseId = meta?.id
+  const workspaceId = workspace?.wsId
+  const [mutationError, setError] = useState<string | null>(null)
+  const queryKey = databaseRowsKey(workspaceId ?? '', databaseId ?? '')
+  const query = useQuery({
+    queryKey,
+    enabled: Boolean(workspaceId && databaseId),
+    staleTime: Infinity,
+    queryFn: async () => {
+      const result = await databaseApi.databaseSync(rootPath!, databaseId!)
+      if (!result.success) throw new Error(result.error)
+      return result.rows
+    },
+  })
+  const rows = query.data ?? []
+  const isLoading = query.isFetching
+  const error = mutationError ?? (query.error instanceof Error ? query.error.message : null)
+  const setRows = useCallback((next: DatabaseRow[] | ((previous: DatabaseRow[]) => DatabaseRow[])) => {
+    if (!workspaceId || !databaseId) return
+    queryClient.setQueryData<DatabaseRow[]>(databaseRowsKey(workspaceId, databaseId), previous =>
+      typeof next === 'function' ? next(previous ?? []) : next)
+  }, [workspaceId, databaseId])
   const reload = useCallback(async () => {
-    if (!rootPath || !meta) return
-    setIsLoading(true)
+    if (!workspaceId || !databaseId) return
     setError(null)
-    try {
-      const syncResult = await databaseApi.databaseSync(rootPath, meta.id)
-      if (syncResult.success) {
-        setRows(syncResult.rows)
-        setLoadedRowsFor({ rootPath, databaseId: meta.id })
-      } else {
-        setError(syncResult.error)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load database rows')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [rootPath, meta])
-
-  // Initial load + reload when the target database changes.
-  useEffect(() => {
-    if (!meta || !rootPath) {
-      setRows([])
-      return
-    }
-    if (!watcherSuspendedRef.current) void reload()
-  }, [meta, rootPath, reload])
-
-  // Auto-refresh when the file watcher bridge reports that this database's rows
-  // have been re-indexed by the main process (external edits, file adds/deletes, etc.).
-  useEffect(() => {
-    if (!meta || !rootPath) return
-    const unsubscribe = databaseApi.onDatabaseRowsChanged((payload) => {
-      if (payload.workspacePath !== rootPath || payload.databaseId !== meta.id) return
-      if (watcherSuspendedRef.current) return
-      void databaseApi.databaseGetRows(rootPath, meta.id).then((result) => {
-        if (result.success) setRows(result.rows)
-      })
-    })
-    return unsubscribe
-  }, [meta, rootPath])
+    await queryClient.invalidateQueries({ queryKey: databaseRowsKey(workspaceId, databaseId) })
+  }, [workspaceId, databaseId])
 
   const addRow = useCallback(
     async (initialValues?: Record<string, unknown>): Promise<DatabaseRow | null> => {
@@ -128,10 +105,9 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
         setError(result.error)
         return null
       }
-      await reload()
       return result.row
     },
-    [rootPath, meta, reload]
+    [rootPath, meta]
   )
 
   const insertRow = useCallback(
@@ -142,10 +118,9 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
         setError(result.error)
         return null
       }
-      await reload()
       return result.row
     },
-    [rootPath, meta, reload]
+    [rootPath, meta]
   )
 
   const deleteRow = useCallback(
@@ -156,9 +131,8 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
         setError(result.error)
         return
       }
-      await reload()
     },
-    [rootPath, meta, reload]
+    [rootPath, meta]
   )
 
   const updateCell = useCallback(
@@ -180,7 +154,7 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
       setRows((prev) => prev.map((r) => (r.id === result.row.id ? result.row : r)))
       setError(null)
     },
-    [rootPath, meta]
+    [rootPath, meta, setRows]
   )
 
   const updateSchema = useCallback(
@@ -206,10 +180,9 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
         setError(result.error)
         return false
       }
-      await reload()
       return true
     },
-    [rootPath, meta, reload]
+    [rootPath, meta]
   )
 
   const reorderRows = useCallback(
@@ -229,30 +202,25 @@ export function useDatabaseView(databaseFolderPath: string): DatabaseViewApi {
         await reload()
       }
     },
-    [rootPath, meta, reload]
+    [rootPath, meta, reload, setRows]
   )
 
   const applyAuthoritativeRows = useCallback((authoritative: DatabaseRow[]): void => {
     setRows(authoritative)
-  }, [])
+  }, [setRows])
 
   const suspendWatcher = useCallback((): void => {
-    watcherSuspendedRef.current = true
-  }, [])
-
+    if (workspaceId && databaseId) suspendDatabaseRows(workspaceId, databaseId)
+  }, [workspaceId, databaseId])
   const resumeWatcher = useCallback((): void => {
-    watcherSuspendedRef.current = false
-    void reload()
-  }, [reload])
+    if (workspaceId && databaseId) resumeDatabaseRows(workspaceId, databaseId)
+  }, [workspaceId, databaseId])
 
   return {
     meta,
     rows,
     isLoading,
-    hasLoadedRows:
-      loadedRowsFor !== null &&
-      loadedRowsFor.rootPath === rootPath &&
-      loadedRowsFor.databaseId === meta?.id,
+    hasLoadedRows: query.data !== undefined,
     error,
     reload,
     addRow,

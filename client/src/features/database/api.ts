@@ -1,8 +1,11 @@
 import { api } from "@renderer/shared/api";
+import { queryClient } from "@renderer/shared/query-client";
+import { databaseRowsKey } from "./rowsQuery";
 import { useStore } from "@renderer/features/workspace";
 import { useWorkspaceStore } from "./workspaceStore";
 import type {
   DatabaseMeta,
+  DatabaseCommandResponse,
   DatabaseRow,
   DatabaseColumnSchema,
   DatabaseCustomViewType,
@@ -43,11 +46,7 @@ async function command(
       const expectedRowHash = rowId
         ? snapshots.get(key)?.find((r) => r.id === rowId)?.hash
         : undefined;
-      const response = await api<{
-        database: DatabaseMeta;
-        rows: DatabaseRow[];
-        row: DatabaseRow;
-      }>(
+      const response = await api<DatabaseCommandResponse>(
         "/api/databases/command",
         "POST",
         {
@@ -61,7 +60,10 @@ async function command(
       );
       if (useStore.getState().workspace?.wsId !== workspace?.wsId)
         throw new Error("Workspace changed");
-      snapshots.set(key, response.rows);
+      if (response.rows) {
+        snapshots.set(key, response.rows);
+        queryClient.setQueryData(databaseRowsKey(workspace!.wsId, databaseId), response.rows);
+      }
       if (
         response.database &&
         response.database.updatedAt !== meta?.updatedAt
@@ -73,7 +75,7 @@ async function command(
           ),
         );
       }
-      return response;
+      return { ...response, rows: response.rows ?? snapshots.get(key) ?? [] };
     });
   queues.set(key, task);
   try {
@@ -81,6 +83,12 @@ async function command(
   } finally {
     if (queues.get(key) === task) queues.delete(key);
   }
+}
+
+async function rowCommand(databaseId: string, action: string, data: Record<string, unknown>) {
+  const response = await command(databaseId, action, data);
+  if (!response.row) throw new Error("Database command did not return its row");
+  return { ...response, row: response.row };
 }
 
 export const databaseApi = {
@@ -96,13 +104,13 @@ export const databaseApi = {
     _root: string,
     id: string,
     values?: Record<string, unknown>,
-  ) => result(() => command(id, "add-row", { values })),
+  ) => result(() => rowCommand(id, "add-row", { values })),
   databaseInsertRow: (
     _root: string,
     id: string,
     referenceRowId: string,
     position: "above" | "below",
-  ) => result(() => command(id, "insert-row", { referenceRowId, position })),
+  ) => result(() => rowCommand(id, "insert-row", { referenceRowId, position })),
   databaseDeleteRow: (_root: string, id: string, rowId: string) =>
     result(() => command(id, "delete-row", { rowId })),
   databaseUpdateCell: (
@@ -111,14 +119,14 @@ export const databaseApi = {
     rowId: string,
     key: string,
     value: unknown,
-  ) => result(() => command(id, "cell", { rowId, key, value })),
+  ) => result(() => rowCommand(id, "cell", { rowId, key, value })),
   databaseUpdateSchema: (
     _root: string,
     id: string,
     schema: DatabaseColumnSchema[],
   ) => result(() => command(id, "schema", { schema })),
   databaseRenameRow: (_root: string, id: string, rowId: string, name: string) =>
-    result(() => command(id, "rename-row", { rowId, name })),
+    result(() => rowCommand(id, "rename-row", { rowId, name })),
   databaseReorderRows: (_root: string, id: string, rowIds: string[]) =>
     result(() => command(id, "reorder", { rowIds })),
   databaseSetActiveView: (_root: string, id: string, viewId: string) =>
@@ -128,10 +136,16 @@ export const databaseApi = {
     id: string,
     type: DatabaseCustomViewType,
   ) => result(() => command(id, "create-view", { type })),
-  databaseUpdateView: (_root:string,id:string,viewId:string,patch:{name?:string;config?:DatabaseViewConfig}) => {
-    const current=useWorkspaceStore.getState().databases.find(d=>d.id===id)?.views.find(v=>v.id===viewId)?.config;
-    const config=patch.config?Object.fromEntries(Object.entries(patch.config).filter(([key,value])=>JSON.stringify(value)!==JSON.stringify((current as Record<string,unknown>|undefined)?.[key]))):undefined;
-    return result(()=>command(id,'update-view',{viewId,...patch,...(config?{config}:{})}));
+  databaseUpdateView: (_root: string, id: string, viewId: string,
+    patch: { name?: string; config?: DatabaseViewConfig }) => {
+    const database = useWorkspaceStore.getState().databases.find(d => d.id === id);
+    const current = database?.views.find(view => view.id === viewId)?.config;
+    const config = patch.config ? Object.fromEntries(Object.entries(patch.config).filter(
+      ([key, value]) => JSON.stringify(value) !== JSON.stringify((current as Record<string, unknown> | undefined)?.[key]),
+    )) : undefined;
+    if (database && patch.name === undefined && config && Object.keys(config).length === 0)
+      return result(async () => ({ database, rows: [] as DatabaseRow[], row: undefined }));
+    return result(() => command(id, 'update-view', { viewId, ...patch, ...(config ? { config } : {}) }));
   },
   databaseDeleteView: (_root: string, id: string, viewId: string) =>
     result(() => command(id, "delete-view", { viewId })),
@@ -142,25 +156,4 @@ export const databaseApi = {
         rowIds: payload.orderedRowIds,
       }),
     ),
-  onDatabaseRowsChanged: (
-    callback: (payload: { workspacePath: string; databaseId: string }) => void,
-  ) => {
-    const changed = (event: Event) => {
-      const path = (event as CustomEvent<{ path: string }>).detail?.path ?? "";
-      const state = useWorkspaceStore.getState();
-      for (const database of state.databases) {
-        if (
-          path.startsWith(database.folderPath + "/") ||
-          path === database.folderPath ||
-          path === ".maek/database.sqlite"
-        )
-          callback({
-            workspacePath: state.rootPath ?? "",
-            databaseId: database.id,
-          });
-      }
-    };
-    window.addEventListener("maek:workspace-change", changed);
-    return () => window.removeEventListener("maek:workspace-change", changed);
-  },
 };

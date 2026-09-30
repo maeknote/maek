@@ -18,10 +18,12 @@ OS watcher를 공유합니다. 이벤트 재생이 불가능하면 클라이언�
 
 ## State ownership
 
-- TanStack Query: 서버에서 읽은 파일 snapshot과 요청 중복 제거
+- TanStack Query: 서버에서 읽은 파일·데이터베이스 행 snapshot과 요청 중복 제거
 - Zustand: UI 세션, 열린 탭과 Tiptap 편집 초안
 - `.maek/tabs.json`: 열린 탭 목록과 순서의 단일 원본
 - `.maek/sessions/web/<browser-session-id>/ui.json`: 브라우저별 UI 상태
+- `.maek/sessions/web/<browser-profile-id>/editor.json`: workspace별 헤더 접힘 상태.
+  프로필 ID는 localStorage에 보존하며 같은 프로필의 창은 BroadcastChannel로 공유합니다.
 - `.maek/recentFiles.json`: 앱과 웹이 공유하는 최근 파일·열람 횟수
 - `.maek/assets/`: 붙여넣거나 가져온 이미지
 

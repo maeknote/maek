@@ -3,6 +3,9 @@ export { NotePicker } from "./components/note-picker/NotePicker";
 export { SplitSeparator } from "./components/SplitSeparator";
 export { FilePane } from "./components/FilePane";
 export { ViewerToolbar } from "./components/ViewerToolbar";
+export { MarkdownEditor } from "./MarkdownEditor";
+export { TitleBar } from "./components/TitleBar";
+export { FrontmatterPanel } from "./components/FrontmatterPanel";
 export { FileNameLabel } from "./components/FileNameLabel";
 export {
   getTabFileContent,
@@ -13,3 +16,5 @@ export {
 export { paneWidths } from "./utils/splitLayout";
 export { getDisplayName } from "./utils/displayName";
 export type { TabItem, FrontmatterViewMode } from "./types";
+
+export { loadHeadingState, flushHeadingState, remapHeadingState } from "./stores/headingCollapseStore";
