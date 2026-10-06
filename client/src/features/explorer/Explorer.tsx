@@ -35,12 +35,15 @@ import { useStore, schedulePersistence } from "@renderer/features/workspace";
 import { FileNameLabel, isTabDirty } from "@renderer/features/editor";
 import { api, toBase64 } from "@renderer/shared/api";
 import type { FileNode } from "@shared/workspace";
+import { useDatabaseRegistry } from "@renderer/features/database";
 import type { DatabaseMeta } from "@shared/database";
+import { useShallow } from "zustand/react/shallow";
 import type { FolderAppearance } from "./utils/folderAppearance";
 import { cn } from "../../lib/utils";
 import { collectDropFiles } from "./importDrop";
 import { useFolderAppearance } from "./stores/folderAppearanceStore";
 import { useExplorerSettings } from "./stores/explorerSettingsStore";
+import { ExplorerTreeIndex } from "./utils/treeIndex";
 import { isHiddenTreePath } from "./utils/hiddenPath";
 import { FolderCustomizeSubmenu } from "./components/FolderCustomizeSubmenu";
 import { FOLDER_ICON_MAP, getFolderIconColorValue } from "./utils/folderAppearance";
@@ -55,6 +58,7 @@ import {
 } from "./hooks/useUnifiedExplorerScroll";
 import { clamp, maxTreeOffset } from "./utils/unifiedScroll";
 
+const EMPTY_DATABASES: import("@shared/database").DatabaseMeta[] = [];
 const ROW_HEIGHT = 28;
 const ROOT_ID = "__REACT_ARBORIST_INTERNAL_ROOT__";
 type DropTarget = { kind: "root" } | { kind: "folder"; id: string } | null;
@@ -272,7 +276,11 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
     tabs,
     viewGroups,
     activeViewGroupId,
-  } = useStore();
+  } = useStore(useShallow(s => ({
+    nodes: s.nodes, workspace: s.workspace, restoring: s.restoring,
+    expanded: s.expanded, workspaces: s.workspaces, tabs: s.tabs,
+    viewGroups: s.viewGroups, activeViewGroupId: s.activeViewGroupId,
+  })));
   const container = useRef<HTMLDivElement>(null),
     tree = useRef<TreeApi<FileNode>>(null);
   const dragPreviewRef = useRef<HTMLDivElement>(null);
@@ -452,73 +460,17 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
   const [clipboard, setClipboard] = useState<string[]>([]);
   const [selection, setSelection] = useState<FileNode[]>([]);
   const [pendingEdit, setPendingEdit] = useState<string | null>(null);
-  const [databases, setDatabases] = useState<DatabaseMeta[]>([]);
-
-  // The database registry only changes when the workspace loads, its manifests
-  // change, or the directory structure changes. Ordinary document saves emit a
-  // "change" event for a Markdown file, which must NOT trigger a refetch (the
-  // previous code re-queried on every workspace-change and remounted the tree).
-  useEffect(() => {
-    if (!workspace) {
-      setDatabases([]);
-      return;
-    }
-    let cancelled = false;
-    const refresh = () =>
-      void api<DatabaseMeta[]>("/api/databases")
-        .then((d) => {
-          if (!cancelled) setDatabases(d);
-        })
-        .catch(() => {});
-    refresh();
-    const onChange = (event: Event) => {
-      const path = (event as CustomEvent<{ type?: string; path?: string }>).detail
-        ?.path;
-      const type = (event as CustomEvent<{ type?: string; path?: string }>).detail
-        ?.type;
-      if (!path) return;
-      const isManifest =
-        path.endsWith("/.maek-database.json") || path === ".maek-database.json";
-      const isStructural =
-        type === "add" ||
-        type === "addDir" ||
-        type === "unlink" ||
-        type === "unlinkDir" ||
-        type === "rename";
-      if (isManifest || isStructural) refresh();
-    };
-    window.addEventListener("maek:workspace-change", onChange);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("maek:workspace-change", onChange);
-    };
-  }, [workspace?.wsId]);
+  const registry = useDatabaseRegistry();
+  const databases = registry.data ?? EMPTY_DATABASES;
 
   const databaseNames = useMemo(
     () => new Map(databases.map((d) => [d.folderPath, d.name])),
     [databases],
   );
 
-  const data = useMemo(() => {
-    const visible = showHiddenFiles
-      ? nodes
-      : nodes.filter((n) => !isHiddenTreePath(n.id));
-    const map = new Map<string, FileNode>(
-      visible.map((n) => [
-        n.id,
-        {
-          ...n,
-          children: n.isDir && !databaseNames.has(n.id) ? [] : undefined,
-        },
-      ]),
-    );
-    const roots: FileNode[] = [];
-    for (const n of map.values()) {
-      if (n.parent) map.get(n.parent)?.children?.push(n);
-      else roots.push(n);
-    }
-    return roots;
-  }, [nodes, databaseNames, showHiddenFiles]);
+  const [treeIndex] = useState(() => new ExplorerTreeIndex());
+  const data = useMemo(() => treeIndex.build(nodes, databaseNames, showHiddenFiles),
+    [nodes, databaseNames, showHiddenFiles]);
 
   // Number of visible Open Tabs workspaces; drives the anchor-preservation shift.
   const tabCount = useMemo(
@@ -638,7 +590,7 @@ export function Explorer({ onSearch, onSettings, onCollapse, onQuit }: Props) {
       viewType: "table",
     });
     await useStore.getState().refresh();
-    setDatabases(await api<DatabaseMeta[]>("/api/databases"));
+    await registry.refetch();
     useStore.getState().openDatabase(database.folderPath, database.name);
   }
   async function create(kind: "file" | "dir", dir = currentDir(), name?: string) {

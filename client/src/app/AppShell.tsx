@@ -1,5 +1,6 @@
 import { FilePicker, NotePicker, SplitSeparator, getTabFileContent } from "@renderer/features/editor";
 import { useEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   FileText,
@@ -13,8 +14,7 @@ import {
 import { useStore, schedulePersistence, type Tab, FilePaneHost, isFileBackedTab, WorkspaceDashboard, flushEditBuffer } from "@renderer/features/workspace";
 import { api } from "@renderer/shared/api";
 import { Explorer } from "@renderer/features/explorer";
-import { FolderKanbanView } from "@renderer/features/database/kanban/FolderKanbanView";
-import { DatabaseView } from "@renderer/features/database/DatabaseView";
+import { FolderKanbanView, DatabaseView, fetchDatabaseRegistry } from "@renderer/features/database";
 import { SettingsModal, usePreferences } from "@renderer/features/settings";
 import { loadPreferences, resolveTheme, systemPrefersDark } from "@renderer/lib/preferences";
 import { navigate, parseRoute, pathForWorkspaceKey, workspaceKeyFor, type Route } from "@renderer/lib/routes";
@@ -62,7 +62,32 @@ function Modal({
   );
 }
 function AppContent() {
-  const state = useStore();
+  const state = useStore(useShallow(s => ({
+    activeTabId: s.activeTabId,
+    activeViewGroupId: s.activeViewGroupId,
+    cancelWorkspaceOpen: s.cancelWorkspaceOpen,
+    closeTab: s.closeTab,
+    closeViewGroup: s.closeViewGroup,
+    connectionError: s.connectionError,
+    error: s.error,
+    openDashboard: s.openDashboard,
+    openDatabase: s.openDatabase,
+    openFile: s.openFile,
+    openFileToSide: s.openFileToSide,
+    openKanban: s.openKanban,
+    openWorkspace: s.openWorkspace,
+    openingPhase: s.openingPhase,
+    openingWorkspace: s.openingWorkspace,
+    ready: s.ready,
+    refresh: s.refresh,
+    restoring: s.restoring,
+    setError: s.setError,
+    sidebarWidth: s.sidebarWidth,
+    split: s.split,
+    tabs: s.tabs,
+    theme: s.theme,
+    workspace: s.workspace,
+  })));
   const [search, setSearch] = useState(false),
     [settings, setSettings] = useState(false),
     [showQuitConfirm, setShowQuitConfirm] = useState(false),
@@ -117,7 +142,7 @@ function AppContent() {
     if (route.kind === "note" && route.path)
       void state.openFile(route.path, { source: "route" });
     if (route.kind === "folder" && route.view !== "list") {
-      void api<import("@shared/database").DatabaseMeta[]>("/api/databases").then((databases) => {
+      void fetchDatabaseRegistry(state.workspace).then((databases) => {
         const database = databases.find((item) => item.folderPath === route.path);
         if (database) state.openDatabase(database.folderPath, database.name);
         else state.openKanban(route.path);

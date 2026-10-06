@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createReadStream } from "node:fs";
+import { withPreviewActivity } from "./activity";
+export { withPreviewActivity } from "./activity";
 import {
   chmod,
   lstat,
@@ -519,6 +521,8 @@ export function registerCustomPages(
     if (!info.isFile()) throw badRequest("Not a regular file");
     const extension = path.extname(absolutePath).toLowerCase();
     pageHeaders(reply, extension === ".html" || extension === ".htm");
+    if (entry && (extension === ".html" || extension === ".htm"))
+      return reply.type("text/html").send(withPreviewActivity(await readFile(absolutePath, "utf8")));
     return reply
       .type(artifactMime[extension] ?? "application/octet-stream")
       .send(createReadStream(absolutePath));

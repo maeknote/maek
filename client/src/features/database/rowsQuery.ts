@@ -2,6 +2,7 @@ import { queryClient } from "@renderer/shared/query-client";
 import { useStore } from "@renderer/features/workspace";
 import { useWorkspaceStore } from "./workspaceStore";
 import type { Change } from "@shared/workspace";
+import { affectsDatabaseRows } from "./changeImpact";
 
 export const databaseRowsKey = (workspaceId: string, databaseId: string) =>
   ["database-rows", workspaceId, databaseId] as const;
@@ -27,18 +28,16 @@ window.addEventListener("maek:workspace-change", (event) => {
   const workspace = useStore.getState().workspace;
   if (!workspace || !change) return;
   for (const database of useWorkspaceStore.getState().databases) {
-    const contains = (path: string) => database.folderPath === ''
-      ? !path.includes('/') : path.startsWith(database.folderPath + '/') && !path.slice(database.folderPath.length + 1).includes('/');
-    const rowChange = [change.path, change.source].some(path => path && /\.md$/i.test(path) && contains(path));
-    const directoryChange = change.type.endsWith('Dir') || change.type === 'rename';
-    const affectsFolder = directoryChange && [change.path, change.source].some(path => path !== undefined &&
-      (database.folderPath === path || database.folderPath.startsWith(path + '/')));
-    if (!rowChange && !affectsFolder && change.path !== '.maek/database.sqlite') continue;
+    if (!affectsDatabaseRows(change, database.folderPath)) continue;
     const key = keyFor(workspace.wsId, database.id);
-    clearTimeout(timers.get(key));
+    if (timers.has(key)) continue;
     timers.set(key, setTimeout(() => {
       timers.delete(key);
       invalidate(workspace.wsId, database.id);
     }, 150));
   }
+});
+window.addEventListener("maek:workspace-rescan", () => {
+  const workspace = useStore.getState().workspace;
+  if (workspace) void queryClient.invalidateQueries({ queryKey: ["database-rows", workspace.wsId] });
 });

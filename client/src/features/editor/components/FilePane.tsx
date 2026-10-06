@@ -33,7 +33,7 @@ const SpreadsheetEditor = lazy(
 
 /** Read-only preview body. The file name lives in the ViewerToolbar, so the
  *  unsupported view no longer repeats it. */
-function PreviewBody({ tab }: { tab: Tab }): ReactElement {
+function PreviewBody({ tab, active }: { tab: Tab; active: boolean }): ReactElement {
   const setError = useStore((s) => s.setError);
   if (tab.file.kind === "image")
     return (
@@ -60,7 +60,7 @@ function PreviewBody({ tab }: { tab: Tab }): ReactElement {
       </pre>
     );
   if (tab.file.kind === "html")
-    return <CustomPagePreview key={tab.id} tab={tab} />;
+    return <CustomPagePreview key={tab.id} tab={tab} active={active} />;
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-text">
       <FileText size={40} />
@@ -85,6 +85,7 @@ interface FilePaneProps {
   tab: Tab;
   /** True when both panes are showing a file (split view). */
   isSplit: boolean;
+  active?: boolean;
   /** Open the "open file to the side" picker (left pane only). */
   onOpenToSide: () => void;
   /** Save a copy of the tab (conflict resolution). */
@@ -101,10 +102,11 @@ export function FilePane({
   pane,
   tab,
   isSplit,
+  active = true,
   onOpenToSide,
   onSaveCopy,
 }: FilePaneProps): ReactElement {
-  const state = useStore();
+  const state = useStore.getState();
 
   const rename = (name: string) =>
     state.move(tab.id, [...tab.id.split("/").slice(0, -1), name].join("/"));
@@ -192,7 +194,7 @@ export function FilePane({
         <SpreadsheetEditor key={tab.id + ":" + tab.generation} tab={tab} />
       </Suspense>
     ) : (
-      <PreviewBody tab={tab} />
+      <PreviewBody tab={tab} active={active} />
     );
 
   return (

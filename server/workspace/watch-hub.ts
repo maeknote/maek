@@ -16,6 +16,7 @@ export class WorkspaceWatchHub {
   private tabsDebounce: ReturnType<typeof setTimeout> | undefined;
   private subscribers = new Set<Subscriber>();
   private identities = new Map<string, number>();
+  private pathsByInode = new Map<number, Set<string>>();
   private removed = new Map<
     string,
     { ino: number | undefined; timer: ReturnType<typeof setTimeout> }
@@ -90,6 +91,24 @@ export class WorkspaceWatchHub {
     for (const subscriber of this.subscribers) subscriber(message);
   }
 
+  private forgetIdentity(relativePath: string) {
+    const ino = this.identities.get(relativePath);
+    if (ino !== undefined) {
+      const paths = this.pathsByInode.get(ino);
+      paths?.delete(relativePath);
+      if (!paths?.size) this.pathsByInode.delete(ino);
+    }
+    this.identities.delete(relativePath);
+  }
+
+  private rememberIdentity(relativePath: string, ino: number) {
+    this.forgetIdentity(relativePath);
+    this.identities.set(relativePath, ino);
+    let paths = this.pathsByInode.get(ino);
+    if (!paths) { paths = new Set(); this.pathsByInode.set(ino, paths); }
+    paths.add(relativePath);
+  }
+
   private start() {
     if (this.watcher || this.closing) return;
     const watcher = watch(this.workspace.root, {
@@ -117,12 +136,12 @@ export class WorkspaceWatchHub {
       if (!relativePath || this.ignored(relativePath)) return;
       const ino = stats?.ino;
       if (!this.ready) {
-        if (ino) this.identities.set(relativePath, ino);
+        if (ino) this.rememberIdentity(relativePath, ino);
         return;
       }
       if (type === "unlink" || type === "unlinkDir") {
         const previous = this.identities.get(relativePath);
-        this.identities.delete(relativePath);
+        this.forgetIdentity(relativePath);
         if (this.relocated.delete(relativePath)) return;
         const timer = setTimeout(() => {
           this.removed.delete(relativePath);
@@ -140,10 +159,7 @@ export class WorkspaceWatchHub {
         );
         const existing =
           removed?.[0] ??
-          [...this.identities].find(
-            ([oldPath, identity]) =>
-              oldPath !== relativePath && identity === ino,
-          )?.[0];
+          [...(this.pathsByInode.get(ino) ?? [])].find(oldPath => oldPath !== relativePath);
         if (existing) {
           if (removed) {
             clearTimeout(removed[1].timer);
@@ -151,8 +167,8 @@ export class WorkspaceWatchHub {
           } else {
             this.relocated.add(existing);
           }
-          this.identities.delete(existing);
-          this.identities.set(relativePath, ino);
+          this.forgetIdentity(existing);
+          this.rememberIdentity(relativePath, ino);
           const isDirectory = type === "addDir";
           const emitRename = () =>
             this.emit("change", {
@@ -179,7 +195,7 @@ export class WorkspaceWatchHub {
           return;
         }
       }
-      if (ino) this.identities.set(relativePath, ino);
+      if (ino) this.rememberIdentity(relativePath, ino);
       this.emit("change", {
         type: type as Change["type"],
         path: relativePath,
@@ -257,6 +273,9 @@ export class WorkspaceWatchHub {
       this.removed.clear();
       clearTimeout(this.tabsDebounce);
       this.subscribers.clear();
+      this.identities.clear();
+      this.pathsByInode.clear();
+      this.history = [];
       await Promise.all([this.watcher?.close(), this.tabsWatcher?.close()]);
       await this.directoryRenames;
       this.watcher = undefined;

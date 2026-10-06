@@ -1,4 +1,4 @@
-import { type ReactElement } from "react";
+import { useRef, type ReactElement } from "react";
 import { useStore, type Tab } from "@renderer/features/workspace";
 import { cn } from "@renderer/lib/utils";
 import { FilePane, paneWidths } from "@renderer/features/editor";
@@ -45,8 +45,8 @@ interface FilePaneHostProps {
 /**
  * Persistent runtime view cache for file-backed tabs.
  *
- * Every open, file-backed tab is mounted exactly once and kept mounted while it
- * stays open, so the native internal state of the view (browser PDF viewer,
+ * A restored preview mounts when first selected and remains mounted while its
+ * tab stays open, so the native internal state of the view (browser PDF viewer,
  * HTML iframe, CSV grid, text/image scroller) survives a tab switch. Inactive
  * panes are hidden with absolute positioning, `visibility: hidden`, and
  * disabled pointer events rather than unmounted. A view is only removed when
@@ -58,7 +58,8 @@ interface FilePaneHostProps {
  * untouched.
  *
  * In split mode only the two currently assigned pane views receive input; all
- * other cached views remain hidden.
+ * other cached views remain hidden. Embedded HTML also receives an activity
+ * signal so recurring callbacks can pause without discarding its state.
  */
 export function FilePaneHost({
   leftTab,
@@ -70,12 +71,22 @@ export function FilePaneHost({
 }: FilePaneHostProps): ReactElement {
   const tabs = useStore((s) => s.tabs);
   const isSplit = Boolean(leftTab && rightTab);
+  const visited = useRef(new Set<string>());
+  const workspaceId = useStore(s => s.workspace?.wsId);
+  const previousWorkspace = useRef(workspaceId);
+  if (previousWorkspace.current !== workspaceId) {
+    visited.current.clear();
+    previousWorkspace.current = workspaceId;
+  }
+  const openIds = new Set(tabs.map(tab => tab.id));
+  for (const id of visited.current) if (!openIds.has(id)) visited.current.delete(id);
+  for (const tab of [leftTab, rightTab]) if (tab) visited.current.add(tab.id);
 
   // Mount the tabs whose views must persist (PDF/HTML/CSV/text/image), plus the
   // currently active left/right tabs (which may be Markdown editors that are
   // otherwise mounted only while active). De-duplicate by tab id, preserving
   // tab order for a stable DOM.
-  const mounted: Tab[] = tabs.filter(shouldPersistView);
+  const mounted: Tab[] = tabs.filter(tab => shouldPersistView(tab) && visited.current.has(tab.id));
   for (const tab of [leftTab, rightTab]) {
     if (tab && isFileBackedTab(tab) && !mounted.some((t) => t.id === tab.id))
       mounted.push(tab);
@@ -98,7 +109,7 @@ export function FilePaneHost({
         const width = pane === "left" ? leftWidth : pane === "right" ? rightWidth : "100%";
         return (
           <div
-            key={tab.id}
+            key={`${workspaceId}:${tab.id}`}
             data-file-pane-slot={tab.id}
             data-active={active ? "true" : "false"}
             aria-hidden={active ? undefined : true}
@@ -118,6 +129,7 @@ export function FilePaneHost({
               pane={pane ?? "left"}
               tab={tab}
               isSplit={isSplit}
+              active={active}
               onOpenToSide={onOpenToSide}
               onSaveCopy={onSaveCopy}
             />

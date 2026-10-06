@@ -37,10 +37,12 @@ import { CSV_EDIT_LIMITS, validateCsvForEditing } from "../core/fs/validateCsv";
 import { RpcHttpError, badRequest, fsError, conflict } from "../core/errors";
 import { RelPath, WriteFileRequest } from "../../shared/contract";
 import type {
+  Change,
   FileNode,
   FileContent,
   WorkspaceEvent,
 } from "../../shared/workspace";
+import { WorkspaceChangeBatch } from "../../shared/workspace-changes";
 import { WorkspaceRuntimeManager } from "../workspace/runtime-manager";
 import { WorkspaceMetadataRepository } from "../metadata/repository";
 import {
@@ -79,7 +81,7 @@ import type {
   DatabaseMeta,
   DatabaseViewType,
 } from "../../shared/database";
-import { registerCustomPages } from "../features/custom-pages";
+import { registerCustomPages, withPreviewActivity } from "../features/custom-pages";
 import { registerEditorState } from "../features/editor";
 
 const run = promisify(execFile);
@@ -131,6 +133,7 @@ export function createHost(options: HostOptions = {}) {
   const app = Fastify({ logger: false, bodyLimit: 48 * 1024 * 1024 });
   const streams = new Set<() => Promise<void>>();
   const databaseRoots = new Set<string>();
+  const requestLeases = new WeakMap<object, () => void>();
   const metadata = new WorkspaceMetadataRepository();
   const locks = new Map<string, Promise<unknown>>();
   async function serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -155,6 +158,7 @@ export function createHost(options: HostOptions = {}) {
         () => {},
       ),
     (ws) => hasExternalDatabaseChange(ws.root),
+    { onIdle: (ws) => { closeDatabaseWorkspace(ws.root); databaseRoots.delete(ws.root); } },
   );
   registerCustomPages(app, {
     serial,
@@ -211,8 +215,15 @@ export function createHost(options: HostOptions = {}) {
   const wsFor = (req: { headers: Record<string, unknown> }) => {
     const ws = getWorkspace(z.string().parse(req.headers["x-workspace-id"]));
     databaseRoots.add(ws.root);
+    if (!requestLeases.has(req)) requestLeases.set(req, runtimes.acquire(ws).release);
     return ws;
   };
+  const releaseRequest = (request: object) => {
+    requestLeases.get(request)?.();
+    requestLeases.delete(request);
+  };
+  app.addHook("onResponse", async request => releaseRequest(request));
+  app.addHook("onRequestAbort", async request => releaseRequest(request));
   const sessionFor = (req: { headers: Record<string, unknown> }) =>
     z
       .string()
@@ -464,6 +475,7 @@ export function createHost(options: HostOptions = {}) {
         "Content-Security-Policy",
         "sandbox allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox",
       );
+      return reply.type(contentType).send(withPreviewActivity(await readFile(abs, "utf8")));
     }
     return reply.type(contentType).send(createReadStream(abs));
   };
@@ -509,6 +521,10 @@ export function createHost(options: HostOptions = {}) {
       if (await lstat(to).catch(() => null))
         throw conflict("changed", "Destination already exists");
       await rename(from, to);
+      runtimes.get(ws).files.apply({
+        type: "rename", source, path: dest,
+        node: nodeFor(dest, (await stat(to)).isDirectory()),
+      });
       if ((await stat(to)).isDirectory()) {
         await databaseFolderMoved(ws, source, dest);
         // Preserve custom folder icons for the moved folder and every
@@ -935,18 +951,39 @@ export function createHost(options: HostOptions = {}) {
   app.get("/api/workspaces/events", async (req, reply) => {
     const { workspace } = z.object({ workspace: z.string() }).parse(req.query);
     const ws = getWorkspace(workspace);
-    const hub = runtimes.get(ws).watcher;
+    const lease = runtimes.acquire(ws);
+    const hub = lease.runtime.watcher;
     reply.hijack();
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
+    const pending = new WorkspaceChangeBatch();
+    let batchId = 0;
+    let batchTimer: ReturnType<typeof setTimeout> | undefined;
+    const write = (id: number, event: string, data: WorkspaceEvent["data"]) => {
+      if (reply.raw.destroyed) return;
+      // A stalled client reconnects to a snapshot instead of retaining an
+      // unbounded stream buffer. Other subscribers keep their own connection.
+      if (reply.raw.writableLength > 256 * 1024) { reply.raw.destroy(); return; }
+      reply.raw.write(`id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const flush = () => {
+      clearTimeout(batchTimer);
+      batchTimer = undefined;
+      if (pending.size) write(batchId, "changes", pending.take());
+    };
     const send = (message: WorkspaceEvent) => {
-      if (!reply.raw.destroyed)
-        reply.raw.write(
-          `id: ${message.id}\nevent: ${message.event}\ndata: ${JSON.stringify(message.data)}\n\n`,
-        );
+      if (message.event === "change") {
+        pending.add(message.data as Change);
+        batchId = message.id;
+        if (pending.size >= 512) flush();
+        else batchTimer ??= setTimeout(flush, 50);
+      } else {
+        flush();
+        write(message.id, message.event, message.data);
+      }
     };
     let closed = false;
     const heartbeat = setInterval(() => {
@@ -963,7 +1000,10 @@ export function createHost(options: HostOptions = {}) {
       if (closed) return;
       closed = true;
       clearInterval(heartbeat);
+      clearTimeout(batchTimer);
+      pending.take();
       unsubscribe();
+      lease.release();
       streams.delete(close);
       reply.raw.end();
     };

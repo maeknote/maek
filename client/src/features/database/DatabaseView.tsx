@@ -1,81 +1,34 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@renderer/features/workspace";
 import { ViewerToolbar } from "@renderer/features/editor";
-import { api } from "@renderer/shared/api";
+import { useDatabaseRegistry } from "./registryQuery";
 import { databaseApi } from "./api";
 import { DatabaseViewContainer } from "./DatabaseViewContainer";
 import { useWorkspaceStore } from "./workspaceStore";
-import type { DatabaseMeta } from "@shared/database";
 import { navigate, parseRoute, workspaceKeyFor } from "../../lib/routes";
 export function DatabaseView({ folderPath }: { folderPath: string }) {
   const workspace = useStore((s) => s.workspace);
-  const [error, setError] = useState("");
-  const [ready, setReady] = useState(false);
+  const registry = useDatabaseRegistry();
+  const [routeError, setRouteError] = useState("");
+  const appliedRoute = useRef<string>("");
   useEffect(() => {
-    let cancelled = false;
-    let firstLoad = true;
-    let timer: ReturnType<typeof setTimeout>;
-    setReady(false);
-    async function refresh() {
-      try {
-        const databases = await api<DatabaseMeta[]>(
-          "/api/databases",
-          "GET",
-          undefined,
-          workspace,
-        );
-        if (cancelled) return;
-        useWorkspaceStore.setState({ rootPath: workspace?.root ?? null });
-        useWorkspaceStore.getState().setDatabases(databases);
-        if (firstLoad) {
-          firstLoad = false;
-          const route = parseRoute(),
-            meta = databases.find((d) => d.folderPath === folderPath);
-          if (
-            meta &&
-            workspace &&
-            route?.kind === "folder" &&
-            route.path === folderPath
-          ) {
-            const requested = route.viewId
-              ? meta.views.find((v) => v.id === route.viewId)
-              : meta.views.find(
-                  (v) =>
-                    v.type === (route.view === "board" ? "kanban" : route.view),
-                );
-            if (requested && requested.id !== meta.activeViewId)
-              await databaseApi.databaseSetActiveView(
-                workspace.root,
-                meta.id,
-                requested.id,
-              );
-          }
-        }
-        if (!cancelled) {
-          setReady(true);
-          setError("");
-        }
-      } catch (e) {
-        if (!cancelled) setError(String(e));
-      }
-    }
-    void refresh();
-    const changed = (event: Event) => {
-      const change = (event as CustomEvent<{ path?: string; type?: string }>).detail;
-      if (change && !change.path?.endsWith('/.maek-database.json') && change.path !== '.maek-database.json'
-        && !['addDir', 'unlinkDir', 'rename'].includes(change.type ?? '') && change.path !== '.maek/database.sqlite') return;
-      clearTimeout(timer);
-      timer = setTimeout(() => void refresh(), 200);
-    };
-    window.addEventListener("maek:workspace-change", changed);
-    window.addEventListener("focus", changed);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      window.removeEventListener("maek:workspace-change", changed);
-      window.removeEventListener("focus", changed);
-    };
-  }, [workspace, folderPath]);
+    if (!registry.data || !workspace) return;
+    const key = `${workspace.wsId}:${folderPath}`;
+    if (appliedRoute.current === key) return;
+    const route = parseRoute();
+    const database = registry.data.find(item => item.folderPath === folderPath);
+    if (!database) return;
+    appliedRoute.current = key;
+    if (route?.kind !== "folder" || route.path !== folderPath) return;
+    const requested = route.viewId
+      ? database.views.find(view => view.id === route.viewId)
+      : database.views.find(view => view.type === (route.view === "board" ? "kanban" : route.view));
+    if (requested && requested.id !== database.activeViewId)
+      void databaseApi.databaseSetActiveView(workspace.root, database.id, requested.id)
+        .catch(error => setRouteError(String(error)));
+  }, [workspace, folderPath, registry.data]);
+  const ready = registry.isSuccess;
+  const error = routeError || (registry.error ? String(registry.error) : "");
   const meta = useWorkspaceStore((s) =>
     s.databases.find((d) => d.folderPath === folderPath),
   );

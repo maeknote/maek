@@ -128,6 +128,28 @@ mount ID는 192-bit 난수이며 메모리에만 존재한다. 탭이 닫히거�
 만들어지면 mount를 해제하고, 서버가 재시작되면 모두 사라진다. workspace의 실제 경로는
 페이지 URL에 포함하지 않는다.
 
+### 미리보기 활동 수명
+
+복원된 비활성 탭은 처음 선택하기 전까지 iframe을 만들지 않는다. 한번 연 페이지는
+탭 전환 시 DOM과 메모리 상태를 유지한다. Maek은 미리보기로 제공하는 HTML에 작은
+활동 스크립트를 삽입하고, iframe 활성 여부와 브라우저 문서의 visibility를 전달한다.
+원본 HTML과 외부 브라우저용 `/_web` 응답은 바꾸지 않는다.
+
+함수 callback을 받는 `setInterval`은 비활성 상태에서 callback 실행을 건너뛴다.
+다시 활성화하면 기존 주기로 실행하므로 즉시 재조회가 필요한 앱은 활동 이벤트를
+사용한다. `setTimeout`은 계속 실행해 예약된 저장을 막지 않는다. `requestAnimationFrame`,
+재귀적인 timeout polling, WebSocket 등은 각 페이지가 다음 신호로 활동을 조절한다.
+
+```js
+window.addEventListener("maek:preview-activity", ({ detail }) => {
+  if (detail.active) resumePolling();
+  else pausePolling();
+});
+```
+
+활동 통신은 부모/자식 window와 양쪽 origin을 확인한다. 이 규약은 페이지마다 별도
+Host 코드나 중앙 등록을 추가하지 않고 사용할 수 있다.
+
 ## 공용 API
 
 ### 상태

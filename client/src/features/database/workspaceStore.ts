@@ -31,15 +31,17 @@ export const useWorkspaceStore = create<{
       database.id === databaseId && viewId !== null ? withActiveView(database, viewId) : database) };
   }),
   setDatabases: (databases) =>
-    set((s) => ({
-      databases: databases.map((saved) => {
+    set((s) => {
+      const next = databases.map((saved) => {
         const pendingView = s.pendingViewIds[saved.id];
         const d = pendingView && saved.views.some(view => view.id === pendingView)
           ? withActiveView(saved, pendingView) : withActiveView(saved, saved.activeViewId);
         const old = s.databases.find((o) => o.id === d.id);
         return old && JSON.stringify(old) === JSON.stringify(d) ? old : d;
-      }),
-    })),
+      });
+      return next.length === s.databases.length && next.every((database, index) => database === s.databases[index])
+        ? s : { databases: next };
+    }),
   setFileOpenIntent: ({ fileId }) => {
     void useStore.getState().openFile(fileId);
   },

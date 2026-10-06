@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { applyTreeChanges } from "@shared/workspace-changes";
 import type { WorkspaceRef } from "@shared/contract";
 import type {
   FileNode,
@@ -88,7 +89,7 @@ interface State {
   /** User-initiated preview refresh (e.g. HTML artifact reload). Bumps the
    *  per-tab previewNonce so only this tab's iframe is recreated. */
   refreshPreview: (id: string) => void;
-  change: (event: Change) => Promise<void>;
+  change: (event: Change | Change[]) => Promise<void>;
   move: (source: string, dest: string) => Promise<void>;
   /** Remap in-memory tab/scroll/expanded/recent state for a move that has
    *  already been persisted to disk. Does not save or refresh. */
@@ -181,7 +182,12 @@ function connectEvents(
     (event) =>
       void get().change(JSON.parse((event as MessageEvent).data) as Change),
   );
-  events.addEventListener("rescan", () => void get().refresh());
+  events.addEventListener("changes", event =>
+    void get().change(JSON.parse((event as MessageEvent).data) as Change[]));
+  events.addEventListener("rescan", () => {
+    window.dispatchEvent(new Event("maek:workspace-rescan"));
+    void get().refresh();
+  });
   events.addEventListener(
     "tabs-session-changed",
     () => void get().syncTabsFromRoot(),
@@ -1360,131 +1366,111 @@ export const useStore = create<State>((set, get) => ({
       previewNonce: tab.previewNonce + 1,
     }));
   },
-  async change(event) {
-    window.dispatchEvent(new CustomEvent("maek:workspace-change", { detail: event }));
-    if (event.path.endsWith("/.maek-database.json") || event.path === ".maek-database.json") return;
-    if(event.path.startsWith('.maek/')) {
-      if(event.path==='.maek/recentFiles.json') {
-        const recentFiles=await api<State['recentFiles']>('/api/workspace/recent-files');set({recentFiles});
-      }
-      return;
-    }
+  async change(input) {
     const epoch = sessionEpoch;
-    if (event.type === "rename" && event.source) {
-      if (get().workspace) remapHeadingState(get().workspace!, event.source, event.path);
-      const source = event.source,
-        dest = event.path;
-      const replace = (p: string): string => remapTabIdForRename(p, source, dest);
-      set((s) => ({
-        nodes: [
-          ...new Map(
-            s.nodes.map((n) => {
-              const id = replace(n.id);
-              return [
-                id,
-                {
-                  ...n,
-                  id,
-                  name: id.split("/").pop()!,
-                  parent: id.split("/").slice(0, -1).join("/") || null,
-                },
-              ] as const;
-            }),
-          ).values(),
-        ],
-        tabs: s.tabs.map((t) => remapTabForRename(t, source, dest)),
-        viewGroups: remapViewGroups(s.viewGroups, replace),
-        activeTabId: s.activeTabId ? replace(s.activeTabId) : null,
-        split: {
-          ...s.split,
-          left: s.split.left ? replace(s.split.left) : null,
-          right: s.split.right ? replace(s.split.right) : null,
-        },
-        scrollPositions: Object.fromEntries(
-          Object.entries(s.scrollPositions).map(([p, v]) => [replace(p), v]),
-        ),
-        spreadsheetViews: Object.fromEntries(
-          Object.entries(s.spreadsheetViews).map(([p, view]) => [replace(p), view]),
-        ),
-        expanded: s.expanded.map(replace),
-        recentFiles: s.recentFiles.map((f) => ({
-          ...f,
-          path: replace(f.path),
-        })),
-      }));
-      for (const [id, timer] of timers) {
-        if (id === source || id.startsWith(source + "/")) {
-          clearTimeout(timer);
-          timers.delete(id);
-          const renamed = replace(id);
-          timers.set(
-            renamed,
-            setTimeout(() => void get().save(renamed), 1500),
-          );
-        }
-      }
-      if (
-        get().tabs.some((t) => t.id === dest || t.id.startsWith(dest + "/"))
-      )
-        tabsDirty = true;
-      later();
-      return;
-    }
-    if (event.type.startsWith("unlink") && get().workspace) remapHeadingState(get().workspace!, event.path);
-    set((s) => ({
-      nodes: event.node
-        ? [...s.nodes.filter((n) => n.id !== event.path), event.node].sort(
-            (a, b) =>
-              Number(b.isDir) - Number(a.isDir) ||
-              a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
-          )
-        : event.type.startsWith("unlink")
-          ? s.nodes.filter(
-              (n) => n.id !== event.path && !n.id.startsWith(event.path + "/"),
-            )
-          : s.nodes,
-    }));
-    for (const tab of get().tabs.filter(
-      (t) =>
-        t.id === event.path ||
-        (event.type === "unlinkDir" && t.id.startsWith(event.path + "/")),
-    )) {
-      if (saves.has(tab.id)) await saves.get(tab.id);
+    const changes = Array.isArray(input) ? input : [input];
+    const nodes = applyTreeChanges(get().nodes, changes, path => !path.startsWith('.maek/')
+      && !path.endsWith('/.maek-database.json') && path !== '.maek-database.json');
+    if (nodes !== get().nodes) set({ nodes });
+    for (const event of changes) {
       if (epoch !== sessionEpoch) return;
-      const current = get().tabs.find((t) => t.id === tab.id);
-      if (!current) continue;
-      if (event.type.startsWith("unlink")) {
-        patchTab(tab.id, (t) => ({
-          ...t,
-          status: "conflict",
-          error:
-            "File was deleted or moved externally. Save a copy or close this tab.",
-        }));
+      window.dispatchEvent(new CustomEvent("maek:workspace-change", { detail: event }));
+      if (event.path.endsWith("/.maek-database.json") || event.path === ".maek-database.json") continue;
+      if(event.path.startsWith('.maek/')) {
+        if(event.path==='.maek/recentFiles.json') {
+          const recentFiles=await api<State['recentFiles']>('/api/workspace/recent-files');
+          if (epoch !== sessionEpoch) return;
+          set({recentFiles});
+        }
         continue;
       }
-      try {
-        const workspace = get().workspace;
-        if (!workspace) return;
-        await queryClient.invalidateQueries({
-          queryKey: ["workspace-file", workspace.wsId, tab.id],
-        });
-        const file = await fileQuery(workspace, tab.id);
+      if (event.type === "rename" && event.source) {
+        if (get().workspace) remapHeadingState(get().workspace!, event.source, event.path);
+        const source = event.source,
+          dest = event.path;
+        const replace = (p: string): string => remapTabIdForRename(p, source, dest);
+        set((s) => ({
+          tabs: s.tabs.map((t) => remapTabForRename(t, source, dest)),
+          viewGroups: remapViewGroups(s.viewGroups, replace),
+          activeTabId: s.activeTabId ? replace(s.activeTabId) : null,
+          split: {
+            ...s.split,
+            left: s.split.left ? replace(s.split.left) : null,
+            right: s.split.right ? replace(s.split.right) : null,
+          },
+          scrollPositions: Object.fromEntries(
+            Object.entries(s.scrollPositions).map(([p, v]) => [replace(p), v]),
+          ),
+          spreadsheetViews: Object.fromEntries(
+            Object.entries(s.spreadsheetViews).map(([p, view]) => [replace(p), view]),
+          ),
+          expanded: s.expanded.map(replace),
+          recentFiles: s.recentFiles.map((f) => ({
+            ...f,
+            path: replace(f.path),
+          })),
+        }));
+        for (const [id, timer] of timers) {
+          if (id === source || id.startsWith(source + "/")) {
+            clearTimeout(timer);
+            timers.delete(id);
+            const renamed = replace(id);
+            timers.set(
+              renamed,
+              setTimeout(() => void get().save(renamed), 1500),
+            );
+          }
+        }
+        if (
+          get().tabs.some((t) => t.id === dest || t.id.startsWith(dest + "/"))
+        )
+          tabsDirty = true;
+        later();
+        continue;
+      }
+      if (event.type.startsWith("unlink") && get().workspace) remapHeadingState(get().workspace!, event.path);
+      for (const tab of get().tabs.filter(
+        (t) =>
+          t.id === event.path ||
+          (event.type === "unlinkDir" && t.id.startsWith(event.path + "/")),
+      )) {
+        if (saves.has(tab.id)) await saves.get(tab.id);
         if (epoch !== sessionEpoch) return;
-        const latest = get().tabs.find((t) => t.id === tab.id);
-        if (!latest || (file.hash && file.hash === latest.file.hash)) continue;
-        if (isTabDirty(latest) || hasPendingEdit(latest.editorSessionId))
+        const current = get().tabs.find((t) => t.id === tab.id);
+        if (!current) continue;
+        if (event.type.startsWith("unlink")) {
           patchTab(tab.id, (t) => ({
             ...t,
             status: "conflict",
-            error: "File changed externally. Your edits are preserved.",
+            error:
+              "File was deleted or moved externally. Save a copy or close this tab.",
           }));
-        else
-          patchTab(tab.id, (t) => ({
-            ...makeTab(tab.id, file),
-            generation: t.generation + 1,
-          }));
-      } catch (e) {
-        set({ error: String(e) });
+          continue;
+        }
+        try {
+          const workspace = get().workspace;
+          if (!workspace) return;
+          await queryClient.invalidateQueries({
+            queryKey: ["workspace-file", workspace.wsId, tab.id],
+          });
+          const file = await fileQuery(workspace, tab.id);
+          if (epoch !== sessionEpoch) return;
+          const latest = get().tabs.find((t) => t.id === tab.id);
+          if (!latest || (file.hash && file.hash === latest.file.hash)) continue;
+          if (isTabDirty(latest) || hasPendingEdit(latest.editorSessionId))
+            patchTab(tab.id, (t) => ({
+              ...t,
+              status: "conflict",
+              error: "File changed externally. Your edits are preserved.",
+            }));
+          else
+            patchTab(tab.id, (t) => ({
+              ...makeTab(tab.id, file),
+              generation: t.generation + 1,
+            }));
+        } catch (e) {
+          set({ error: String(e) });
+        }
       }
     }
   },

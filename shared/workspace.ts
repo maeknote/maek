@@ -111,7 +111,8 @@ export interface WorkspaceEvent {
     | "ready"
     | "rescan"
     | "change"
+    | "changes"
     | "watch-error"
     | "tabs-session-changed";
-  data: Change | Record<string, never>;
+  data: Change | Change[] | Record<string, never>;
 }

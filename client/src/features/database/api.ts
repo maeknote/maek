@@ -3,6 +3,7 @@ import { queryClient } from "@renderer/shared/query-client";
 import { databaseRowsKey } from "./rowsQuery";
 import { useStore } from "@renderer/features/workspace";
 import { useWorkspaceStore } from "./workspaceStore";
+import { fetchDatabaseRegistry, databaseRegistryKey } from "./registryQuery";
 import type {
   DatabaseMeta,
   DatabaseCommandResponse,
@@ -22,7 +23,6 @@ async function result<T>(task: () => Promise<T>): Promise<Result<T>> {
     return { success: false, error: message };
   }
 }
-const snapshots = new Map<string, DatabaseRow[]>();
 const queues = new Map<string, Promise<unknown>>();
 async function command(
   databaseId: string,
@@ -44,7 +44,7 @@ async function command(
         | string
         | undefined;
       const expectedRowHash = rowId
-        ? snapshots.get(key)?.find((r) => r.id === rowId)?.hash
+        ? queryClient.getQueryData<DatabaseRow[]>(databaseRowsKey(workspace!.wsId, databaseId))?.find((r) => r.id === rowId)?.hash
         : undefined;
       const response = await api<DatabaseCommandResponse>(
         "/api/databases/command",
@@ -61,7 +61,6 @@ async function command(
       if (useStore.getState().workspace?.wsId !== workspace?.wsId)
         throw new Error("Workspace changed");
       if (response.rows) {
-        snapshots.set(key, response.rows);
         queryClient.setQueryData(databaseRowsKey(workspace!.wsId, databaseId), response.rows);
       }
       if (
@@ -74,8 +73,10 @@ async function command(
             d.id === databaseId ? response.database : d,
           ),
         );
+        queryClient.setQueryData<DatabaseMeta[]>(databaseRegistryKey(workspace!.wsId),
+          previous => previous?.map(database => database.id === databaseId ? response.database : database));
       }
-      return { ...response, rows: response.rows ?? snapshots.get(key) ?? [] };
+      return { ...response, rows: response.rows ?? queryClient.getQueryData<DatabaseRow[]>(databaseRowsKey(workspace!.wsId, databaseId)) ?? [] };
     });
   queues.set(key, task);
   try {
@@ -94,7 +95,7 @@ async function rowCommand(databaseId: string, action: string, data: Record<strin
 export const databaseApi = {
   databaseGetAll: (_root: string) =>
     result(async () => ({
-      databases: await api<DatabaseMeta[]>("/api/databases"),
+      databases: await fetchDatabaseRegistry(useStore.getState().workspace!),
     })),
   databaseSync: (_root: string, id: string) =>
     result(() => command(id, "sync")),

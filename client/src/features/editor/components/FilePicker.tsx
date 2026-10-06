@@ -32,10 +32,15 @@ interface FilePickerProps {
   onSelect?: (file: FileNode) => Promise<void> | void;
 }
 
+const ROW_HEIGHT = 52;
+const VIEWPORT_HEIGHT = 340;
+const OVERSCAN = 4;
+
 export function FilePicker({ onClose, onSelect }: FilePickerProps): ReactElement {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [focusedIndex, setFocusedIndex] = useState(-1);
+  const [scrollTop, setScrollTop] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const nodes = useStore((s) => s.nodes);
@@ -141,12 +146,24 @@ export function FilePicker({ onClose, onSelect }: FilePickerProps): ReactElement
     [results, focusedIndex, handleSelect, onClose],
   );
 
-  // Scroll focused item into view
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0;
+    setScrollTop(0);
+  }, [deferredQuery]);
+
+  // Keyboard navigation also reveals rows outside the mounted window.
   useEffect(() => {
     if (focusedIndex < 0 || !listRef.current) return;
-    const items = listRef.current.querySelectorAll("[data-file-item]");
-    items[focusedIndex]?.scrollIntoView({ block: "nearest" });
+    const list = listRef.current;
+    const top = focusedIndex * ROW_HEIGHT;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (top + ROW_HEIGHT > list.scrollTop + list.clientHeight)
+      list.scrollTop = top + ROW_HEIGHT - list.clientHeight;
+    setScrollTop(list.scrollTop);
   }, [focusedIndex]);
+
+  const first = Math.max(0, Math.min(results.length - 1, Math.floor(scrollTop / ROW_HEIGHT)) - OVERSCAN);
+  const last = Math.min(results.length, first + Math.ceil(VIEWPORT_HEIGHT / ROW_HEIGHT) + OVERSCAN * 2);
 
   return createPortal(
     <div
@@ -189,57 +206,65 @@ export function FilePicker({ onClose, onSelect }: FilePickerProps): ReactElement
           ref={listRef}
           role="listbox"
           aria-label="Files"
-          className="flex-1 overflow-y-auto py-1"
+          onScroll={event => setScrollTop(event.currentTarget.scrollTop)}
+          className="flex-1 overflow-y-auto"
+          style={{ maxHeight: VIEWPORT_HEIGHT }}
         >
           {results.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-muted-text">
               {query ? "No results found" : "No files"}
             </div>
           ) : (
-            results.map((result, index) => {
-              const { file, matches } = result;
-              const relativePath = getRelativePath(file);
-              const isFocused = index === focusedIndex;
-              const displayName = file.isDir
-                ? file.name
-                : getDisplayName(file.name);
-              const nameIndices = getNameMatchIndices(matches);
-              const pathIndices = getPathMatchIndices(matches, relativePath);
-              const Icon = /\.html$/i.test(file.name) ? FileCode : File;
-              return (
-                <button
-                  key={file.id}
-                  data-file-item
-                  role="option"
-                  aria-selected={isFocused}
-                  onClick={() => handleSelect(file)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-4 py-2 text-left transition-colors",
-                    isFocused
-                      ? "bg-surface-overlay-strong"
-                      : "hover:bg-surface-overlay",
-                  )}
-                >
-                  <Icon className="w-4 h-4 text-muted-text shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-neutral-ink truncate">
-                      <HighlightMatch
-                        text={displayName}
-                        indices={nameIndices}
-                      />
-                    </div>
-                    {relativePath && (
-                      <div className="text-xs text-muted-text truncate">
+            <div style={{ paddingTop: first * ROW_HEIGHT, paddingBottom: (results.length - last) * ROW_HEIGHT }}>
+              {results.slice(first, last).map((result, offset) => {
+                const index = first + offset;
+                const { file, matches } = result;
+                const relativePath = getRelativePath(file);
+                const isFocused = index === focusedIndex;
+                const displayName = file.isDir
+                  ? file.name
+                  : getDisplayName(file.name);
+                const nameIndices = getNameMatchIndices(matches);
+                const pathIndices = getPathMatchIndices(matches, relativePath);
+                const Icon = /\.html$/i.test(file.name) ? FileCode : File;
+                return (
+                  <button
+                    key={file.id}
+                    data-file-item
+                    role="option"
+                    aria-selected={isFocused}
+                    aria-posinset={index + 1}
+                    aria-setsize={results.length}
+                    style={{ height: ROW_HEIGHT }}
+                    onClick={() => handleSelect(file)}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-4 py-2 text-left transition-colors",
+                      isFocused
+                        ? "bg-surface-overlay-strong"
+                        : "hover:bg-surface-overlay",
+                    )}
+                  >
+                    <Icon className="w-4 h-4 text-muted-text shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-neutral-ink truncate">
                         <HighlightMatch
-                          text={relativePath}
-                          indices={pathIndices}
+                          text={displayName}
+                          indices={nameIndices}
                         />
                       </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })
+                      {relativePath && (
+                        <div className="text-xs text-muted-text truncate">
+                          <HighlightMatch
+                            text={relativePath}
+                            indices={pathIndices}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

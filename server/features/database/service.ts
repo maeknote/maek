@@ -30,7 +30,8 @@ import {
 import { sha256, flooredMtime } from "../../core/fs/readFile";
 import { writeFile } from "../../core/fs/writeFile";
 import { conflict } from "../../core/errors";
-import { workspaceTarget } from "../../workspace/filesystem";
+import { workspaceTarget, isIgnored, nodeFor } from "../../workspace/filesystem";
+import { getWorkspaceFileIndex } from "../../workspace/file-index";
 import { DatabaseFileSnapshots } from "./fileSnapshots";
 
 interface RawRow {
@@ -259,7 +260,7 @@ async function readManifest(folder: string) {
     return null;
   }
 }
-async function writeManifest(folder: string, value: DatabaseManifest) {
+async function writeManifest(ws: Workspace, folder: string, value: DatabaseManifest) {
   const {folderPath: _folder,viewType: _type,viewConfig: _config,viewState: _state,...stored}=value as DatabaseMeta;
   const target = path.join(folder, MANIFEST),
     tmp = target + `.` + randomUUID() + `.tmp`;
@@ -269,32 +270,11 @@ async function writeManifest(folder: string, value: DatabaseManifest) {
       mode: 0o600,
     });
     await rename(tmp, target);
+    const relativePath = path.relative(ws.root, target).split(path.sep).join("/");
+    getWorkspaceFileIndex(ws).apply({ type: "add", path: relativePath, node: nodeFor(relativePath, false) });
   } finally {
     await unlink(tmp).catch(() => {});
   }
-}
-async function find(root: string) {
-  const out: string[] = [];
-  const pending = [root];
-  const ignored = new Set([
-    ".git",
-    ".maek",
-    ".codex",
-    ".claude",
-    "node_modules",
-    "dist",
-  ]);
-  while (pending.length) {
-    const dir = pending.pop()!;
-    for (const e of await readdir(dir, { withFileTypes: true }).catch(
-      () => [],
-    )) {
-      if (e.isFile() && e.name === MANIFEST) out.push(dir);
-      else if (e.isDirectory() && !ignored.has(e.name))
-        pending.push(path.join(dir, e.name));
-    }
-  }
-  return out;
 }
 function upsertMeta(db: Database.Database, meta: DatabaseMeta) {
   db.prepare(
@@ -315,7 +295,8 @@ function upsertMeta(db: Database.Database, meta: DatabaseMeta) {
   );
 }
 export async function listDatabases(ws: Workspace): Promise<DatabaseMeta[]> {
-  const folders = await find(ws.root),
+  const folders = (await getWorkspaceFileIndex(ws).filesNamed(MANIFEST))
+      .map(file => path.join(ws.root, path.posix.dirname(file))),
     sqlitePath = path.join(ws.root, ".maek", "database.sqlite");
   if (
     folders.length === 0 &&
@@ -337,9 +318,19 @@ export async function listDatabases(ws: Workspace): Promise<DatabaseMeta[]> {
     upsertMeta(db, meta);
     out.push(meta);
   }
+  // Export old SQLite-only registries once. Afterwards the manifest is the
+  // source of truth: deleting one must not recreate it from derived cache.
+  db.exec("CREATE TABLE IF NOT EXISTS maek_migrations (name TEXT PRIMARY KEY)");
+  const importLegacy = !db.prepare("SELECT name FROM maek_migrations WHERE name=?").get("database-manifests");
   const known = new Set(out.map((m) => m.id));
   for (const raw of db.prepare("SELECT * FROM databases").all() as RawDatabase[]) {
     if (known.has(raw.id)) continue;
+    if (isIgnored(raw.folder_path)) continue;
+    if (!importLegacy) {
+      const manifestExists = await stat(path.join(ws.root, raw.folder_path, MANIFEST)).catch(() => null);
+      if (!manifestExists) db.prepare("DELETE FROM databases WHERE id=?").run(raw.id);
+      continue;
+    }
     let schema: DatabaseColumnSchema[] = [];
     try {
       schema = JSON.parse(raw.schema_json);
@@ -399,10 +390,11 @@ export async function listDatabases(ws: Workspace): Promise<DatabaseMeta[]> {
         .catch(() => false)
     )
       continue;
-    await writeManifest(folder, meta);
+    await writeManifest(ws, folder, meta);
     upsertMeta(db, meta);
     out.push(meta);
   }
+  db.prepare("INSERT OR IGNORE INTO maek_migrations(name) VALUES(?)").run("database-manifests");
   return out
     .map(projectMeta)
     .sort((a, b) => a.folderPath.localeCompare(b.folderPath));
@@ -450,7 +442,7 @@ export async function createDatabase(
     createdAt: now,
     updatedAt: now,
   };
-  await writeManifest(folder, m);
+  await writeManifest(ws, folder, m);
   const meta = {
     ...m,
     folderPath: path.relative(ws.root, folder).split(path.sep).join("/"),
@@ -552,7 +544,7 @@ export async function updateManifest(
     const latest=await readManifest(folder);
     if(JSON.stringify(latest)!==JSON.stringify(current))throw conflict('changed','Database settings changed during schema update');
     next={...current,...next,updatedAt:Math.max(Date.now(),current.updatedAt+1)};
-    await writeManifest(folder,next);
+    await writeManifest(ws, folder,next);
   }catch(error){await rollback();throw error;}
   const meta = { ...next, folderPath };
   upsertMeta(openDb(ws), meta);
@@ -1011,7 +1003,7 @@ export async function convertFolder(ws: Workspace, folderPath: string) {
     createdAt: now,
     updatedAt: now,
   };
-  await writeManifest(folder, meta);
+  await writeManifest(ws, folder, meta);
   upsertMeta(openDb(ws), meta);
   return projectMeta(meta);
 }
@@ -1029,7 +1021,7 @@ export async function databaseFolderMoved(
         name: path.posix.basename(dest),
       });
   }
-  // The manifest scan updates SQLite paths by stable database id.
+  // Indexed manifest discovery updates SQLite paths by stable database id.
   void source;
 }
 

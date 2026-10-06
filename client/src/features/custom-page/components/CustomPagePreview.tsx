@@ -1,11 +1,12 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import type { CustomPageMountResult } from "@shared/custom-page";
 import { api, artifactUrl, customPageUrl } from "@renderer/shared/api";
 import { Button } from "@renderer/shared/components";
-import type { Tab } from "@renderer/features/workspace";
+import { useStore, type Tab } from "@renderer/features/workspace";
 
 /** Mounts a manifest-backed custom page and releases its server mount on exit. */
-export function CustomPagePreview({ tab }: { tab: Tab }): ReactElement {
+export function CustomPagePreview({ tab, active = true }: { tab: Tab; active?: boolean }): ReactElement {
+  const iframe = useRef<HTMLIFrameElement>(null);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<
     | { status: "loading" }
@@ -13,18 +14,41 @@ export function CustomPagePreview({ tab }: { tab: Tab }): ReactElement {
     | { status: "error"; message: string }
   >({ status: "loading" });
 
+  const url = state.status === "ready" ? state.url : null;
+  const notifyActivity = () => {
+    if (!url) return;
+    iframe.current?.contentWindow?.postMessage({
+      type: "maek:preview-activity", active: active && !document.hidden,
+    }, new URL(url, location.href).origin);
+  };
+  useEffect(() => {
+    notifyActivity();
+    const ready = (event: MessageEvent) => {
+      if (url && event.source === iframe.current?.contentWindow
+        && event.origin === new URL(url, location.href).origin
+        && event.data?.type === "maek:preview-ready") notifyActivity();
+    };
+    window.addEventListener("message", ready);
+    document.addEventListener("visibilitychange", notifyActivity);
+    return () => {
+      window.removeEventListener("message", ready);
+      document.removeEventListener("visibilitychange", notifyActivity);
+    };
+  }, [active, url]);
+
   useEffect(() => {
     let cancelled = false;
     let mountId: string | null = null;
+    const workspace = useStore.getState().workspace;
     setState({ status: "loading" });
     void api<CustomPageMountResult>("/api/custom-pages/mount", "POST", {
       entry: tab.id,
-    }).then(
+    }, workspace).then(
       (result) => {
         if (result.kind === "custom-page") mountId = result.mountId;
         if (cancelled) {
           if (mountId)
-            void api(`/api/custom-pages/mount/${mountId}`, "DELETE").catch(
+            void api(`/api/custom-pages/mount/${mountId}`, "DELETE", undefined, workspace).catch(
               () => {},
             );
           return;
@@ -44,7 +68,7 @@ export function CustomPagePreview({ tab }: { tab: Tab }): ReactElement {
     return () => {
       cancelled = true;
       if (mountId)
-        void api(`/api/custom-pages/mount/${mountId}`, "DELETE").catch(
+        void api(`/api/custom-pages/mount/${mountId}`, "DELETE", undefined, workspace).catch(
           () => {},
         );
     };
@@ -62,9 +86,11 @@ export function CustomPagePreview({ tab }: { tab: Tab }): ReactElement {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <iframe
+        ref={iframe}
         key={`${state.url}:${tab.generation}:${tab.previewNonce}`}
         title={tab.name}
         src={state.url}
+        onLoad={notifyActivity}
         sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
         className="flex-1 min-h-0 w-full border-0 bg-white"
       />
