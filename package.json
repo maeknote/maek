@@ -44,7 +44,7 @@
     "@tiptap/starter-kit": "3.18.0",
     "@tiptap/suggestion": "3.18.0",
     "better-sqlite3": "^12.11.1",
-    "chokidar": "5.0.0",
+    "chokidar": "3.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",

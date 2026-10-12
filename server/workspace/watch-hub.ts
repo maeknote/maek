@@ -1,3 +1,4 @@
+import type { Stats } from "node:fs";
 import path from "node:path";
 import { watch, type FSWatcher } from "chokidar";
 import type { Change, WorkspaceEvent } from "../../shared/workspace";
@@ -115,9 +116,13 @@ export class WorkspaceWatchHub {
       ignoreInitial: false,
       alwaysStat: true,
       followSymlinks: false,
-      ignored: (absolutePath, stats) =>
+      // Chokidar 3 passes stats as a second argument, but its types only
+      // describe the path.
+      ignored: ((absolutePath: string, stats?: Stats) =>
         this.ignored(path.relative(this.workspace.root, absolutePath)) ||
-        (stats !== undefined && !isWorkspaceEntry(stats)),
+        (stats !== undefined && !isWorkspaceEntry(stats))) as (
+        absolutePath: string,
+      ) => boolean,
     });
     this.watcher = watcher;
     watcher.on("ready", async () => {
