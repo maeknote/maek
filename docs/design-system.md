@@ -33,6 +33,10 @@ Open Tabs의 한 항목은 더 이상 항상 파일 하나를 뜻하지 않는�
 - `single`: 파일 또는 가상 뷰 하나
 - `split`: 좌우 파일, 활성 pane, 분할 비율을 함께 보존하는 두-pane 작업 공간
 
+열린 파일 하나는 여러 group에 동시에 속할 수 있다. 자기 single 항목을 유지한 채
+여러 split에 들어갈 수 있고, 어느 항목에서 보든 같은 파일 view와 편집 상태를
+공유한다. 단, 한 split의 좌우에 같은 파일을 둘 수는 없다.
+
 파일 데이터와 view group을 분리한다. 열린 파일은 기존 `tabs`와
 `.maek/tabs.json`의 호환 모델을 유지하고, view group의 순서·활성 항목·분할
 구성은 브라우저별 `ui.json`에 저장한다. 따라서 다른 브라우저나 원본 데스크톱
@@ -82,17 +86,23 @@ single group은 현재 28px 탭 행을 그대로 사용한다. split group도 �
   바뀐다. 새 Open Tabs 행을 만들지 않는다.
 - 다른 Open Tabs 항목을 선택하면 현재 group의 좌우 파일, 비율, 활성 pane을
   변경하지 않고 숨긴다. split group으로 돌아오면 네 값을 그대로 복원한다.
-- 숨겨진 group에 이미 포함된 파일을 Files나 검색에서 열면 파일을 빼앗거나
-  중복 생성하지 않고 그 group과 해당 pane을 활성화한다.
+- 이미 열린 파일을 Files나 검색에서 열면 새 항목을 만들지 않는다. 현재 group이
+  그 파일을 보여 주고 있으면 그대로 두고, 아니면 그 파일의 single 항목을, 없으면
+  그 파일이 들어 있는 split을 활성화한다.
+- 이미 Open Tabs에 있는 파일도 `Open file to the side`로 현재 group 옆에 둘 수
+  있다. 그 파일의 기존 항목은 그대로 남는다. 밀려난 pane의 파일은 다른 항목이
+  없을 때만 single 항목으로 남긴다.
 - split 화면에서 다른 pane을 누르면 group의 `active`만 바뀐다. Open Tabs의
   선택 행은 그대로다.
 - `Single pane`은 파괴적 축소가 아니라 `Ungroup`으로 동작한다. 두 파일을 같은
   위치의 연속된 single group으로 되돌리고 선택한 pane의 파일을 활성화한다.
-- group 닫기는 두 파일을 한 번에 닫는 동작이다. 저장 충돌이나 실패가 하나라도
-  있으면 어느 파일도 group에서 제거하지 않는다. 한 pane만 떼거나 닫는 동작은
-  pane 헤더의 context action으로 제공한다.
-- `Cmd+W`는 활성 group을 닫는다. split group도 사용자에게는 탭 하나이므로 두
-  파일을 대상으로 한다.
+  이미 single 항목이 있는 파일은 항목을 하나만 유지한다.
+- group 닫기는 그 Open Tabs 항목만 닫는다. 파일은 그것을 보여 주는 마지막
+  항목이 닫힐 때 함께 닫힌다. 저장 충돌이나 실패가 하나라도 있으면 항목을 닫지
+  않는다.
+- 파일 자체를 닫는 동작(삭제, 충돌 알림의 Close)은 그 파일을 모든 항목에서
+  제거하고, 한쪽을 잃은 split은 남은 파일의 single 항목으로 줄인다.
+- `Cmd+W`는 활성 group을 닫는다. split group도 사용자에게는 탭 하나다.
 
 ### 복원과 호환
 

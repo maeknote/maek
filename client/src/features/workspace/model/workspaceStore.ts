@@ -22,6 +22,15 @@ import { flushEditBuffer, disposeEditBuffer, anyPendingEdits, hasPendingEdit } f
 import { queryClient } from "@renderer/shared/query-client";
 import { resolveTheme, systemPrefersDark } from "@renderer/lib/preferences";
 import { removeWorkspaceFromList } from "@renderer/lib/workspaceList";
+import {
+  groupActiveTabId,
+  groupForTab,
+  groupTabIds,
+  groupsFromUi,
+  normalizeViewGroups,
+  remapViewGroups,
+  singleViewGroup,
+} from "./viewGroups";
 
 export interface Tab extends TabItem {
   file: FileContent;
@@ -167,6 +176,27 @@ const patchTab = (id: string, fn: (t: Tab) => Tab) =>
   useStore.setState((s) => ({
     tabs: s.tabs.map((t) => (t.id === id ? fn(t) : t)),
   }));
+/** Shows one Open Tabs entry with `tabId` focused. A file can sit in several
+ *  entries, so selection is addressed by entry rather than by file. */
+function activateViewGroup(groupId: string, tabId: string) {
+  const target = useStore.getState().viewGroups.find((group) => group.id === groupId);
+  if (!target || !groupTabIds(target).includes(tabId)) return;
+  const pane: "left" | "right" = target.kind === "split" && target.right === tabId ? "right" : "left";
+  invalidatePaneOpen(pane);
+  const previous = useStore.getState().activeTabId;
+  if (previous && previous !== tabId) void useStore.getState().save(previous);
+  useStore.setState((s) => {
+    const viewGroups = s.viewGroups.map((group) =>
+      group.id === groupId && group.kind === "split" ? { ...group, active: pane } : group,
+    );
+    const activeGroup = viewGroups.find((group) => group.id === groupId);
+    if (!activeGroup) return {};
+    return {
+      viewGroups, activeViewGroupId: groupId, activeTabId: tabId, split: groupSplit(activeGroup),
+    };
+  });
+  later();
+}
 function connectEvents(
   ws: WorkspaceRef,
   set: (partial: Partial<State>) => void,
@@ -239,80 +269,17 @@ export function isVirtualTabId(id: string): boolean {
   return id.startsWith("maek:virtual:");
 }
 
-let viewGroupSequence = 0;
-function newViewGroupId() {
-  const uuid = globalThis.crypto?.randomUUID?.();
-  return uuid ? `view:${uuid}` : `view:${Date.now()}:${++viewGroupSequence}`;
-}
-function singleViewGroup(tabId: string): ViewGroup {
-  return { id: newViewGroupId(), kind: "single", tabId };
-}
-function groupTabIds(group: ViewGroup): string[] {
-  return group.kind === "single" ? [group.tabId] : [group.left, group.right];
-}
-function groupActiveTabId(group: ViewGroup): string {
-  return group.kind === "single"
-    ? group.tabId
-    : group.active === "left"
-      ? group.left
-      : group.right;
-}
 function groupSplit(group: ViewGroup): State["split"] {
   return group.kind === "single"
     ? { left: group.tabId, right: null, active: "left", ratio: 0.5 }
     : { left: group.left, right: group.right, active: group.active, ratio: group.ratio };
 }
-function groupsFromUi(tabs: Tab[], ui: UiState): ViewGroup[] {
-  const available = new Set(tabs.map((tab) => tab.id));
-  const claimed = new Set<string>();
-  const groups: ViewGroup[] = [];
-  for (const group of ui.viewGroups ?? []) {
-    if (group.kind === "single") {
-      if (!available.has(group.tabId) || claimed.has(group.tabId)) continue;
-      groups.push(group);
-      claimed.add(group.tabId);
-      continue;
-    }
-    const left = available.has(group.left) && !claimed.has(group.left) ? group.left : null;
-    const right = available.has(group.right) && !claimed.has(group.right) ? group.right : null;
-    if (left && right) {
-      groups.push({ ...group, left, right });
-      claimed.add(left);
-      claimed.add(right);
-    } else if (left || right) {
-      const tabId = left ?? right!;
-      groups.push({ id: group.id, kind: "single", tabId });
-      claimed.add(tabId);
-    }
-  }
-  // v1 migration: retain the current split as one group when no v2 layout was
-  // stored. The remaining files become single groups in their current order.
-  if (!groups.length && ui.split?.left && ui.split?.right &&
-      available.has(ui.split.left) && available.has(ui.split.right) &&
-      ui.split.left !== ui.split.right) {
-    groups.push({
-      id: newViewGroupId(), kind: "split", left: ui.split.left, right: ui.split.right,
-      active: ui.split.active, ratio: ui.split.ratio,
-    });
-    claimed.add(ui.split.left);
-    claimed.add(ui.split.right);
-  }
-  for (const tab of tabs) {
-    if (!claimed.has(tab.id)) groups.push(singleViewGroup(tab.id));
-  }
-  return groups;
-}
-function reconcileViewGroups(groups: ViewGroup[], tabs: Tab[]): ViewGroup[] {
-  const ui: UiState = {
-    activeTabId: null, scrollPositions: {}, expanded: [], theme: "system", sidebarWidth: 300,
-    viewGroups: groups,
-  };
-  return groupsFromUi(tabs, ui);
-}
-function remapViewGroups(groups: ViewGroup[], replace: (id: string) => string): ViewGroup[] {
-  return groups.map((group) => group.kind === "single"
-    ? { ...group, tabId: replace(group.tabId) }
-    : { ...group, left: replace(group.left), right: replace(group.right) });
+function reconcileViewGroups(
+  groups: ViewGroup[],
+  tabs: Tab[],
+  activeViewGroupId: string | null,
+): ViewGroup[] {
+  return groupsFromUi(tabs.map((tab) => tab.id), { viewGroups: groups, activeViewGroupId });
 }
 
 const VIRTUAL_FILE: FileContent = {
@@ -648,7 +615,7 @@ export const useStore = create<State>((set, get) => ({
               tabs.some((t) => t.id === rootTabs.activeTabId)
             ? rootTabs.activeTabId
             : (tabs[0]?.id ?? null);
-      const viewGroups = groupsFromUi(tabs, ui);
+      const viewGroups = groupsFromUi(tabs.map((tab) => tab.id), ui);
       const activeViewGroup =
         viewGroups.find((group) => group.id === ui.activeViewGroupId) ??
         viewGroups.find((group) => groupTabIds(group).includes(preferredActive ?? "")) ??
@@ -807,7 +774,7 @@ export const useStore = create<State>((set, get) => ({
         // duplicate at commit time, not only before the await, so a file keeps
         // one tab and one view group.
         const current = s.tabs.find((tab) => tab.id === id);
-        const currentGroup = s.viewGroups.find((group) => groupTabIds(group).includes(id));
+        const currentGroup = groupForTab(s.viewGroups, s.activeViewGroupId, id);
         if (current && currentGroup) {
           const tabs = !preview && current.isEphemeral
             ? s.tabs.map((tab) => tab.id === id ? { ...tab, isEphemeral: false } : tab)
@@ -861,9 +828,9 @@ export const useStore = create<State>((set, get) => ({
     }
   },
   async openFileToSide(id) {
-    if (get().tabs.some((tab) => tab.id === id)) {
-      // A file already belongs to an Open Tabs workspace. Focus that workspace
-      // instead of stealing it into the current split.
+    const shown = get().viewGroups.find((group) => group.id === get().activeViewGroupId);
+    if (shown && groupTabIds(shown).includes(id)) {
+      // A file has one live view, so it cannot fill both panes of one split.
       get().setActiveTab(id);
       return;
     }
@@ -873,17 +840,25 @@ export const useStore = create<State>((set, get) => ({
       const workspace = get().workspace;
       if (!workspace) return;
       const existing = get().tabs.find((t) => t.id === id);
-      const tab = existing ?? makeTab(id, await fileQuery(workspace, id));
+      const loaded = existing ?? makeTab(id, await fileQuery(workspace, id));
       if (epoch !== sessionEpoch) return;
+      // A file placed in a split is pinned: a later preview click must not
+      // replace it out from under the split.
+      const tab = loaded.isEphemeral ? { ...loaded, isEphemeral: false } : loaded;
       set((s) => {
+        const tabs = s.tabs.some((t) => t.id === id)
+          ? s.tabs.map((t) => t.id === id ? tab : t)
+          : [...s.tabs, tab];
         const activeGroup = s.viewGroups.find((group) => group.id === s.activeViewGroupId);
         if (!activeGroup) {
-          const group = singleViewGroup(id);
+          const group = groupForTab(s.viewGroups, null, id) ?? singleViewGroup(id);
           return {
-            tabs: [...s.tabs, tab], viewGroups: [...s.viewGroups, group],
+            tabs,
+            viewGroups: s.viewGroups.includes(group) ? s.viewGroups : [...s.viewGroups, group],
             activeViewGroupId: group.id, activeTabId: id, split: groupSplit(group), error: "",
           };
         }
+        if (groupTabIds(activeGroup).includes(id)) return {};
         const target: "left" | "right" = activeGroup.kind === "split"
           ? activeGroup.active === "left" ? "right" : "left"
           : "right";
@@ -896,10 +871,12 @@ export const useStore = create<State>((set, get) => ({
         const displaced = activeGroup.kind === "split" ? activeGroup[target] : null;
         const groupIndex = s.viewGroups.findIndex((group) => group.id === activeGroup.id);
         const viewGroups = s.viewGroups.map((group) => group.id === replacement.id ? replacement : group);
-        if (displaced && displaced !== id)
+        // The file leaving the pane keeps an Open Tabs entry unless another
+        // group still shows it. The file moving in keeps the entries it had.
+        if (displaced && !viewGroups.some((group) => groupTabIds(group).includes(displaced)))
           viewGroups.splice(groupIndex + 1, 0, singleViewGroup(displaced));
         return {
-          tabs: s.tabs.some((t) => t.id === id) ? s.tabs : [...s.tabs, tab],
+          tabs,
           viewGroups,
           activeViewGroupId: replacement.id,
           activeTabId: id,
@@ -907,7 +884,7 @@ export const useStore = create<State>((set, get) => ({
           error: "",
         };
       });
-      if (!existing) tabsDirty = true;
+      if (!existing || existing.isEphemeral) tabsDirty = true;
       later();
     } catch (e) {
       set({ error: String(e) });
@@ -954,10 +931,13 @@ export const useStore = create<State>((set, get) => ({
       const selected = pane === "left" ? current.left : current.right;
       const other = pane === "left" ? current.right : current.left;
       const selectedGroup: ViewGroup = { id: current.id, kind: "single", tabId: selected };
-      const otherGroup = singleViewGroup(other);
       const index = s.viewGroups.findIndex((group) => group.id === current.id);
-      const viewGroups = [...s.viewGroups];
-      viewGroups.splice(index, 1, selectedGroup, otherGroup);
+      const separated = [...s.viewGroups];
+      separated.splice(index, 1, selectedGroup, singleViewGroup(other));
+      // Either file may already have its own entry; keep one entry per file.
+      const viewGroups = normalizeViewGroups(
+        separated, new Set(s.tabs.map((tab) => tab.id)), selectedGroup.id,
+      );
       return {
         viewGroups, activeViewGroupId: selectedGroup.id, activeTabId: selected,
         split: groupSplit(selectedGroup),
@@ -966,27 +946,12 @@ export const useStore = create<State>((set, get) => ({
     later();
   },
   setActiveTab(id) {
-    const target = get().viewGroups.find((group) => groupTabIds(group).includes(id));
-    if (!target) return;
-    const pane: "left" | "right" = target.kind === "split" && target.right === id ? "right" : "left";
-    invalidatePaneOpen(pane);
-    const previous = get().activeTabId;
-    if (previous && previous !== id) void get().save(previous);
-    set((s) => {
-      const viewGroups = s.viewGroups.map((group) =>
-        group.id === target.id && group.kind === "split" ? { ...group, active: pane } : group,
-      );
-      const activeGroup = viewGroups.find((group) => group.id === target.id)!;
-      return {
-        viewGroups, activeViewGroupId: target.id, activeTabId: id, split: groupSplit(activeGroup),
-      };
-    });
-    later();
+    const target = groupForTab(get().viewGroups, get().activeViewGroupId, id);
+    if (target) activateViewGroup(target.id, id);
   },
   setActiveViewGroup(id) {
     const group = get().viewGroups.find((item) => item.id === id);
-    if (!group) return;
-    get().setActiveTab(groupActiveTabId(group));
+    if (group) activateViewGroup(id, groupActiveTabId(group));
   },
   reorderTabs(fromIndex, insertionIndex) {
     const tabs = [...get().tabs];
@@ -1018,7 +983,7 @@ export const useStore = create<State>((set, get) => ({
       const target = insertionIndex > fromIndex ? insertionIndex - 1 : insertionIndex;
       if (target === fromIndex) return {};
       viewGroups.splice(target, 0, moving);
-      const orderedIds = viewGroups.flatMap(groupTabIds);
+      const orderedIds = [...new Set(viewGroups.flatMap(groupTabIds))];
       const byId = new Map(s.tabs.map((tab) => [tab.id, tab]));
       const tabs = orderedIds.map((id) => byId.get(id)).filter((tab): tab is Tab => Boolean(tab));
       return { viewGroups, tabs };
@@ -1098,7 +1063,7 @@ export const useStore = create<State>((set, get) => ({
     const previousActive = get().activeTabId;
     const activeStillOpen =
       previousActive && nextTabs.some((t) => t.id === previousActive);
-    const viewGroups = reconcileViewGroups(get().viewGroups, nextTabs);
+    const viewGroups = reconcileViewGroups(get().viewGroups, nextTabs, get().activeViewGroupId);
     const activeGroup =
       viewGroups.find((group) => group.id === get().activeViewGroupId) ??
       viewGroups.find((group) => groupTabIds(group).includes(previousActive ?? "")) ??
@@ -1298,12 +1263,10 @@ export const useStore = create<State>((set, get) => ({
     if (closing) disposeEditBuffer(closing.editorSessionId);
     set((s) => {
       const tabs = s.tabs.filter((t) => t.id !== id);
-      const viewGroups = s.viewGroups.flatMap((group): ViewGroup[] => {
-        if (group.kind === "single") return group.tabId === id ? [] : [group];
-        if (group.left !== id && group.right !== id) return [group];
-        const tabId = group.left === id ? group.right : group.left;
-        return [{ id: group.id, kind: "single", tabId }];
-      });
+      // Closing a file removes it from every entry that shows it.
+      const viewGroups = normalizeViewGroups(
+        s.viewGroups, new Set(tabs.map((t) => t.id)), s.activeViewGroupId,
+      );
       const activeGroup =
         viewGroups.find((group) => group.id === s.activeViewGroupId) ??
         viewGroups.at(-1) ?? null;
@@ -1328,9 +1291,13 @@ export const useStore = create<State>((set, get) => ({
     }
     set((s) => {
       const index = s.viewGroups.findIndex((item) => item.id === id);
+      if (index < 0) return {};
       const viewGroups = s.viewGroups.filter((item) => item.id !== id);
-      const closed = new Set(groupTabIds(group));
-      const tabs = s.tabs.filter((tab) => !closed.has(tab.id));
+      // Only this entry closes. A file stays open while another entry shows it.
+      const stillShown = new Set(viewGroups.flatMap(groupTabIds));
+      const tabs = s.tabs.filter(
+        (tab) => !groupTabIds(group).includes(tab.id) || stillShown.has(tab.id),
+      );
       const activeGroup =
         viewGroups[index] ?? viewGroups[index - 1] ?? viewGroups.at(-1) ?? null;
       return {

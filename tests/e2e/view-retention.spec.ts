@@ -176,3 +176,54 @@ test("a split workspace is one Open Tabs row and survives switching away", async
   await expect(page.locator('[data-file-pane-slot="long.txt"]')).toBeVisible();
   await expect(separator).toHaveAttribute("aria-valuenow", splitRatio!);
 });
+
+test("an already-open PDF opens to the side and keeps its own Open Tabs row", async ({ page }) => {
+  const pdf =
+    "%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n" +
+    "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+    "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n" +
+    "trailer<</Root 1 0 R>>\n%%EOF\n";
+  writeFileSync(path.join(root, "alpha.pdf"), pdf);
+  writeFileSync(path.join(root, "beta.pdf"), pdf);
+  await open(page);
+  await page.locator('[data-path="alpha.pdf"]').dblclick();
+  await expect(page.locator('iframe[title="alpha.pdf"]')).toBeVisible();
+  await page.locator('[data-path="beta.pdf"]').dblclick();
+  await expect(page.locator('iframe[title="beta.pdf"]')).toBeVisible();
+
+  // alpha.pdf already has an Open Tabs row; it still joins the split.
+  await page.locator('[data-file-pane-slot="beta.pdf"]').getByLabel("Open file to the side").click();
+  await page.getByRole("textbox", { name: "Search files" }).fill("alpha");
+  await page.getByRole("option").filter({ hasText: "alpha" }).first().click();
+
+  const separator = page.getByRole("separator", { name: "Resize panes" });
+  const splitRow = page.getByRole("tab", { name: "Split view: beta.pdf and alpha.pdf" });
+  const alphaRow = page.getByRole("tab", { name: "alpha.pdf", exact: true });
+  await expect(separator).toBeVisible();
+  await expect(splitRow).toBeVisible();
+  await expect(alphaRow).toHaveCount(1);
+  await expect(page.locator('iframe[title="alpha.pdf"]')).toBeVisible();
+  await expect(page.locator('iframe[title="beta.pdf"]')).toBeVisible();
+
+  // Each row selects its own layout.
+  await alphaRow.click();
+  await expect(separator).toHaveCount(0);
+  await expect(page.locator('iframe[title="alpha.pdf"]')).toBeVisible();
+  await expect(page.locator('iframe[title="beta.pdf"]')).toBeHidden();
+  await splitRow.click();
+  await expect(separator).toBeVisible();
+
+  // Both rows survive a reload.
+  await page.waitForTimeout(500);
+  await page.reload();
+  await expect(splitRow).toBeVisible();
+  await expect(alphaRow).toHaveCount(1);
+
+  // Closing the split closes only that row: alpha.pdf stays open on its own.
+  await splitRow.hover();
+  await page.getByRole("button", { name: "Close split view" }).click();
+  await expect(splitRow).toHaveCount(0);
+  await expect(alphaRow).toHaveCount(1);
+  await expect(page.getByRole("tab", { name: "beta.pdf", exact: true })).toHaveCount(0);
+  await expect(page.locator('iframe[title="alpha.pdf"]')).toBeVisible();
+});
