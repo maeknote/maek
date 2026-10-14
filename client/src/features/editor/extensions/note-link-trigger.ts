@@ -29,6 +29,8 @@ function insertNoteLink(
   const endPos = from + textNode.nodeSize;
   const tr = state.tr.insert(from, textNode);
   tr.setSelection(TextSelection.create(tr.doc, endPos));
+  // autolink makes the link mark inclusive; drop it so typing continues as plain text.
+  tr.removeStoredMark(linkMark.type);
   view.dispatch(tr);
   view.focus();
 }
